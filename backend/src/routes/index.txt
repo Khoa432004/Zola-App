@@ -1,2 +1,0 @@
-﻿Khai báo router và ánh xạ endpoint.
-
