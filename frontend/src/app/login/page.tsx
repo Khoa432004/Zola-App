@@ -1,9 +1,10 @@
 'use client';
 
 import { useState } from 'react';
-import { signInWithPopup } from 'firebase/auth';
+import { signInWithPopup, getIdToken } from 'firebase/auth';
 import { auth, googleProvider } from '@/lib/firebase';
 import { useRouter } from 'next/navigation';
+import { apiService } from '@/services/api';
 import styles from './styles.module.css';
 
 export default function LoginPage() {
@@ -15,23 +16,72 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
+  const [error, setError] = useState('');
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Handle login logic here
-    console.log('Login:', { email, password, rememberMe });
+    setError('');
+
+    if (!email || !password) {
+      setError(language === 'vi' ? 'Vui lòng nhập email và mật khẩu' : 'Please enter email and password');
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      const response = await apiService.login({ email, password });
+
+      if (response.success && response.data) {
+        // Save token to localStorage
+        localStorage.setItem('token', response.data.token);
+        localStorage.setItem('user', JSON.stringify(response.data.user));
+
+        // Save remember me preference
+        if (rememberMe) {
+          localStorage.setItem('rememberMe', 'true');
+        }
+
+        // Redirect to home page
+        router.push('/');
+      }
+    } catch (error: any) {
+      setError(error.message || (language === 'vi' ? 'Đăng nhập thất bại' : 'Login failed'));
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleGoogleLogin = async () => {
     try {
       setIsGoogleLoading(true);
+      setError('');
+
+      // Step 1: Authenticate with Firebase
       const result = await signInWithPopup(auth, googleProvider);
-      // Login successful, redirect to home or dashboard
-      console.log('Google login successful:', result.user);
-      router.push('/');
+      const user = result.user;
+
+      // Step 2: Get Firebase ID token
+      const idToken = await getIdToken(user);
+
+      // Step 3: Send to backend API
+      const response = await apiService.googleLogin({
+        idToken,
+        email: user.email || '',
+        name: user.displayName || user.email || '',
+        avatar: user.photoURL || undefined,
+      });
+
+      if (response.success && response.data) {
+        // Save token to localStorage
+        localStorage.setItem('token', response.data.token);
+        localStorage.setItem('user', JSON.stringify(response.data.user));
+
+        // Redirect to home page
+        router.push('/');
+      }
     } catch (error: any) {
       console.error('Google login error:', error);
-      alert(error.message || 'Đăng nhập Google thất bại');
+      setError(error.message || (language === 'vi' ? 'Đăng nhập Google thất bại' : 'Google login failed'));
     } finally {
       setIsGoogleLoading(false);
     }
@@ -49,6 +99,7 @@ export default function LoginPage() {
       loginWithGoogle: 'Đăng nhập với Google',
       loggingIn: 'Đang đăng nhập...',
       or: 'Hoặc',
+      error: 'Lỗi',
       noAccount: 'Chưa có tài khoản?',
       register: 'Đăng ký ngay',
     },
@@ -63,6 +114,7 @@ export default function LoginPage() {
       loginWithGoogle: 'Sign in with Google',
       loggingIn: 'Signing in...',
       or: 'Or',
+      error: 'Error',
       noAccount: "Don't have an account?",
       register: 'Register now',
     },
@@ -75,6 +127,20 @@ export default function LoginPage() {
       <div className={styles.loginCard}>
         <h1 className={styles.title}>{t.title}</h1>
         <p className={styles.subtitle}>{t.subtitle}</p>
+
+        {error && (
+          <div style={{
+            padding: '0.75rem',
+            marginBottom: '1rem',
+            backgroundColor: '#FEE2E2',
+            color: '#DC2626',
+            borderRadius: '8px',
+            fontSize: '0.875rem',
+            textAlign: 'center',
+          }}>
+            {error}
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className={styles.form}>
           <div className={styles.inputGroup}>
