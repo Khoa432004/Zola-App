@@ -21,7 +21,7 @@ body {
 body {
   color: var(--foreground);
   background: linear-gradient(135deg, #3AB5F6, #6DD5FA, #8E54E9);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-inter), 'Inter', 'Segoe UI', 'Roboto', 'Arial', 'Helvetica Neue', -apple-system, BlinkMacSystemFont, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   margin: 0;
