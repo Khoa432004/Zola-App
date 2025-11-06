@@ -1,0 +1,2 @@
+﻿Lưu log build/chạy cục bộ (giữ thư mục trên git).
+

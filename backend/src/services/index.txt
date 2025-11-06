@@ -1,0 +1,2 @@
+﻿Nghiệp vụ ứng dụng, giao tiếp model/nguồn dữ liệu.
+
