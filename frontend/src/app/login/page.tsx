@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { useAuth } from '@/hooks/useAuth';
 import styles from './styles.module.css';
 
@@ -200,9 +201,9 @@ export default function LoginPage() {
               />
               <span>{t.rememberMe}</span>
             </label>
-            <a href="#" className={styles.forgotPassword}>
+            <Link href="/forgot-password" className={styles.forgotPassword}>
               {t.forgotPassword}
-            </a>
+            </Link>
           </div>
 
           <button type="submit" className={styles.loginButton} disabled={isLoading || isGoogleLoading}>
@@ -265,9 +266,9 @@ export default function LoginPage() {
 
           <p className={styles.registerPrompt}>
             {t.noAccount}{' '}
-            <a href="/register" className={styles.registerLink}>
+            <Link href="/register" className={styles.registerLink}>
               {t.register}
-            </a>
+            </Link>
           </p>
         </form>
       </div>

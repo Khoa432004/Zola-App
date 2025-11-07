@@ -1,0 +1,323 @@
+.container {
+  min-height: 100vh;
+  height: 100vh;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  background: linear-gradient(135deg, #3AB5F6, #8E54E9);
+  padding: 2.5rem 2rem;
+  padding-top: 3rem;
+  padding-bottom: 2.5rem;
+  margin: 0;
+  font-family: var(--font-inter), 'Inter', 'Segoe UI', 'Roboto', 'Arial', 'Helvetica Neue', -apple-system, BlinkMacSystemFont, sans-serif;
+  box-sizing: border-box;
+  overflow-y: auto;
+  position: relative;
+}
+
+.loginCard {
+  background: #FFFFFF;
+  border-radius: 24px;
+  padding: 2rem 2.5rem;
+  width: 100%;
+  max-width: 480px;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  margin-top: 2rem;
+  margin-bottom: 1rem;
+  margin-left: auto;
+  margin-right: auto;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.loginCard:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 30px 60px -12px rgba(0, 0, 0, 0.3);
+}
+
+.title {
+  font-size: 2.25rem;
+  font-weight: 800;
+  margin-bottom: 0.5rem;
+  text-align: center;
+  letter-spacing: -0.02em;
+  color: #4F46E5;
+}
+
+.subtitle {
+  font-size: 0.875rem;
+  color: #6B7280;
+  text-align: center;
+  margin-bottom: 1.25rem;
+  font-weight: 400;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.inputGroup {
+  position: relative;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.inputLabel {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #111827;
+  margin-bottom: 0.25rem;
+  transition: color 0.2s ease;
+}
+
+.inputGroup:hover .inputLabel {
+  color: #4F46E5;
+}
+
+.inputWrapper {
+  position: relative;
+  width: 100%;
+}
+
+.input {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border: 1.5px solid #e5e7eb;
+  border-radius: 10px;
+  font-size: 0.9rem;
+  transition: all 0.2s ease;
+  background: #ffffff;
+  color: #111827;
+  font-weight: 400;
+  box-sizing: border-box;
+}
+
+.input:hover {
+  border-color: #A78BFA;
+  box-shadow: 0 0 0 3px rgba(167, 139, 250, 0.05);
+}
+
+.input:focus {
+  outline: none;
+  border-color: #A78BFA;
+  box-shadow: 0 0 0 3px rgba(167, 139, 250, 0.1);
+}
+
+.input::placeholder {
+  color: #6B7280;
+}
+
+.input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.otpContainer {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: center;
+  margin-bottom: 1rem;
+}
+
+.otpInput {
+  width: 3.5rem;
+  height: 3.5rem;
+  padding: 0;
+  border: 1.5px solid #e5e7eb;
+  border-radius: 10px;
+  font-size: 1.5rem;
+  text-align: center;
+  transition: all 0.2s ease;
+  background: #ffffff;
+  color: #111827;
+  font-weight: 600;
+  font-family: monospace;
+  box-sizing: border-box;
+}
+
+.otpInput:hover {
+  border-color: #A78BFA;
+  box-shadow: 0 0 0 3px rgba(167, 139, 250, 0.05);
+}
+
+.otpInput:focus {
+  outline: none;
+  border-color: #4F46E5;
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+  transform: scale(1.05);
+}
+
+.otpInput:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.otpTimer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 0.5rem;
+  font-size: 0.75rem;
+  color: #6b7280;
+}
+
+.resendButton {
+  background: transparent;
+  border: none;
+  color: #4F46E5;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+  transition: all 0.2s ease;
+}
+
+.resendButton:hover {
+  color: #4338CA;
+  text-decoration: underline;
+}
+
+.resendButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.backButton {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #6b7280;
+  margin-bottom: 1rem;
+  padding: 0.5rem;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+  font-size: 0.875rem;
+}
+
+.backButton:hover {
+  color: #4F46E5;
+  background: rgba(79, 70, 229, 0.05);
+}
+
+.loginButton {
+  width: 100%;
+  padding: 0.75rem 1.5rem;
+  background: #4F46E5;
+  color: white;
+  border: none;
+  border-radius: 10px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.625rem;
+  margin-top: 0.5rem;
+  transition: all 0.3s ease;
+  letter-spacing: 0.01em;
+  position: relative;
+  overflow: hidden;
+}
+
+.loginButton::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+  transition: left 0.5s ease;
+}
+
+.loginButton:hover:not(:disabled) {
+  background: #4338CA;
+  transform: translateY(-2px);
+  box-shadow: 0 10px 25px rgba(79, 70, 229, 0.4);
+}
+
+.loginButton:hover:not(:disabled)::before {
+  left: 100%;
+}
+
+.loginButton:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: 0 5px 15px rgba(79, 70, 229, 0.3);
+}
+
+.loginButton:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  background: #9ca3af;
+}
+
+.registerPrompt {
+  text-align: center;
+  color: #6B7280;
+  font-size: 0.875rem;
+  margin-top: 0.75rem;
+  font-weight: 400;
+}
+
+.registerLink {
+  color: #2563EB;
+  text-decoration: none;
+  font-weight: 600;
+  transition: all 0.2s ease;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  display: inline-block;
+}
+
+.registerLink:hover {
+  color: #4338CA;
+  text-decoration: underline;
+  background: rgba(37, 99, 235, 0.1);
+  transform: translateY(-1px);
+}
+
+.errorMessage {
+  padding: 0.75rem;
+  margin-bottom: 1rem;
+  background-color: #FEE2E2;
+  color: #DC2626;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  text-align: center;
+  border: 1px solid #fecaca;
+}
+
+@media (max-width: 640px) {
+  .loginCard {
+    padding: 2rem 1.5rem;
+    max-width: 100%;
+  }
+
+  .title {
+    font-size: 2rem;
+  }
+
+  .container {
+    padding: 1rem;
+  }
+
+  .otpContainer {
+    gap: 0.5rem;
+  }
+
+  .otpInput {
+    width: 3rem;
+    height: 3rem;
+    font-size: 1.25rem;
+  }
+}
+
