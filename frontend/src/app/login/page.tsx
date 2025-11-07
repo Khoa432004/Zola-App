@@ -34,7 +34,7 @@ export default function LoginPage() {
       if (response.success && response.data) {
         // Save token to localStorage
         localStorage.setItem('token', response.data.token);
-        localStorage.setItem('user', JSON.stringify(response.data.user));
+        localStorage.setItem('account', JSON.stringify(response.data.account));
 
         // Save remember me preference
         if (rememberMe) {
@@ -74,7 +74,7 @@ export default function LoginPage() {
       if (response.success && response.data) {
         // Save token to localStorage
         localStorage.setItem('token', response.data.token);
-        localStorage.setItem('user', JSON.stringify(response.data.user));
+        localStorage.setItem('account', JSON.stringify(response.data.account));
 
         // Redirect to home page
         router.push('/');

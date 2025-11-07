@@ -1,4 +1,4 @@
-import { User, IUser } from '../models/User';
+import { Account, IAccount } from '../models/Account';
 import { LoginDto, GoogleLoginDto } from '../dto/auth.dto';
 import { generateToken } from '../utils/jwt';
 import { adminAuth } from '../config/firebase-admin';
@@ -10,40 +10,40 @@ export class AuthService {
   async loginWithEmail(loginDto: LoginDto) {
     const { email, password } = loginDto;
 
-    // Find user by email
-    const user = await User.findByEmail(email);
-    if (!user) {
+    // Find account by email
+    const account = await Account.findByEmail(email);
+    if (!account) {
       throw new Error('Email hoặc mật khẩu không đúng');
     }
 
-    // Check if user uses email provider
-    if (user.provider !== 'email') {
+    // Check if account uses email provider
+    if (account.provider !== 'email') {
       throw new Error('Tài khoản này sử dụng đăng nhập Google');
     }
 
     // Check if password exists
-    if (!user.password) {
+    if (!account.password) {
       throw new Error('Tài khoản chưa được thiết lập mật khẩu');
     }
 
     // Verify password
-    const isPasswordValid = await User.comparePassword(user.password, password);
+    const isPasswordValid = await Account.comparePassword(account.password, password);
     if (!isPasswordValid) {
       throw new Error('Email hoặc mật khẩu không đúng');
     }
 
     // Generate JWT token
     const token = generateToken({
-      userId: user.id,
-      email: user.email,
+      userId: account.id,
+      email: account.email,
     });
 
     return {
-      user: {
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        avatar: user.avatar,
+      account: {
+        id: account.id,
+        email: account.email,
+        name: account.name,
+        avatar: account.avatar,
       },
       token,
     };
@@ -97,30 +97,30 @@ export class AuthService {
 
       const googleId = decodedToken.uid;
 
-      // Tìm hoặc tạo user
-      let user;
+      // Tìm hoặc tạo account
+      let account;
       try {
-        user = await User.findByEmailOrGoogleId(email, googleId);
+        account = await Account.findByEmailOrGoogleId(email, googleId);
       } catch (findError: any) {
-        throw new Error(`Lỗi khi tìm kiếm user: ${findError.message}`);
+        throw new Error(`Lỗi khi tìm kiếm account: ${findError.message}`);
       }
 
-      if (user) {
-        // Cập nhật user nếu đã tồn tại
+      if (account) {
+        // Cập nhật account nếu đã tồn tại
         try {
-          user = await User.update(user.id, {
+          account = await Account.update(account.id, {
             googleId,
             name,
             avatar,
             provider: 'google',
           });
         } catch (updateError: any) {
-          throw new Error(`Lỗi khi cập nhật user: ${updateError.message}`);
+          throw new Error(`Lỗi khi cập nhật account: ${updateError.message}`);
         }
       } else {
-        // Tạo user mới
+        // Tạo account mới
         try {
-          user = await User.create({
+          account = await Account.create({
             email: email.toLowerCase(),
             name,
             avatar,
@@ -128,22 +128,22 @@ export class AuthService {
             googleId,
           });
         } catch (createError: any) {
-          throw new Error(`Lỗi khi tạo user: ${createError.message}`);
+          throw new Error(`Lỗi khi tạo account: ${createError.message}`);
         }
       }
 
       // Tạo JWT token
       const token = generateToken({
-        userId: user.id,
-        email: user.email,
+        userId: account.id,
+        email: account.email,
       });
 
       return {
-        user: {
-          id: user.id,
-          email: user.email,
-          name: user.name,
-          avatar: user.avatar,
+        account: {
+          id: account.id,
+          email: account.email,
+          name: account.name,
+          avatar: account.avatar,
         },
         token,
       };

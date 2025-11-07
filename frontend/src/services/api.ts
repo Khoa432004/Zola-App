@@ -16,7 +16,7 @@ export interface AuthResponse {
   success: boolean;
   message: string;
   data?: {
-    user: {
+    account: {
       id: string;
       email: string;
       name: string;
