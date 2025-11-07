@@ -1,2 +1,0 @@
-﻿Helper, SDK, cấu hình http.
-

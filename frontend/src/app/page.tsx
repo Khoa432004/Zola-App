@@ -1,4 +1,5 @@
 import Image from "next/image";
+import Link from "next/link";
 import styles from "./page.module.css";
 
 export default function Home() {
@@ -51,6 +52,9 @@ export default function Home() {
             />
             Deploy Now
           </a>
+          <Link className={styles.secondary} href="/login">
+            Đăng nhập
+          </Link>
           <a
             className={styles.secondary}
             href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
