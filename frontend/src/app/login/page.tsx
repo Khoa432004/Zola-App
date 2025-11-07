@@ -1,91 +1,80 @@
 'use client';
 
-import { useState } from 'react';
-import { signInWithPopup, getIdToken } from 'firebase/auth';
-import { auth, googleProvider } from '@/lib/firebase';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { apiService } from '@/services/api';
+import { useAuth } from '@/hooks/useAuth';
 import styles from './styles.module.css';
 
 export default function LoginPage() {
   const router = useRouter();
+  const { login, loginWithGoogle, isLoading, error: authError, isAuthenticated, clearError } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
   const [language, setLanguage] = useState<'vi' | 'en'>('vi');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [localError, setLocalError] = useState('');
+
+  // Hiển thị lỗi từ Redux
+  useEffect(() => {
+    if (authError) {
+      setLocalError(authError);
+    }
+  }, [authError]);
+
+  // Clear error khi component mount
+  useEffect(() => {
+    clearError();
+  }, [clearError]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
+    setLocalError('');
+    clearError();
 
     if (!email || !password) {
-      setError(language === 'vi' ? 'Vui lòng nhập email và mật khẩu' : 'Please enter email and password');
+      setLocalError(language === 'vi' ? 'Vui lòng nhập email và mật khẩu' : 'Please enter email and password');
       return;
     }
 
     try {
-      setIsLoading(true);
-      const response = await apiService.login({ email, password });
-
-      if (response.success && response.data) {
-        // Save token to localStorage
-        localStorage.setItem('token', response.data.token);
-        localStorage.setItem('account', JSON.stringify(response.data.account));
-
-        // Save remember me preference
-        if (rememberMe) {
-          localStorage.setItem('rememberMe', 'true');
-        }
-
-        // Redirect to home page
-        router.push('/');
+      await login({ email, password });
+      
+      // Save remember me preference
+      if (rememberMe) {
+        localStorage.setItem('rememberMe', 'true');
+      } else {
+        localStorage.removeItem('rememberMe');
       }
+
+      // Redirect về trang chủ sau khi đăng nhập thành công
+      router.push('/');
     } catch (error: any) {
-      setError(error.message || (language === 'vi' ? 'Đăng nhập thất bại' : 'Login failed'));
-    } finally {
-      setIsLoading(false);
+      // Lỗi sẽ được xử lý bởi Redux và hiển thị qua authError
+      console.error('Login error:', error);
     }
   };
 
   const handleGoogleLogin = async () => {
     try {
       setIsGoogleLoading(true);
-      setError('');
+      setLocalError('');
+      clearError();
 
-      // Step 1: Authenticate with Firebase
-      const result = await signInWithPopup(auth, googleProvider);
-      const user = result.user;
+      await loginWithGoogle();
 
-      // Step 2: Get Firebase ID token
-      const idToken = await getIdToken(user);
-
-      // Step 3: Send to backend API
-      const response = await apiService.googleLogin({
-        idToken,
-        email: user.email || '',
-        name: user.displayName || user.email || '',
-        avatar: user.photoURL || undefined,
-      });
-
-      if (response.success && response.data) {
-        // Save token to localStorage
-        localStorage.setItem('token', response.data.token);
-        localStorage.setItem('account', JSON.stringify(response.data.account));
-
-        // Redirect to home page
-        router.push('/');
-      }
+      // Redirect về trang chủ sau khi đăng nhập thành công
+      router.push('/');
     } catch (error: any) {
       console.error('Google login error:', error);
-      setError(error.message || (language === 'vi' ? 'Đăng nhập Google thất bại' : 'Google login failed'));
+      setLocalError(error.message || (language === 'vi' ? 'Đăng nhập Google thất bại' : 'Google login failed'));
     } finally {
       setIsGoogleLoading(false);
     }
   };
+
+  const error = localError || authError;
 
   const translations = {
     vi: {
@@ -216,7 +205,7 @@ export default function LoginPage() {
             </a>
           </div>
 
-          <button type="submit" className={styles.loginButton} disabled={isLoading}>
+          <button type="submit" className={styles.loginButton} disabled={isLoading || isGoogleLoading}>
             <svg
               className={styles.loginIcon}
               width="18"
@@ -232,7 +221,7 @@ export default function LoginPage() {
               <polyline points="16 17 21 12 16 7" />
               <line x1="21" y1="12" x2="9" y2="12" />
             </svg>
-            {t.login}
+            {isLoading ? t.loggingIn : t.login}
           </button>
 
           <div className={styles.divider}>
@@ -245,7 +234,7 @@ export default function LoginPage() {
             type="button"
             onClick={handleGoogleLogin}
             className={styles.googleButton}
-            disabled={isGoogleLoading}
+            disabled={isLoading || isGoogleLoading}
           >
             <svg
               className={styles.googleIcon}
