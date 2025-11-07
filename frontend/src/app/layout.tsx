@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
+import { Providers } from "@/components/Providers";
 
 // Sử dụng Inter font với Vietnamese subset để hỗ trợ tốt tiếng Việt
 const inter = Inter({
@@ -22,7 +23,9 @@ export default function RootLayout({
   return (
     <html lang="vi">
       <body className={inter.variable}>
-        {children}
+        <Providers>
+          {children}
+        </Providers>
       </body>
     </html>
   );
