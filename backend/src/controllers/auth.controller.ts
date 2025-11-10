@@ -5,10 +5,10 @@ import {
   GoogleLoginDto,
   AuthResponseDto,
   RegisterDto,
+  ForgotPasswordDto,
+  VerifyOTPDto,
+  ResetPasswordDto,
 } from "../dto/auth.dto";
-import { Request, Response } from 'express';
-import { AuthService } from '../services/auth.service';
-import { LoginDto, GoogleLoginDto, AuthResponseDto, ForgotPasswordDto, VerifyOTPDto, ResetPasswordDto } from '../dto/auth.dto';
 
 const authService = new AuthService();
 
@@ -129,94 +129,6 @@ export class AuthController {
     try {
       const { email, username, password } = req.body;
 
-  /**
-   * Yêu cầu đặt lại mật khẩu (gửi OTP)
-   */
-  async forgotPassword(req: Request, res: Response) {
-    try {
-      const forgotPasswordDto: ForgotPasswordDto = req.body
-
-      if (!forgotPasswordDto.email) {
-        return res.status(400).json({
-          success: false,
-          message: "Vui lòng nhập email",
-        })
-      }
-
-      const result = await authService.requestPasswordReset(forgotPasswordDto)
-
-      return res.status(200).json({
-        success: true,
-        message: result.message,
-        data: result,
-      })
-    } catch (error: any) {
-      return res.status(400).json({
-        success: false,
-        message: error.message || "Yêu cầu đặt lại mật khẩu thất bại",
-      })
-    }
-  }
-
-  /**
-   * Xác thực OTP
-   */
-  async verifyOTP(req: Request, res: Response) {
-    try {
-      const verifyOTPDto: VerifyOTPDto = req.body
-
-      if (!verifyOTPDto.email || !verifyOTPDto.otp) {
-        return res.status(400).json({
-          success: false,
-          message: "Vui lòng nhập email và mã OTP",
-        })
-      }
-
-      const result = await authService.verifyOTP(verifyOTPDto)
-
-      return res.status(200).json({
-        success: true,
-        message: result.message,
-        data: result,
-      })
-    } catch (error: any) {
-      return res.status(400).json({
-        success: false,
-        message: error.message || "Xác thực OTP thất bại",
-      })
-    }
-  }
-
-  /**
-   * Đặt lại mật khẩu
-   */
-  async resetPassword(req: Request, res: Response) {
-    try {
-      const resetPasswordDto: ResetPasswordDto = req.body
-
-      if (!resetPasswordDto.email || !resetPasswordDto.otp || !resetPasswordDto.newPassword) {
-        return res.status(400).json({
-          success: false,
-          message: "Vui lòng cung cấp đầy đủ thông tin",
-        })
-      }
-
-      const result = await authService.resetPassword(resetPasswordDto)
-
-      return res.status(200).json({
-        success: true,
-        message: result.message,
-        data: result,
-      })
-    } catch (error: any) {
-      return res.status(400).json({
-        success: false,
-        message: error.message || "Đặt lại mật khẩu thất bại",
-      })
-    }
-  }
-}
-
       const result = await authService.registerFinal({
         email,
         username,
@@ -230,6 +142,107 @@ export class AuthController {
       });
     } catch (e: any) {
       return res.status(400).json({ success: false, message: e.message });
+    }
+  }
+
+  /**
+   * Yêu cầu đặt lại mật khẩu (gửi OTP)
+   */
+  async forgotPassword(req: Request, res: Response) {
+    try {
+      const forgotPasswordDto: ForgotPasswordDto = req.body;
+
+      if (!forgotPasswordDto.email) {
+        return res.status(400).json({
+          success: false,
+          message: "Vui lòng nhập email",
+        });
+      }
+
+      const result = await authService.requestPasswordReset(forgotPasswordDto);
+
+      return res.status(200).json({
+        success: true,
+        message: result.message,
+        data: result,
+      });
+    } catch (error: any) {
+      return res.status(400).json({
+        success: false,
+        message: error.message || "Yêu cầu đặt lại mật khẩu thất bại",
+      });
+    }
+  }
+
+  /**
+   * Xác thực OTP
+   */
+  async verifyOTP(req: Request, res: Response) {
+    try {
+      const verifyOTPDto: VerifyOTPDto = req.body;
+
+      if (!verifyOTPDto.email || !verifyOTPDto.otp) {
+        return res.status(400).json({
+          success: false,
+          message: "Vui lòng nhập email và mã OTP",
+        });
+      }
+
+      const result = await authService.verifyOTP(verifyOTPDto);
+
+      return res.status(200).json({
+        success: true,
+        message: result.message,
+        data: result,
+      });
+    } catch (error: any) {
+      return res.status(400).json({
+        success: false,
+        message: error.message || "Xác thực OTP thất bại",
+      });
+    }
+  }
+
+  /**
+   * Đặt lại mật khẩu
+   */
+  async resetPassword(req: Request, res: Response) {
+    try {
+      const resetPasswordDto: ResetPasswordDto = req.body;
+
+      if (!resetPasswordDto.email || !resetPasswordDto.otp || !resetPasswordDto.newPassword) {
+        return res.status(400).json({
+          success: false,
+          message: "Vui lòng cung cấp đầy đủ thông tin",
+        });
+      }
+
+      const result = await authService.resetPassword(resetPasswordDto);
+
+      return res.status(200).json({
+        success: true,
+        message: result.message,
+        data: result,
+      });
+    } catch (error: any) {
+      return res.status(400).json({
+        success: false,
+        message: error.message || "Đặt lại mật khẩu thất bại",
+      });
+    }
+  }
+
+  async logout(req: Request, res: Response) {
+    try {
+      return res.status(200).json({
+        success: true,
+        message: "Đăng xuất thành công",
+      } as AuthResponseDto);
+    } catch (error: any) {
+      return res.status(500).json({
+        success: false,
+        message: error.message || "Đăng xuất thất bại",
+      } as AuthResponseDto);
     }
   }
 }

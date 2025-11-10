@@ -1,14 +1,10 @@
 import { Account, IAccount } from "../models/Account";
-import { LoginDto, GoogleLoginDto, RegisterDto } from "../dto/auth.dto";
+import { LoginDto, GoogleLoginDto, RegisterDto, ForgotPasswordDto, VerifyOTPDto, ResetPasswordDto } from "../dto/auth.dto";
 import { generateToken } from "../utils/jwt";
 import { adminAuth, firestore } from "../config/firebase-admin";
 import nodemailer from "nodemailer";
-import { Account, IAccount } from '../models/Account';
-import { LoginDto, GoogleLoginDto, ForgotPasswordDto, VerifyOTPDto, ResetPasswordDto } from '../dto/auth.dto';
-import { generateToken } from '../utils/jwt';
-import { adminAuth } from '../config/firebase-admin';
-import { generateOTP, getOTPExpiry, isOTPValid } from "../utils/otp"
-import { EmailService } from "./email.service"
+import { generateOTP, getOTPExpiry, isOTPValid } from "../utils/otp";
+import { EmailService } from "./email.service";
 
 const emailService = new EmailService()
 
@@ -316,138 +312,135 @@ export class AuthService {
     await docRef.delete();
     return true;
   }
-}
 
   /**
    * Yêu cầu đặt lại mật khẩu - Gửi OTP
    */
   async requestPasswordReset(forgotPasswordDto: ForgotPasswordDto) {
-    const { email } = forgotPasswordDto
+    const { email } = forgotPasswordDto;
 
     // Tìm account theo email
-    const account = await Account.findByEmail(email)
+    const account = await Account.findByEmail(email);
     if (!account) {
-      throw new Error("Email không tồn tại trong hệ thống")
+      throw new Error("Email không tồn tại trong hệ thống");
     }
 
     // Kiểm tra provider
     if (account.provider !== "email") {
-      throw new Error("Tài khoản này sử dụng đăng nhập Google, không thể đặt lại mật khẩu")
+      throw new Error("Tài khoản này sử dụng đăng nhập Google, không thể đặt lại mật khẩu");
     }
 
-    const MAX_SEND_ATTEMPTS = 3
+    const MAX_SEND_ATTEMPTS = 3;
     if ((account.otpSendAttempts || 0) >= MAX_SEND_ATTEMPTS) {
-      throw new Error(`Bạn đã vượt quá số lần gửi OTP. Vui lòng thử lại sau 1 giờ hoặc liên hệ hỗ trợ.`)
+      throw new Error(`Bạn đã vượt quá số lần gửi OTP. Vui lòng thử lại sau 1 giờ hoặc liên hệ hỗ trợ.`);
     }
 
     // Tạo OTP
-    const otp = generateOTP()
-    const otpExpiry = getOTPExpiry()
+    const otp = generateOTP();
+    const otpExpiry = getOTPExpiry();
 
     // Lưu OTP vào database
-    await Account.updateOTP(email, otp, otpExpiry)
+    await Account.updateOTP(email, otp, otpExpiry);
 
     // Gửi OTP qua email
-    await emailService.sendOTP(email, otp)
+    await emailService.sendOTP(email, otp);
 
     return {
       message: "Mã xác thực đã được gửi đến email của bạn",
       email,
       sendAttempts: (account.otpSendAttempts || 0) + 1,
       maxSendAttempts: MAX_SEND_ATTEMPTS,
-    }
+    };
   }
 
   /**
    * Xác thực OTP
    */
   async verifyOTP(verifyOTPDto: VerifyOTPDto) {
-    const { email, otp } = verifyOTPDto
+    const { email, otp } = verifyOTPDto;
 
     // Tìm account theo email
-    const account = await Account.findByEmail(email)
+    const account = await Account.findByEmail(email);
     if (!account) {
-      throw new Error("Email không tồn tại")
+      throw new Error("Email không tồn tại");
     }
 
-    console.log("Verifying OTP - Email:", email, "Stored OTP:", account.otp, "Input OTP:", otp)
+    console.log("Verifying OTP - Email:", email, "Stored OTP:", account.otp, "Input OTP:", otp);
 
-    const MAX_OTP_ATTEMPTS = 5
+    const MAX_OTP_ATTEMPTS = 5;
     if ((account.otpAttempts || 0) >= MAX_OTP_ATTEMPTS) {
-      throw new Error("Bạn đã nhập sai mã OTP quá nhiều lần. Vui lòng gửi lại mã OTP.")
+      throw new Error("Bạn đã nhập sai mã OTP quá nhiều lần. Vui lòng gửi lại mã OTP.");
     }
 
     // Kiểm tra OTP
     if (!account.otp) {
-      throw new Error("Không có OTP nào được gửi cho email này")
+      throw new Error("Không có OTP nào được gửi cho email này");
     }
 
-    console.log("OTP Expiry from DB:", account.otpExpiry, "Type:", typeof account.otpExpiry)
+    console.log("OTP Expiry from DB:", account.otpExpiry, "Type:", typeof account.otpExpiry);
 
     // Kiểm tra OTP hết hạn
     if (!account.otpExpiry || !isOTPValid(account.otpExpiry)) {
-      console.log("OTP Expired - Expiry:", account.otpExpiry)
-      await Account.clearOTP(email)
-      throw new Error("Mã xác thực đã hết hạn, vui lòng yêu cầu mã mới")
+      console.log("OTP Expired - Expiry:", account.otpExpiry);
+      await Account.clearOTP(email);
+      throw new Error("Mã xác thực đã hết hạn, vui lòng yêu cầu mã mới");
     }
 
     // So sánh OTP
     if (account.otp !== otp) {
-      const newAttempts = await Account.incrementOTPAttempts(email)
-      const remainingAttempts = MAX_OTP_ATTEMPTS - newAttempts
+      const newAttempts = await Account.incrementOTPAttempts(email);
+      const remainingAttempts = MAX_OTP_ATTEMPTS - newAttempts;
 
       if (remainingAttempts <= 0) {
-        throw new Error("Bạn đã nhập sai mã OTP quá nhiều lần. Vui lòng gửi lại mã OTP.")
+        throw new Error("Bạn đã nhập sai mã OTP quá nhiều lần. Vui lòng gửi lại mã OTP.");
       }
 
-      throw new Error(`Mã xác thực không chính xác. Còn ${remainingAttempts} lần thử.`)
+      throw new Error(`Mã xác thực không chính xác. Còn ${remainingAttempts} lần thử.`);
     }
 
-    console.log("OTP Verification Success")
+    console.log("OTP Verification Success");
 
     return {
       message: "Xác thực OTP thành công",
       verified: true,
-    }
+    };
   }
 
   /**
    * Đặt lại mật khẩu
    */
   async resetPassword(resetPasswordDto: ResetPasswordDto) {
-    const { email, otp, newPassword, confirmPassword } = resetPasswordDto
+    const { email, otp, newPassword, confirmPassword } = resetPasswordDto;
 
     // Kiểm tra password khớp
     if (newPassword !== confirmPassword) {
-      throw new Error("Mật khẩu xác nhận không khớp")
+      throw new Error("Mật khẩu xác nhận không khớp");
     }
 
     // Kiểm tra độ dài password
     if (newPassword.length < 6) {
-      throw new Error("Mật khẩu phải có ít nhất 6 ký tự")
+      throw new Error("Mật khẩu phải có ít nhất 6 ký tự");
     }
 
     // Verify OTP trước
-    await this.verifyOTP({ email, otp })
+    await this.verifyOTP({ email, otp });
 
-    const account = await Account.findByEmail(email)
+    const account = await Account.findByEmail(email);
     if (!account) {
-      throw new Error("Account không tồn tại")
+      throw new Error("Account không tồn tại");
     }
 
-    console.log("Resetting password - Account ID:", account.id, "Email:", email)
+    console.log("Resetting password - Account ID:", account.id, "Email:", email);
     
     // Cập nhật password
-    await Account.update(account.id, { password: newPassword })
+    await Account.update(account.id, { password: newPassword });
 
     // Xóa OTP
-    await Account.clearOTP(email)
+    await Account.clearOTP(email);
 
     return {
       message: "Mật khẩu đã được đặt lại thành công",
       success: true,
-    }
+    };
   }
 }
-
-

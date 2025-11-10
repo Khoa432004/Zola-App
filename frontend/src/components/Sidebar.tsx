@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
+import { useAuth } from '@/hooks/useAuth';
 import UserProfileModal from './UserProfileModal';
 
 interface SidebarProps {
@@ -12,6 +13,7 @@ export default function Sidebar({ activePage = 'chat', onPageChange }: SidebarPr
   const [showSettingsMenu, setShowSettingsMenu] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const settingsMenuRef = useRef<HTMLDivElement>(null);
+  const { logout } = useAuth();
 
   // Close menu when clicking outside
   useEffect(() => {
@@ -30,14 +32,17 @@ export default function Sidebar({ activePage = 'chat', onPageChange }: SidebarPr
     };
   }, [showSettingsMenu]);
 
-  const handleLogout = () => {
-    // TODO: Implement logout logic
-    console.log('Logout');
-    setShowSettingsMenu(false);
+  const handleLogout = async () => {
+    try {
+      setShowSettingsMenu(false);
+      await logout();
+    } catch (error) {
+      console.error('Logout error:', error);
+      setShowSettingsMenu(false);
+    }
   };
 
   const handleExit = () => {
-    // TODO: Implement exit logic
     console.log('Exit');
     setShowSettingsMenu(false);
   };
@@ -161,6 +166,37 @@ export default function Sidebar({ activePage = 'chat', onPageChange }: SidebarPr
       </div>
       
       <div style={{ flex: 1 }} />
+      
+      <div 
+        onClick={handleLogout}
+        style={{ 
+          width: 40, 
+          height: 40, 
+          borderRadius: 10, 
+          display: "flex", 
+          alignItems: "center", 
+          justifyContent: "center",
+          cursor: "pointer",
+          opacity: 0.9,
+          transition: "all 0.2s",
+          marginBottom: 8
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.opacity = "1";
+          e.currentTarget.style.background = "rgba(255,255,255,0.2)";
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.opacity = "0.9";
+          e.currentTarget.style.background = "transparent";
+        }}
+        title="Đăng xuất"
+      >
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+          <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+          <polyline points="16 17 21 12 16 7" />
+          <line x1="21" y1="12" x2="9" y2="12" />
+        </svg>
+      </div>
       
       {/* Settings icon with menu */}
       <div style={{ position: "relative" }} ref={settingsMenuRef}>

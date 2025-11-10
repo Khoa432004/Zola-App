@@ -1,4 +1,5 @@
 import { useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { useAppDispatch, useAppSelector } from '@/store/hooks';
 import { loginAsync, googleLoginAsync, logoutAsync, clearError } from '@/store/slices/authSlice';
 import { LoginRequest, GoogleLoginRequest } from '@/services/api';
@@ -7,6 +8,7 @@ import { auth, googleProvider } from '@/lib/firebase';
 
 export const useAuth = () => {
   const dispatch = useAppDispatch();
+  const router = useRouter();
   const { user, token, isLoading, error, isAuthenticated } = useAppSelector(
     (state) => state.auth
   );
@@ -57,9 +59,13 @@ export const useAuth = () => {
   );
 
   const logout = useCallback(async () => {
-    const result = await dispatch(logoutAsync());
-    return result;
-  }, [dispatch]);
+    try {
+      await dispatch(logoutAsync());
+      router.push('/login');
+    } catch (error: any) {
+      router.push('/login');
+    }
+  }, [dispatch, router]);
 
   const clearAuthError = useCallback(() => {
     dispatch(clearError());

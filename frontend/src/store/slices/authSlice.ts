@@ -81,12 +81,19 @@ export const logoutAsync = createAsyncThunk(
   'auth/logout',
   async (_, { rejectWithValue }) => {
     try {
-      // Clear localStorage
+      try {
+        await apiService.logout();
+      } catch (apiError) {
+        console.warn('Logout API call failed, but continuing with client-side logout:', apiError);
+      }
       localStorage.removeItem('token');
       localStorage.removeItem('account');
       localStorage.removeItem('rememberMe');
       return true;
     } catch (error: any) {
+      localStorage.removeItem('token');
+      localStorage.removeItem('account');
+      localStorage.removeItem('rememberMe');
       return rejectWithValue(error.message || 'Logout failed');
     }
   })

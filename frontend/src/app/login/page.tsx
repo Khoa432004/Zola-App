@@ -66,8 +66,8 @@ export default function LoginPage() {
 
       await loginWithGoogle();
 
-      // Redirect về trang chủ sau khi đăng nhập thành công
-      router.push('/');
+      // Redirect về trang chat sau khi đăng nhập thành công
+      router.push('/chat');
     } catch (error: any) {
       console.error('Google login error:', error);
       setLocalError(error.message || (language === 'vi' ? 'Đăng nhập Google thất bại' : 'Google login failed'));

@@ -168,6 +168,15 @@ class ApiService {
       throw new Error(error.response?.data?.message || "Có lỗi xảy ra")
     }
   }
+
+  async logout(): Promise<AuthResponse> {
+    try {
+      const response = await this.axiosInstance.post<AuthResponse>("/auth/logout");
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.message || "Có lỗi xảy ra");
+    }
+  }
 }
 
 export const apiService = new ApiService();
