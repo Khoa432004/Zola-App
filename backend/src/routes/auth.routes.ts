@@ -8,6 +8,10 @@ const authController = new AuthController();
 router.post('/login', (req, res) => authController.login(req, res)); // Đăng nhập email/password
 router.post('/google', (req, res) => authController.googleLogin(req, res)); // Đăng nhập Google
 
+router.post("/forgot-password", (req, res) => authController.forgotPassword(req, res))
+router.post("/verify-otp", (req, res) => authController.verifyOTP(req, res))
+router.post("/reset-password", (req, res) => authController.resetPassword(req, res))
+
 export default router;
 
 

@@ -13,6 +13,8 @@ export interface AuthState {
   isLoading: boolean;
   error: string | null;
   isAuthenticated: boolean;
+  resetPasswordEmail: string | null
+  otpVerified: boolean
 }
 
 const initialState: AuthState = {
@@ -21,6 +23,8 @@ const initialState: AuthState = {
   isLoading: false,
   error: null,
   isAuthenticated: false,
+  resetPasswordEmail: null,
+  otpVerified: false,
 };
 
 // Load user from localStorage on initialization
@@ -85,7 +89,54 @@ export const logoutAsync = createAsyncThunk(
     } catch (error: any) {
       return rejectWithValue(error.message || 'Logout failed');
     }
-  }
+  })
+
+  export const forgotPasswordAsync = createAsyncThunk(
+  "auth/forgotPassword",
+  async (credentials: { email: string }, { rejectWithValue }) => {
+    try {
+      const response = await apiService.forgotPassword(credentials)
+      if (response.success && response.data) {
+        return response.data
+      }
+      return rejectWithValue(response.message || "Yêu cầu thất bại")
+    } catch (error: any) {
+      return rejectWithValue(error.message || "Có lỗi xảy ra")
+    }
+  },
+)
+
+export const verifyOTPAsync = createAsyncThunk(
+  "auth/verifyOTP",
+  async (credentials: { email: string; otp: string }, { rejectWithValue }) => {
+    try {
+      const response = await apiService.verifyOTP(credentials)
+      if (response.success && response.data) {
+        return response.data
+      }
+      return rejectWithValue(response.message || "Xác thực thất bại")
+    } catch (error: any) {
+      return rejectWithValue(error.message || "Có lỗi xảy ra")
+    }
+  },
+)
+
+export const resetPasswordAsync = createAsyncThunk(
+  "auth/resetPassword",
+  async (
+    credentials: { email: string; otp: string; newPassword: string; confirmPassword: string },
+    { rejectWithValue },
+  ) => {
+    try {
+      const response = await apiService.resetPassword(credentials)
+      if (response.success) {
+        return response.data
+      }
+      return rejectWithValue(response.message || "Đặt lại mật khẩu thất bại")
+    } catch (error: any) {
+      return rejectWithValue(error.message || "Có lỗi xảy ra")
+    }
+  },
 );
 
 const authSlice = createSlice({
@@ -156,9 +207,55 @@ const authSlice = createSlice({
         state.isLoading = false;
         state.error = action.payload as string;
       });
+    
+
+       builder
+      .addCase(forgotPasswordAsync.pending, (state) => {
+        state.isLoading = true
+        state.error = null
+      })
+      .addCase(forgotPasswordAsync.fulfilled, (state, action) => {
+        state.isLoading = false
+        state.resetPasswordEmail = action.payload.email
+        state.error = null
+      })
+      .addCase(forgotPasswordAsync.rejected, (state, action) => {
+        state.isLoading = false
+        state.error = action.payload as string
+      })
+
+    builder
+      .addCase(verifyOTPAsync.pending, (state) => {
+        state.isLoading = true
+        state.error = null
+      })
+      .addCase(verifyOTPAsync.fulfilled, (state) => {
+        state.isLoading = false
+        state.otpVerified = true
+        state.error = null
+      })
+      .addCase(verifyOTPAsync.rejected, (state, action) => {
+        state.isLoading = false
+        state.error = action.payload as string
+      })
+
+    builder
+      .addCase(resetPasswordAsync.pending, (state) => {
+        state.isLoading = true
+        state.error = null
+      })
+      .addCase(resetPasswordAsync.fulfilled, (state) => {
+        state.isLoading = false
+        state.resetPasswordEmail = null
+        state.otpVerified = false
+        state.error = null
+      })
+      .addCase(resetPasswordAsync.rejected, (state, action) => {
+        state.isLoading = false
+        state.error = action.payload as string
+      })
   },
 });
-
 export const { clearError, setCredentials } = authSlice.actions;
 export default authSlice.reducer;
 

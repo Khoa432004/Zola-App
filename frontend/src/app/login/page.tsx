@@ -16,6 +16,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [localError, setLocalError] = useState('');
+  const [showForgotPassword, setShowForgotPassword] = useState(false)
 
   // Hiển thị lỗi từ Redux
   useEffect(() => {
@@ -50,7 +51,7 @@ export default function LoginPage() {
       }
 
       // Redirect về trang chủ sau khi đăng nhập thành công
-      router.push('/');
+      router.push('/chat');
     } catch (error: any) {
       // Lỗi sẽ được xử lý bởi Redux và hiển thị qua authError
       console.error('Login error:', error);
