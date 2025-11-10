@@ -5,14 +5,17 @@ const router = Router();
 const authController = new AuthController();
 
 // Routes
-router.post("/login", (req, res) => authController.login(req, res)); // Đăng nhập email/password
-router.post("/google", (req, res) => authController.googleLogin(req, res)); // Đăng nhập Google
+router.post("/login", (req, res) => authController.login(req, res));
+router.post("/google", (req, res) => authController.googleLogin(req, res));
 
 // Gửi OTP
 router.post("/send-otp", (req, res) => authController.sendOtp(req, res));
 
-// Xác minh OTP (for password reset)
-router.post("/verify-otp", (req, res) => authController.verifyOTP(req, res));
+  // Xác minh OTP (for registration - từ Firestore)
+router.post("/verify-otp", (req, res) => authController.verifyOtp(req, res));
+
+// Xác minh OTP (for password reset - từ Account database)
+router.post("/verify-otp-reset", (req, res) => authController.verifyOTP(req, res));
 
 // Yêu cầu đặt lại mật khẩu
 router.post("/forgot-password", (req, res) => authController.forgotPassword(req, res));

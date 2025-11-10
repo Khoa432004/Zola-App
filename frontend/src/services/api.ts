@@ -146,9 +146,10 @@ class ApiService {
     }
   }
 
+  // Xác minh OTP cho reset password (từ Account database)
   async verifyOTP(credentials: { email: string; otp: string }): Promise<any> {
     try {
-      const response = await this.axiosInstance.post<any>("/auth/verify-otp", credentials)
+      const response = await this.axiosInstance.post<any>("/auth/verify-otp-reset", credentials)
       return response.data
     } catch (error: any) {
       throw new Error(error.response?.data?.message || "Có lỗi xảy ra")
