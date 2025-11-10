@@ -11,7 +11,7 @@ router.post("/google", (req, res) => authController.googleLogin(req, res));
 // Gửi OTP
 router.post("/send-otp", (req, res) => authController.sendOtp(req, res));
 
-  // Xác minh OTP (for registration - từ Firestore)
+// Xác minh OTP (for registration - từ Firestore)
 router.post("/verify-otp", (req, res) => authController.verifyOtp(req, res));
 
 // Xác minh OTP (for password reset - từ Account database)

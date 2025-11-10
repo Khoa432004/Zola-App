@@ -178,6 +178,25 @@ class ApiService {
       throw new Error(error.response?.data?.message || "Có lỗi xảy ra");
     }
   }
+
+  // Profile
+  async getProfile() {
+    try {
+      const response = await this.axiosInstance.get("/profile/me");
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.message || "Không lấy được hồ sơ");
+    }
+  }
+
+  async updateProfile(payload: { name?: string; phone?: string }) {
+    try {
+      const response = await this.axiosInstance.patch("/profile", payload);
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.message || "Cập nhật hồ sơ thất bại");
+    }
+  }
 }
 
 export const apiService = new ApiService();

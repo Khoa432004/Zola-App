@@ -5,11 +5,18 @@ export class EmailService {
 
   constructor() {
     // Cấu hình Gmail SMTP
+    const emailUser = process.env.EMAIL_USER || process.env.MAIL_USER
+    const emailPassword = process.env.EMAIL_PASSWORD || process.env.MAIL_PASS
+
+    if (!emailUser || !emailPassword) {
+      throw new Error("Thiếu cấu hình EMAIL_USER/EMAIL_PASSWORD cho EmailService")
+    }
+
     this.transporter = nodemailer.createTransport({
       service: "gmail",
       auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASSWORD,
+        user: emailUser,
+        pass: emailPassword,
       },
     })
   }
@@ -20,7 +27,7 @@ export class EmailService {
   async sendOTP(email: string, otp: string): Promise<boolean> {
     try {
       const mailOptions = {
-        from: process.env.EMAIL_USER,
+        from: process.env.EMAIL_USER || process.env.MAIL_USER,
         to: email,
         subject: "Mã xác thực đặt lại mật khẩu Zola",
         html: `

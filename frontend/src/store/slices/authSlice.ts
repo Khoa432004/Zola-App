@@ -8,6 +8,7 @@ export interface AuthState {
     email: string;
     name: string;
     avatar?: string;
+    phone?: string;
   } | null;
   token: string | null;
   isLoading: boolean;
@@ -98,6 +99,43 @@ export const logoutAsync = createAsyncThunk(
     }
   })
 
+export const fetchProfileAsync = createAsyncThunk(
+  'auth/fetchProfile',
+  async (_, { rejectWithValue }) => {
+    try {
+      const response = await apiService.getProfile();
+      if (response.success && response.data) {
+        if (typeof window !== 'undefined') {
+          const saved = JSON.parse(localStorage.getItem('account') || '{}');
+          localStorage.setItem('account', JSON.stringify({ ...saved, ...response.data }));
+        }
+        return response.data;
+      }
+      return rejectWithValue(response.message || 'Fetch profile failed');
+    } catch (error: any) {
+      return rejectWithValue(error.message || 'Fetch profile failed');
+    }
+  }
+);
+
+export const updateProfileAsync = createAsyncThunk(
+  'auth/updateProfile',
+  async (payload: { name?: string; phone?: string }, { rejectWithValue }) => {
+    try {
+      const response = await apiService.updateProfile(payload);
+      if (response.success && response.data) {
+        if (typeof window !== 'undefined') {
+          const saved = JSON.parse(localStorage.getItem('account') || '{}');
+          localStorage.setItem('account', JSON.stringify({ ...saved, ...response.data }));
+        }
+        return response.data;
+      }
+      return rejectWithValue(response.message || 'Update profile failed');
+    } catch (error: any) {
+      return rejectWithValue(error.message || 'Update profile failed');
+    }
+  }
+);
   export const forgotPasswordAsync = createAsyncThunk(
   "auth/forgotPassword",
   async (credentials: { email: string }, { rejectWithValue }) => {
@@ -214,7 +252,46 @@ const authSlice = createSlice({
         state.isLoading = false;
         state.error = action.payload as string;
       });
-    
+
+    // Fetch Profile
+    builder
+      .addCase(fetchProfileAsync.pending, (state) => {
+        state.isLoading = true;
+        state.error = null;
+      })
+      .addCase(fetchProfileAsync.fulfilled, (state, action) => {
+        state.isLoading = false;
+        if (state.user) {
+          state.user = { ...state.user, ...action.payload };
+        } else {
+          state.user = action.payload as AuthState['user'];
+        }
+        state.error = null;
+      })
+      .addCase(fetchProfileAsync.rejected, (state, action) => {
+        state.isLoading = false;
+        state.error = action.payload as string;
+      });
+
+    // Update Profile
+    builder
+      .addCase(updateProfileAsync.pending, (state) => {
+        state.isLoading = true;
+        state.error = null;
+      })
+      .addCase(updateProfileAsync.fulfilled, (state, action) => {
+        state.isLoading = false;
+        if (state.user) {
+          state.user = { ...state.user, ...action.payload };
+        } else {
+          state.user = action.payload as AuthState['user'];
+        }
+        state.error = null;
+      })
+      .addCase(updateProfileAsync.rejected, (state, action) => {
+        state.isLoading = false;
+        state.error = action.payload as string;
+      });
 
        builder
       .addCase(forgotPasswordAsync.pending, (state) => {

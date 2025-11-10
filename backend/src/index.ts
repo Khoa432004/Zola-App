@@ -4,6 +4,7 @@ import express from "express";
 import cors from "cors";
 import { firestore } from "./config/firebase-admin";
 import authRoutes from "./routes/auth.routes";
+import profileRoutes from "./routes/profile.routes";
 
 const app = express();
 
@@ -29,6 +30,8 @@ app.get("/health", (_req, res) => {
 
 // Authentication routes
 app.use("/api/auth", authRoutes);
+// Profile routes
+app.use("/api/profile", profileRoutes);
 
 // Start server
 const port = Number(process.env.PORT) || 4000;
