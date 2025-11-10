@@ -11,6 +11,7 @@ export interface IAccount {
   password?: string;
   name: string;
   avatar?: string;
+  phone?: string;
   provider: 'email' | 'google';
   googleId?: string;
   otp?: string

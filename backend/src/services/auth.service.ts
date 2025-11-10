@@ -258,16 +258,23 @@ export class AuthService {
       console.log("✅ [SEND OTP] OTP Generated:", otp);
 
       // ✅ Gửi email bằng Gmail
+      const emailUser = process.env.EMAIL_USER || process.env.MAIL_USER;
+      const emailPassword = process.env.EMAIL_PASSWORD || process.env.MAIL_PASS;
+
+      if (!emailUser || !emailPassword) {
+        throw new Error("Thiếu cấu hình EMAIL_USER/EMAIL_PASSWORD");
+      }
+
       const transporter = nodemailer.createTransport({
         service: "gmail",
         auth: {
-          user: process.env.MAIL_USER,
-          pass: process.env.MAIL_PASS,
+          user: emailUser,
+          pass: emailPassword,
         },
       });
 
       await transporter.sendMail({
-        from: process.env.MAIL_USER,
+        from: emailUser,
         to: email,
         subject: "Mã OTP Zola",
         text: `Mã OTP của bạn là: ${otp}`,
