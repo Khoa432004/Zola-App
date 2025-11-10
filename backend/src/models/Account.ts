@@ -13,6 +13,11 @@ export interface IAccount {
   avatar?: string;
   provider: 'email' | 'google';
   googleId?: string;
+  otp?: string
+  otpExpiry?: Date
+  otpAttempts?: number
+  otpSendAttempts?: number
+  otpLastSendTime?: Date
   createdAt: Date;
   updatedAt: Date;
 }
@@ -36,11 +41,14 @@ export class Account {
     }
 
     const doc = snapshot.docs[0];
+    const data = doc.data();
     return {
       id: doc.id,
       ...doc.data(),
       createdAt: doc.data().createdAt?.toDate() || new Date(),
       updatedAt: doc.data().updatedAt?.toDate() || new Date(),
+      otpExpiry: data.otpExpiry?.toDate() || undefined,
+      otpLastSendTime: data.otpLastSendTime?.toDate() || undefined,
     } as IAccount;
   }
 
@@ -65,6 +73,7 @@ export class Account {
       ...doc.data(),
       createdAt: doc.data().createdAt?.toDate() || new Date(),
       updatedAt: doc.data().updatedAt?.toDate() || new Date(),
+      otpLastSendTime: doc.data().otpLastSendTime?.toDate() || undefined,
     } as IAccount;
   }
 
@@ -87,6 +96,7 @@ export class Account {
       ...doc.data(),
       createdAt: doc.data()?.createdAt?.toDate() || new Date(),
       updatedAt: doc.data()?.updatedAt?.toDate() || new Date(),
+      otpLastSendTime: doc.data()?.otpLastSendTime?.toDate() || undefined,
     } as IAccount;
   }
 
@@ -111,6 +121,7 @@ export class Account {
             ...doc.data(),
             createdAt: doc.data().createdAt?.toDate() || new Date(),
             updatedAt: doc.data().updatedAt?.toDate() || new Date(),
+            otpLastSendTime: doc.data()?.otpLastSendTime?.toDate() || undefined,
           } as IAccount;
         }
       } catch (emailError: any) {
@@ -132,6 +143,7 @@ export class Account {
             ...doc.data(),
             createdAt: doc.data().createdAt?.toDate() || new Date(),
             updatedAt: doc.data().updatedAt?.toDate() || new Date(),
+            otpLastSendTime: doc.data()?.otpLastSendTime?.toDate() || undefined,
           } as IAccount;
         }
       } catch (googleError: any) {
@@ -179,6 +191,7 @@ export class Account {
       ...doc.data(),
       createdAt: doc.data()?.createdAt?.toDate() || new Date(),
       updatedAt: doc.data()?.updatedAt?.toDate() || new Date(),
+      otpLastSendTime: doc.data()?.otpLastSendTime?.toDate() || undefined,
     } as IAccount;
   }
 
@@ -214,6 +227,7 @@ export class Account {
       ...updatedDoc.data(),
       createdAt: updatedDoc.data()?.createdAt?.toDate() || new Date(),
       updatedAt: updatedDoc.data()?.updatedAt?.toDate() || new Date(),
+      otpLastSendTime: updatedDoc.data()?.otpLastSendTime?.toDate() || undefined,
     } as IAccount;
   }
 
@@ -222,5 +236,106 @@ export class Account {
    */
   static async comparePassword(hashedPassword: string, candidatePassword: string): Promise<boolean> {
     return bcrypt.compare(candidatePassword, hashedPassword);
+  }
+
+  /**
+   * Cập nhật OTP cho account
+   */
+  static async updateOTP(email: string, otp: string, otpExpiry: Date): Promise<void> {
+    if (!firestore) {
+      throw new Error("Firestore not initialized")
+    }
+
+    const accountsRef = firestore.collection(this.collection)
+    const snapshot = await accountsRef.where("email", "==", email.toLowerCase()).limit(1).get()
+
+    if (snapshot.empty) {
+      throw new Error("Account không tồn tại")
+    }
+
+    const doc = snapshot.docs[0]
+    await doc.ref.update({
+      otp,
+      otpExpiry: admin.firestore.Timestamp.fromDate(otpExpiry),
+      otpAttempts: 0,
+      otpSendAttempts: (doc.data().otpSendAttempts || 0) + 1,
+      otpLastSendTime: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    })
+  }
+
+  /**
+   * Tăng số lần nhập sai OTP
+   */
+  static async incrementOTPAttempts(email: string): Promise<number> {
+    if (!firestore) {
+      throw new Error("Firestore not initialized")
+    }
+
+    const accountsRef = firestore.collection(this.collection)
+    const snapshot = await accountsRef.where("email", "==", email.toLowerCase()).limit(1).get()
+
+    if (snapshot.empty) {
+      throw new Error("Account không tồn tại")
+    }
+
+    const doc = snapshot.docs[0]
+    const newAttempts = (doc.data().otpAttempts || 0) + 1
+
+    await doc.ref.update({
+      otpAttempts: newAttempts,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    })
+
+    return newAttempts
+  }
+
+  /**
+   * Reset OTP send attempts
+   */
+  static async resetOTPSendAttempts(email: string): Promise<void> {
+    if (!firestore) {
+      throw new Error("Firestore not initialized")
+    }
+
+    const accountsRef = firestore.collection(this.collection)
+    const snapshot = await accountsRef.where("email", "==", email.toLowerCase()).limit(1).get()
+
+    if (snapshot.empty) {
+      throw new Error("Account không tồn tại")
+    }
+
+    const doc = snapshot.docs[0]
+    await doc.ref.update({
+      otpSendAttempts: 0,
+      otpLastSendTime: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    })
+  }
+
+  /**
+   * Xóa OTP sau khi xác thực thành công
+   */
+  static async clearOTP(email: string): Promise<void> {
+    if (!firestore) {
+      throw new Error("Firestore not initialized")
+    }
+
+    const accountsRef = firestore.collection(this.collection)
+    const snapshot = await accountsRef.where("email", "==", email.toLowerCase()).limit(1).get()
+
+    if (snapshot.empty) {
+      throw new Error("Account không tồn tại")
+    }
+
+    const doc = snapshot.docs[0]
+    await doc.ref.update({
+      otp: admin.firestore.FieldValue.delete(),
+      otpExpiry: admin.firestore.FieldValue.delete(),
+      otpAttempts: admin.firestore.FieldValue.delete(),
+      otpSendAttempts: admin.firestore.FieldValue.delete(),
+      otpLastSendTime: admin.firestore.FieldValue.delete(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    })
   }
 }

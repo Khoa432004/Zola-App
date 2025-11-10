@@ -136,6 +136,38 @@ class ApiService {
       );
     }
   }
+
+  async forgotPassword(credentials: { email: string }): Promise<any> {
+    try {
+      const response = await this.axiosInstance.post<any>("/auth/forgot-password", credentials)
+      return response.data
+    } catch (error: any) {
+      throw new Error(error.response?.data?.message || "Có lỗi xảy ra")
+    }
+  }
+
+  async verifyOTP(credentials: { email: string; otp: string }): Promise<any> {
+    try {
+      const response = await this.axiosInstance.post<any>("/auth/verify-otp", credentials)
+      return response.data
+    } catch (error: any) {
+      throw new Error(error.response?.data?.message || "Có lỗi xảy ra")
+    }
+  }
+
+  async resetPassword(credentials: {
+    email: string
+    otp: string
+    newPassword: string
+    confirmPassword: string
+  }): Promise<any> {
+    try {
+      const response = await this.axiosInstance.post<any>("/auth/reset-password", credentials)
+      return response.data
+    } catch (error: any) {
+      throw new Error(error.response?.data?.message || "Có lỗi xảy ra")
+    }
+  }
 }
 
 export const apiService = new ApiService();

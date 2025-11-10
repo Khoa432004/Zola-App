@@ -28,4 +28,18 @@ export interface RegisterDto {
   email: string;
   password: string;
   name: string;
+export interface ForgotPasswordDto {
+  email: string
+}
+
+export interface VerifyOTPDto {
+  email: string
+  otp: string
+}
+
+export interface ResetPasswordDto {
+  email: string
+  otp: string
+  newPassword: string
+  confirmPassword: string
 }
