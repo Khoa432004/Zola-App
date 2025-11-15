@@ -1,6 +1,8 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
+import { useAppDispatch, useAppSelector } from '@/store/hooks';
+import { fetchProfileAsync, updateProfileAsync } from '@/store/slices/authSlice';
 import { X, Edit3, Lock } from 'lucide-react';
 import ChangePasswordModal from './ChangePasswordModal';
 import styles from './profileModal.module.css';
@@ -11,20 +13,38 @@ interface UserProfileModalProps {
 }
 
 export default function UserProfileModal({ isOpen, onClose }: UserProfileModalProps) {
+  const dispatch = useAppDispatch();
+  const user = useAppSelector(s => s.auth.user);
+  const isLoading = useAppSelector(s => s.auth.isLoading);
+  const error = useAppSelector(s => s.auth.error);
   const [showChangePassword, setShowChangePassword] = useState(false);
-  const [fullName, setFullName] = useState('Khoa');
-  const [email, setEmail] = useState('donguyendangkhoa0403@gmail.com');
-  const [phoneNumber, setPhoneNumber] = useState('0XXXXXXXXX');
+  const [fullName, setFullName] = useState('');
+  const [email, setEmail] = useState('');
+  const [phoneNumber, setPhoneNumber] = useState('');
   const [profileImage, setProfileImage] = useState('');
   const [isUpdating, setIsUpdating] = useState(false);
+  const [updateError, setUpdateError] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (isOpen) {
-      // TODO: Fetch user profile data
-      // Load user data from auth state or API
+      // nạp từ store nếu có, đồng thời fetch mới
+      setFullName(user?.name || '');
+      setEmail(user?.email || '');
+      setPhoneNumber(user?.phone || '');
+      setUpdateError('');
+      dispatch(fetchProfileAsync());
     }
-  }, [isOpen]);
+  }, [isOpen, dispatch]);
+
+  // Cập nhật form khi user data thay đổi
+  useEffect(() => {
+    if (user) {
+      setFullName(user.name || '');
+      setEmail(user.email || '');
+      setPhoneNumber(user.phone || '');
+    }
+  }, [user]);
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -40,16 +60,21 @@ export default function UserProfileModal({ isOpen, onClose }: UserProfileModalPr
 
   const handleUpdateProfile = async (e: React.FormEvent) => {
     e.preventDefault();
+    setUpdateError('');
     setIsUpdating(true);
+    
     try {
-      // TODO: Call API to update profile
-      // await apiService.updateProfile({ fullName, phoneNumber, profileImage });
-      console.log('Updating profile:', { fullName, email, phoneNumber });
+      const result = await dispatch(updateProfileAsync({ name: fullName, phone: phoneNumber }));
       
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      onClose();
+      if (updateProfileAsync.fulfilled.match(result)) {
+        // Update thành công, đóng modal
+        onClose();
+      } else {
+        // Update thất bại
+        setUpdateError(result.payload as string || 'Cập nhật thất bại');
+      }
     } catch (error: any) {
+      setUpdateError(error.message || 'Cập nhật thất bại');
       console.error('Update profile error:', error);
     } finally {
       setIsUpdating(false);
@@ -83,6 +108,13 @@ export default function UserProfileModal({ isOpen, onClose }: UserProfileModalPr
 
           {/* Content */}
           <form onSubmit={handleUpdateProfile} className={styles.form}>
+            {/* Error message */}
+            {updateError && (
+              <div className={styles.errorMessage} style={{ marginBottom: '1rem' }}>
+                {updateError}
+              </div>
+            )}
+            
             {/* Profile Picture */}
             <div className={styles.avatarContainer}>
               <div
