@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useAppSelector } from "@/store/hooks";
 import ChatPanel from "./ChatPanel";
 
 interface Conversation {
@@ -17,6 +18,7 @@ interface Conversation {
 export default function ChatLayout() {
   const router = useRouter();
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
+  const user = useAppSelector((state) => state.auth.user);
 
   const conversations: Conversation[] = [
     {
@@ -107,7 +109,10 @@ export default function ChatLayout() {
         </div>
         
         {/* Conversation items */}
-        <div style={{ flex: 1, overflowY: "auto" }}>
+        <div style={{ 
+          flex: 1, 
+          overflowY: "auto"
+        }}>
           {conversations.map((conv) => (
             <div
               key={conv.id}
@@ -204,7 +209,7 @@ export default function ChatLayout() {
               marginBottom: 12,
               lineHeight: 1.2
             }}>
-              Chào mừng bạn đến với ZolaChat
+              {user?.name ? `Chào mừng ${user.name} đến với ZolaChat` : 'Chào mừng bạn đến với ZolaChat'}
             </h2>
             
             <p style={{ 

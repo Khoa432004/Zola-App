@@ -44,3 +44,35 @@ a {
     color-scheme: dark;
   }
 }
+
+/* Hide scrollbar for all browsers */
+* {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+*::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+/* Ensure inputs and form elements are interactive */
+input, textarea, select, button {
+  pointer-events: auto !important;
+}
+
+/* Ensure text is visible in inputs */
+input[type="text"],
+input[type="email"],
+input[type="password"],
+textarea,
+select {
+  color: #111827 !important;
+  -webkit-text-fill-color: #111827 !important;
+}
+
+select option {
+  color: #111827 !important;
+  background: #ffffff !important;
+}

@@ -154,7 +154,10 @@ export default function FriendsLayout() {
         </div>
 
         {/* Friends List */}
-        <div style={{ flex: 1, overflowY: "auto" }}>
+        <div style={{ 
+          flex: 1, 
+          overflowY: "auto"
+        }}>
           {filteredFriends.map((friend) => (
             <div
               key={friend.id}

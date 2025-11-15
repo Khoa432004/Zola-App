@@ -197,6 +197,133 @@ class ApiService {
       throw new Error(error.response?.data?.message || "Cập nhật hồ sơ thất bại");
     }
   }
+
+  // Posts
+  async getPosts(limit?: number) {
+    try {
+      const params = limit ? { limit } : {};
+      const response = await this.axiosInstance.get("/posts", { params });
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.message || "Không lấy được bài đăng");
+    }
+  }
+
+  async getFeaturedPosts(limit?: number) {
+    try {
+      const params = limit ? { limit } : {};
+      const response = await this.axiosInstance.get("/posts/featured", { params });
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.message || "Không lấy được bài đăng nổi bật");
+    }
+  }
+
+  async getMyPosts(limit?: number) {
+    try {
+      const params = limit ? { limit } : {};
+      const response = await this.axiosInstance.get("/posts/my", { params });
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.message || "Không lấy được bài đăng của tôi");
+    }
+  }
+
+  async createPost(formData: FormData) {
+    try {
+      const response = await this.axiosInstance.post("/posts", formData, {
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
+      });
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.message || "Không thể đăng bài");
+    }
+  }
+
+  async updatePost(postId: string, formData: FormData) {
+    try {
+      const response = await this.axiosInstance.put(`/posts/${postId}`, formData, {
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
+      });
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.message || "Không thể cập nhật bài viết");
+    }
+  }
+
+  async deletePost(postId: string) {
+    try {
+      const response = await this.axiosInstance.delete(`/posts/${postId}`);
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.message || "Không thể xóa bài viết");
+    }
+  }
+
+  async getDeletedPosts(limit?: number) {
+    try {
+      const params = limit ? { limit } : {};
+      const response = await this.axiosInstance.get("/posts/deleted", { params });
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.message || "Không lấy được bài viết đã xóa");
+    }
+  }
+
+  async restorePost(postId: string) {
+    try {
+      const response = await this.axiosInstance.post(`/posts/${postId}/restore`);
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.message || "Không thể khôi phục bài viết");
+    }
+  }
+
+  async getCommentsByPost(postId: string, limit?: number) {
+    try {
+      const params = limit ? { limit } : {};
+      const response = await this.axiosInstance.get(`/comments/post/${postId}`, { params });
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.message || "Không lấy được bình luận");
+    }
+  }
+
+  async createComment(targetId: string, content: string) {
+    try {
+      const response = await this.axiosInstance.post('/comments', {
+        targetId,
+        content
+      });
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.message || "Không thể tạo bình luận");
+    }
+  }
+
+  async updateComment(commentId: string, content: string) {
+    try {
+      const response = await this.axiosInstance.put(`/comments/${commentId}`, {
+        content
+      });
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.message || "Không thể cập nhật bình luận");
+    }
+  }
+
+  async deleteComment(commentId: string) {
+    try {
+      const response = await this.axiosInstance.delete(`/comments/${commentId}`);
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.message || "Không thể xóa bình luận");
+    }
+  }
 }
 
 export const apiService = new ApiService();
