@@ -2,6 +2,8 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
+import { useAppDispatch, useAppSelector } from '@/store/hooks';
+import { fetchProfileAsync } from '@/store/slices/authSlice';
 import UserProfileModal from './UserProfileModal';
 import MyPostsModal from './MyPostsModal';
 import TrashModal from './TrashModal';
@@ -20,12 +22,21 @@ export default function Sidebar({ activePage = 'chat', onPageChange }: SidebarPr
   const [mounted, setMounted] = useState(false);
   const settingsMenuRef = useRef<HTMLDivElement>(null);
   const userMenuRef = useRef<HTMLDivElement>(null);
+  const dispatch = useAppDispatch();
   const { logout, user } = useAuth();
+  const token = useAppSelector((state) => state.auth.token);
 
   // Fix hydration mismatch by only rendering after mount
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  // Fetch profile khi component mount và có token
+  useEffect(() => {
+    if (mounted && token && user) {
+      dispatch(fetchProfileAsync());
+    }
+  }, [mounted, token, dispatch]);
   
   // Lấy chữ cái đầu của tên user hoặc email
   const getInitial = () => {
