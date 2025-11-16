@@ -200,13 +200,30 @@ class ApiService {
     }
   }
 
-  async updateProfile(payload: { name?: string; phone?: string }) {
+  async updateProfile(payload: { name?: string; phone?: string; address?: string; bio?: string; avatar?: string }) {
     try {
       const response = await this.axiosInstance.patch("/profile", payload);
       return response.data;
     } catch (error: any) {
       throw new Error(
         error.response?.data?.message || "Cập nhật hồ sơ thất bại"
+      );
+    }
+  }
+
+  async uploadAvatar(file: File) {
+    try {
+      const formData = new FormData();
+      formData.append("avatar", file);
+      const response = await this.axiosInstance.post("/profile/avatar", formData, {
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
+      });
+      return response.data;
+    } catch (error: any) {
+      throw new Error(
+        error.response?.data?.message || "Không thể upload ảnh đại diện"
       );
     }
   }

@@ -21,7 +21,10 @@ export default function UserProfileModal({ isOpen, onClose }: UserProfileModalPr
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
+  const [address, setAddress] = useState('');
+  const [bio, setBio] = useState('');
   const [profileImage, setProfileImage] = useState('');
+  const [avatarUrl, setAvatarUrl] = useState('');
   const [isUpdating, setIsUpdating] = useState(false);
   const [updateError, setUpdateError] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -32,6 +35,10 @@ export default function UserProfileModal({ isOpen, onClose }: UserProfileModalPr
       setFullName(user?.name || '');
       setEmail(user?.email || '');
       setPhoneNumber(user?.phone || '');
+      setAddress(user?.address || '');
+      setBio(user?.bio || '');
+      setProfileImage(user?.avatar || '');
+      setAvatarUrl(user?.avatar || '');
       setUpdateError('');
       dispatch(fetchProfileAsync());
     }
@@ -43,18 +50,55 @@ export default function UserProfileModal({ isOpen, onClose }: UserProfileModalPr
       setFullName(user.name || '');
       setEmail(user.email || '');
       setPhoneNumber(user.phone || '');
+      setAddress(user.address || '');
+      setBio(user.bio || '');
+      setProfileImage(user.avatar || '');
+      setAvatarUrl(user.avatar || '');
     }
   }, [user]);
 
-  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      // TODO: Upload image and update profile
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setProfileImage(reader.result as string);
-      };
-      reader.readAsDataURL(file);
+      try {
+        setIsUpdating(true);
+        setUpdateError('');
+        
+        // Preview image
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          setProfileImage(reader.result as string);
+        };
+        reader.readAsDataURL(file);
+
+        // Upload to server
+        const { apiService } = await import('@/services/api');
+        const response = await apiService.uploadAvatar(file);
+        
+        if (response.success && response.data) {
+          // Update local state với avatar mới
+          const newAvatar = response.data.avatar || '';
+          setProfileImage(newAvatar);
+          setAvatarUrl(newAvatar); // Đồng bộ avatarUrl
+          
+          // Cập nhật localStorage ngay lập tức
+          if (typeof window !== 'undefined') {
+            const currentAccount = JSON.parse(localStorage.getItem('account') || '{}');
+            localStorage.setItem('account', JSON.stringify({
+              ...currentAccount,
+              avatar: newAvatar
+            }));
+          }
+          
+          // Update user in store by fetching profile again để đảm bảo sync
+          await dispatch(fetchProfileAsync());
+        }
+      } catch (error: any) {
+        setUpdateError(error.message || 'Không thể upload ảnh đại diện');
+        console.error('Upload avatar error:', error);
+      } finally {
+        setIsUpdating(false);
+      }
     }
   };
 
@@ -64,7 +108,20 @@ export default function UserProfileModal({ isOpen, onClose }: UserProfileModalPr
     setIsUpdating(true);
     
     try {
-      const result = await dispatch(updateProfileAsync({ name: fullName, phone: phoneNumber }));
+      // Nếu có avatarUrl, cập nhật avatar
+      const updateData: any = {
+        name: fullName, 
+        phone: phoneNumber,
+        address: address,
+        bio: bio
+      };
+      
+      // Nếu có avatarUrl và khác với avatar hiện tại, cập nhật
+      if (avatarUrl && avatarUrl.trim() !== '' && avatarUrl !== user?.avatar) {
+        updateData.avatar = avatarUrl.trim();
+      }
+      
+      const result = await dispatch(updateProfileAsync(updateData));
       
       if (updateProfileAsync.fulfilled.match(result)) {
         // Update thành công, đóng modal
@@ -120,9 +177,11 @@ export default function UserProfileModal({ isOpen, onClose }: UserProfileModalPr
               <div
                 className={styles.avatar}
                 style={{
-                  background: profileImage
+                  backgroundImage: profileImage
                     ? `url(${profileImage})`
                     : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                  backgroundSize: 'cover',
+                  backgroundPosition: 'center',
                 }}
               >
                 {!profileImage && (
@@ -143,8 +202,33 @@ export default function UserProfileModal({ isOpen, onClose }: UserProfileModalPr
                 onClick={() => fileInputRef.current?.click()}
                 className={styles.changeAvatarButton}
               >
-                Thay đổi ảnh đại diện
+                Upload ảnh từ máy
               </button>
+            </div>
+
+            {/* Avatar URL Input */}
+            <div className={styles.inputGroup}>
+              <label className={styles.inputLabel}>URL ảnh đại diện</label>
+              <input
+                type="url"
+                value={avatarUrl}
+                onChange={(e) => {
+                  const url = e.target.value;
+                  setAvatarUrl(url);
+                  // Preview avatar khi nhập URL
+                  if (url && url.trim() !== '') {
+                    setProfileImage(url);
+                  } else {
+                    setProfileImage(user?.avatar || '');
+                  }
+                }}
+                placeholder="https://example.com/avatar.jpg"
+                className={styles.input}
+                disabled={isUpdating}
+              />
+              <small style={{ fontSize: '0.75rem', color: '#6b7280', marginTop: '0.25rem' }}>
+                Nhập URL ảnh để cập nhật ảnh đại diện (hoặc upload từ máy)
+              </small>
             </div>
 
             {/* Form Fields */}
@@ -169,7 +253,7 @@ export default function UserProfileModal({ isOpen, onClose }: UserProfileModalPr
               />
             </div>
 
-            <div className={styles.inputGroup} style={{ marginBottom: 0 }}>
+            <div className={styles.inputGroup}>
               <label className={styles.inputLabel}>Số điện thoại</label>
               <input
                 type="tel"
@@ -178,6 +262,31 @@ export default function UserProfileModal({ isOpen, onClose }: UserProfileModalPr
                 placeholder="Nhập số điện thoại"
                 className={styles.input}
                 disabled={isUpdating}
+              />
+            </div>
+
+            <div className={styles.inputGroup}>
+              <label className={styles.inputLabel}>Địa chỉ</label>
+              <input
+                type="text"
+                value={address}
+                onChange={(e) => setAddress(e.target.value)}
+                placeholder="Nhập địa chỉ"
+                className={styles.input}
+                disabled={isUpdating}
+              />
+            </div>
+
+            <div className={styles.inputGroup} style={{ marginBottom: 0 }}>
+              <label className={styles.inputLabel}>Giới thiệu</label>
+              <textarea
+                value={bio}
+                onChange={(e) => setBio(e.target.value)}
+                placeholder="Nhập giới thiệu về bản thân"
+                className={styles.input}
+                disabled={isUpdating}
+                rows={4}
+                style={{ resize: 'vertical', minHeight: '100px' }}
               />
             </div>
 

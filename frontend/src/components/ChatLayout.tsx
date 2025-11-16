@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAppSelector } from "@/store/hooks";
@@ -18,7 +18,13 @@ interface Conversation {
 export default function ChatLayout() {
   const router = useRouter();
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
+  const [mounted, setMounted] = useState(false);
   const user = useAppSelector((state) => state.auth.user);
+
+  // Fix hydration mismatch by only rendering after mount
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const conversations: Conversation[] = [
     {
@@ -208,8 +214,8 @@ export default function ChatLayout() {
               fontWeight: 700,
               marginBottom: 12,
               lineHeight: 1.2
-            }}>
-              {user?.name ? `Chào mừng ${user.name} đến với ZolaChat` : 'Chào mừng bạn đến với ZolaChat'}
+            }} suppressHydrationWarning>
+              {mounted && user?.name ? `Chào mừng ${user.name} đến với ZolaChat` : 'Chào mừng bạn đến với ZolaChat'}
             </h2>
             
             <p style={{ 

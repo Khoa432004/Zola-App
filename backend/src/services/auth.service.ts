@@ -132,13 +132,22 @@ export class AuthService {
 
       if (account) {
         // Cập nhật account nếu đã tồn tại
+        const updateData: any = {
+          googleId,
+          name,
+          provider: "google",
+        };
+        
+        // CHỈ cập nhật avatar từ Google nếu account CHƯA CÓ avatar
+        // Nếu account đã có avatar (đã upload hoặc đã set), GIỮ NGUYÊN avatar đó
+        if ((!account.avatar || account.avatar.trim() === '') && avatar && avatar.trim() !== '') {
+          // Account chưa có avatar, cập nhật từ Google
+          updateData.avatar = avatar;
+        }
+        // Nếu account đã có avatar, KHÔNG cập nhật từ Google (giữ nguyên avatar hiện tại)
+        
         try {
-          account = await Account.update(account.id, {
-            googleId,
-            name,
-            avatar,
-            provider: "google",
-          });
+          account = await Account.update(account.id, updateData);
         } catch (updateError: any) {
           throw new Error(`Lỗi khi cập nhật account: ${updateError.message}`);
         }
@@ -148,7 +157,7 @@ export class AuthService {
           account = await Account.create({
             email: email.toLowerCase(),
             name,
-            avatar,
+            avatar: avatar && avatar.trim() !== '' ? avatar : undefined,
             provider: "google",
             googleId,
           });

@@ -2,6 +2,8 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
+import { useAppDispatch, useAppSelector } from '@/store/hooks';
+import { fetchProfileAsync } from '@/store/slices/authSlice';
 import UserProfileModal from './UserProfileModal';
 import MyPostsModal from './MyPostsModal';
 import TrashModal from './TrashModal';
@@ -17,12 +19,30 @@ export default function Sidebar({ activePage = 'chat', onPageChange }: SidebarPr
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showMyPostsModal, setShowMyPostsModal] = useState(false);
   const [showTrashModal, setShowTrashModal] = useState(false);
+  const [mounted, setMounted] = useState(false);
   const settingsMenuRef = useRef<HTMLDivElement>(null);
   const userMenuRef = useRef<HTMLDivElement>(null);
+  const dispatch = useAppDispatch();
   const { logout, user } = useAuth();
+  const token = useAppSelector((state) => state.auth.token);
+
+  // Fix hydration mismatch by only rendering after mount
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // Fetch profile khi component mount và có token
+  useEffect(() => {
+    if (mounted && token && user) {
+      dispatch(fetchProfileAsync());
+    }
+  }, [mounted, token, dispatch]);
   
   // Lấy chữ cái đầu của tên user hoặc email
   const getInitial = () => {
+    if (!mounted) {
+      return 'A'; // Default for server-side rendering
+    }
     if (user?.name) {
       return user.name.charAt(0).toUpperCase();
     }
@@ -83,11 +103,12 @@ export default function Sidebar({ activePage = 'chat', onPageChange }: SidebarPr
             width: 40, 
             height: 40, 
             borderRadius: 20, 
-            background: user?.avatar 
+            backgroundImage: mounted && user?.avatar 
               ? `url(${user.avatar})` 
               : "linear-gradient(135deg, #667eea 0%, #764ba2 100%)", 
-            backgroundSize: user?.avatar ? "cover" : "auto",
+            backgroundSize: mounted && user?.avatar ? "cover" : "auto",
             backgroundPosition: "center",
+            backgroundRepeat: "no-repeat",
             overflow: "hidden", 
             display: "flex", 
             alignItems: "center", 
@@ -99,10 +120,13 @@ export default function Sidebar({ activePage = 'chat', onPageChange }: SidebarPr
           }}
           onMouseEnter={(e) => (e.currentTarget.style.transform = "scale(1.1)")}
           onMouseLeave={(e) => (e.currentTarget.style.transform = "scale(1)")}
-          title={user?.name || user?.email || "Hồ sơ"}
+          title={mounted && (user?.name || user?.email) ? (user?.name || user?.email || "Hồ sơ") : "Hồ sơ"}
+          suppressHydrationWarning
         >
-          {!user?.avatar && (
-            <span style={{ fontSize: 14, color: "#fff", fontWeight: 600 }}>{getInitial()}</span>
+          {(!mounted || !user?.avatar) && (
+            <span style={{ fontSize: 14, color: "#fff", fontWeight: 600 }} suppressHydrationWarning>
+              {getInitial()}
+            </span>
           )}
         </div>
 

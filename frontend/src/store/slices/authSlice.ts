@@ -9,6 +9,8 @@ export interface AuthState {
     name: string;
     avatar?: string;
     phone?: string;
+    address?: string;
+    bio?: string;
   } | null;
   token: string | null;
   isLoading: boolean;
@@ -69,6 +71,23 @@ export const googleLoginAsync = createAsyncThunk(
         // Save to localStorage
         localStorage.setItem('token', response.data.token);
         localStorage.setItem('account', JSON.stringify(response.data.account));
+        
+        // Fetch profile ngay sau khi login để lấy avatar mới nhất từ database
+        try {
+          const profileResponse = await apiService.getProfile();
+          if (profileResponse.success && profileResponse.data) {
+            // Cập nhật với dữ liệu mới nhất từ database
+            localStorage.setItem('account', JSON.stringify(profileResponse.data));
+            return {
+              ...response.data,
+              account: profileResponse.data,
+            };
+          }
+        } catch (profileError) {
+          // Nếu fetch profile thất bại, vẫn trả về dữ liệu login
+          console.warn('Failed to fetch profile after login:', profileError);
+        }
+        
         return response.data;
       }
       return rejectWithValue(response.message || 'Google login failed');
@@ -105,9 +124,9 @@ export const fetchProfileAsync = createAsyncThunk(
     try {
       const response = await apiService.getProfile();
       if (response.success && response.data) {
+        // Luôn lưu dữ liệu mới từ server (override localStorage)
         if (typeof window !== 'undefined') {
-          const saved = JSON.parse(localStorage.getItem('account') || '{}');
-          localStorage.setItem('account', JSON.stringify({ ...saved, ...response.data }));
+          localStorage.setItem('account', JSON.stringify(response.data));
         }
         return response.data;
       }
@@ -120,7 +139,7 @@ export const fetchProfileAsync = createAsyncThunk(
 
 export const updateProfileAsync = createAsyncThunk(
   'auth/updateProfile',
-  async (payload: { name?: string; phone?: string }, { rejectWithValue }) => {
+  async (payload: { name?: string; phone?: string; address?: string; bio?: string; avatar?: string }, { rejectWithValue }) => {
     try {
       const response = await apiService.updateProfile(payload);
       if (response.success && response.data) {
