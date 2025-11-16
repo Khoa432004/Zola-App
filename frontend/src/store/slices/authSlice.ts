@@ -9,6 +9,8 @@ export interface AuthState {
     name: string;
     avatar?: string;
     phone?: string;
+    address?: string;
+    bio?: string;
   } | null;
   token: string | null;
   isLoading: boolean;
@@ -120,7 +122,7 @@ export const fetchProfileAsync = createAsyncThunk(
 
 export const updateProfileAsync = createAsyncThunk(
   'auth/updateProfile',
-  async (payload: { name?: string; phone?: string }, { rejectWithValue }) => {
+  async (payload: { name?: string; phone?: string; address?: string; bio?: string; avatar?: string }, { rejectWithValue }) => {
     try {
       const response = await apiService.updateProfile(payload);
       if (response.success && response.data) {

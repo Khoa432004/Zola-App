@@ -1,0 +1,395 @@
+{
+	"info": {
+		"_postman_id": "01e7306d-9a82-4e3f-9f85-abaeb31f7f8f",
+		"name": "API Postman",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "47810222",
+		"_collection_link": "https://gold-sunset-319875.postman.co/workspace/TLCN~894ddee9-5b88-4ce5-bb3e-ed3a0598ef35/collection/47810222-01e7306d-9a82-4e3f-9f85-abaeb31f7f8f?action=share&source=collection_link&creator=47810222"
+	},
+	"item": [
+		{
+			"name": "Login / Login google / Logout",
+			"item": [
+				{
+					"name": "Login Google",
+					"request": {
+						"auth": {
+							"type": "noauth"
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n    \"idToken\": \"eyJhbGciOiJSUzI1NiIsImtpZCI6IjU0NTEzMjA5OWFkNmJmNjEzODJiNmI0Y2RlOWEyZGZlZDhjYjMwZjAiLCJ0eXAiOiJKV1QifQ.eyJuYW1lIjoiS2hvYSDEkOG7lyIsInBpY3R1cmUiOiJodHRwczovL2xoMy5nb29nbGV1c2VyY29udGVudC5jb20vYS9BQ2c4b2NLeXdhLWxnNjhaU1pfTi1xWjFXdVZic3YwMEZrdXRpQTZvakJTS0hqeWhfcEFmQXc9czk2LWMiLCJpc3MiOiJodHRwczovL3NlY3VyZXRva2VuLmdvb2dsZS5jb20vem9sYS1hcHAtZTA3ZTYiLCJhdWQiOiJ6b2xhLWFwcC1lMDdlNiIsImF1dGhfdGltZSI6MTc2MjYwMzUzMCwidXNlcl9pZCI6IkpCWWc4WDNVMWhPcTBrdzRIYkl6QnNyUmdJeDEiLCJzdWIiOiJKQllnOFgzVTFoT3Ewa3c0SGJJekJzclJnSXgxIiwiaWF0IjoxNzYyNjAzNTMwLCJleHAiOjE3NjI2MDcxMzAsImVtYWlsIjoiZG9uZ3V5ZW5kYW5na2hvYTA0MDNAZ21haWwuY29tIiwiZW1haWxfdmVyaWZpZWQiOnRydWUsImZpcmViYXNlIjp7ImlkZW50aXRpZXMiOnsiZ29vZ2xlLmNvbSI6WyIxMDUwOTU5NTU5NzU0OTg3MTk3NDIiXSwiZW1haWwiOlsiZG9uZ3V5ZW5kYW5na2hvYTA0MDNAZ21haWwuY29tIl19LCJzaWduX2luX3Byb3ZpZGVyIjoiZ29vZ2xlLmNvbSJ9fQ.OsPUrCaM37yOagCdjH1Ibob-53Im4HIl-ivF9BH9r27_AptWrZIOVO4yHI3VRAdQhuyRnUmn8arL0G1Ar5n_zvGxCUuu4cIWucbdHzucyNgayo9LJ1mOEtC1RcGx27xjhwsHh3jdlsjss7laH-T2sfqWEgGcKWsbni8UsfKKtsZBvVn7cH_2Erw3ak-la8Aex1jQDxV5LDFxZhP1A8OBNNnqk9GqCHz5OkWMqQU619fuSY01JazEnswvX-srXaYs1MWdQ4S19tSrWSyVhxbdhBMKt7jLqNPVYymFdXrCUqpT_YcNVftEZy79JU0mtuvIqhK-PRQrrV9bHYCAjclV4w\",\r\n    \"email\": \"donguyendangkhoa0403@gmail.com\",\r\n    \"name\": \"Khoa Đỗ\",\r\n    \"avatar\": \"https://lh3.googleusercontent.com/a/ACg8ocKywa-lg68ZSZ_N-qZ1WuVbsv00FkutiA6ojBSKHjyh_pAfAw=s96-c\"\r\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://localhost:4000/api/auth/google",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "4000",
+							"path": [
+								"api",
+								"auth",
+								"google"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Login",
+					"request": {
+						"auth": {
+							"type": "noauth"
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n    \"email\":\"admin@example.com\",\r\n    \"password\":\"123456\" \r\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://localhost:4000/api/auth/login",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "4000",
+							"path": [
+								"api",
+								"auth",
+								"login"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Logout",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{access_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "http://localhost:4000/api/auth/logout",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "4000",
+							"path": [
+								"api",
+								"auth",
+								"logout"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Register",
+			"item": [
+				{
+					"name": "Send OTP",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n  \"email\": \"mkhang778@gmail.com\"\r\n}\r\n",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://localhost:4000/api/auth/send-otp",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "4000",
+							"path": [
+								"api",
+								"auth",
+								"send-otp"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Verify OTP",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n  \"email\": \"mkhang778@gmail.com\",\r\n  \"otp\": \"359281\"\r\n}\r\n",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://localhost:4000/api/auth/verify-otp",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "4000",
+							"path": [
+								"api",
+								"auth",
+								"verify-otp"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Register final",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n  \"email\": \"mkhang778@gmail.com\",\r\n  \"username\": \"Khang Nguyen\",\r\n  \"password\": \"123456\"\r\n}\r\n",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://localhost:4000/api/auth/register-final",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "4000",
+							"path": [
+								"api",
+								"auth",
+								"register-final"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Forget Password",
+			"item": [
+				{
+					"name": "Forgot Password",
+					"request": {
+						"auth": {
+							"type": "noauth"
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n  \"email\": \"22110140@student.hcmute.edu.vn\"\r\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://localhost:4000/api/auth/forgot-password",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "4000",
+							"path": [
+								"api",
+								"auth",
+								"forgot-password"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Verify OTP",
+					"request": {
+						"auth": {
+							"type": "noauth"
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n  \"email\": \"22110140@student.hcmute.edu.vn\",\r\n  \"otp\": \"612494\"\r\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://localhost:4000/api/auth/verify-otp-reset",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "4000",
+							"path": [
+								"api",
+								"auth",
+								"verify-otp-reset"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Reset Password",
+					"request": {
+						"auth": {
+							"type": "noauth"
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n  \"email\": \"22110140@student.hcmute.edu.vn\",\r\n  \"otp\": \"612494\",\r\n  \"newPassword\": \"Tuongamduong8*8\",\r\n  \"confirmPassword\": \"Tuongamduong8*8\"\r\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://localhost:4000/api/auth/reset-password",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "4000",
+							"path": [
+								"api",
+								"auth",
+								"reset-password"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Profile",
+			"item": [
+				{
+					"name": "Get Profile",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{access_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "http://localhost:4000/api/profile/me",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "4000",
+							"path": [
+								"api",
+								"profile",
+								"me"
+							]
+						},
+						"description": "Lấy thông tin profile của user hiện tại. Yêu cầu JWT token trong Authorization header."
+					},
+					"response": []
+				},
+				{
+					"name": "Update Profile",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{access_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n  \"name\": \"Nguyen Van A\",\r\n  \"phone\": \"0123456789\"\r\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://localhost:4000/api/profile",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "4000",
+							"path": [
+								"api",
+								"profile"
+							]
+						},
+						"description": "Cập nhật thông tin profile (name và/hoặc phone). Yêu cầu JWT token. Có thể cập nhật một hoặc cả hai trường."
+					},
+					"response": []
+				}
+			]
+		}
+	]
+}

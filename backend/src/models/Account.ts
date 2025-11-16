@@ -12,6 +12,8 @@ export interface IAccount {
   name: string;
   avatar?: string;
   phone?: string;
+  address?: string;
+  bio?: string;
   provider: 'email' | 'google';
   googleId?: string;
   otp?: string
@@ -205,9 +207,16 @@ export class Account {
     }
 
     const updateData: any = {
-      ...updates,
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     };
+
+    // Chỉ thêm các field không phải undefined
+    Object.keys(updates).forEach((key) => {
+      const value = updates[key as keyof typeof updates];
+      if (value !== undefined) {
+        updateData[key] = value;
+      }
+    });
 
     // Hash password nếu có
     if (updates.password) {
