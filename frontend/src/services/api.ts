@@ -139,40 +139,51 @@ class ApiService {
 
   async forgotPassword(credentials: { email: string }): Promise<any> {
     try {
-      const response = await this.axiosInstance.post<any>("/auth/forgot-password", credentials)
-      return response.data
+      const response = await this.axiosInstance.post<any>(
+        "/auth/forgot-password",
+        credentials
+      );
+      return response.data;
     } catch (error: any) {
-      throw new Error(error.response?.data?.message || "Có lỗi xảy ra")
+      throw new Error(error.response?.data?.message || "Có lỗi xảy ra");
     }
   }
 
   // Xác minh OTP cho reset password (từ Account database)
   async verifyOTP(credentials: { email: string; otp: string }): Promise<any> {
     try {
-      const response = await this.axiosInstance.post<any>("/auth/verify-otp-reset", credentials)
-      return response.data
+      const response = await this.axiosInstance.post<any>(
+        "/auth/verify-otp-reset",
+        credentials
+      );
+      return response.data;
     } catch (error: any) {
-      throw new Error(error.response?.data?.message || "Có lỗi xảy ra")
+      throw new Error(error.response?.data?.message || "Có lỗi xảy ra");
     }
   }
 
   async resetPassword(credentials: {
-    email: string
-    otp: string
-    newPassword: string
-    confirmPassword: string
+    email: string;
+    otp: string;
+    newPassword: string;
+    confirmPassword: string;
   }): Promise<any> {
     try {
-      const response = await this.axiosInstance.post<any>("/auth/reset-password", credentials)
-      return response.data
+      const response = await this.axiosInstance.post<any>(
+        "/auth/reset-password",
+        credentials
+      );
+      return response.data;
     } catch (error: any) {
-      throw new Error(error.response?.data?.message || "Có lỗi xảy ra")
+      throw new Error(error.response?.data?.message || "Có lỗi xảy ra");
     }
   }
 
   async logout(): Promise<AuthResponse> {
     try {
-      const response = await this.axiosInstance.post<AuthResponse>("/auth/logout");
+      const response = await this.axiosInstance.post<AuthResponse>(
+        "/auth/logout"
+      );
       return response.data;
     } catch (error: any) {
       throw new Error(error.response?.data?.message || "Có lỗi xảy ra");
@@ -194,7 +205,9 @@ class ApiService {
       const response = await this.axiosInstance.patch("/profile", payload);
       return response.data;
     } catch (error: any) {
-      throw new Error(error.response?.data?.message || "Cập nhật hồ sơ thất bại");
+      throw new Error(
+        error.response?.data?.message || "Cập nhật hồ sơ thất bại"
+      );
     }
   }
 
@@ -205,17 +218,23 @@ class ApiService {
       const response = await this.axiosInstance.get("/posts", { params });
       return response.data;
     } catch (error: any) {
-      throw new Error(error.response?.data?.message || "Không lấy được bài đăng");
+      throw new Error(
+        error.response?.data?.message || "Không lấy được bài đăng"
+      );
     }
   }
 
   async getFeaturedPosts(limit?: number) {
     try {
       const params = limit ? { limit } : {};
-      const response = await this.axiosInstance.get("/posts/featured", { params });
+      const response = await this.axiosInstance.get("/posts/featured", {
+        params,
+      });
       return response.data;
     } catch (error: any) {
-      throw new Error(error.response?.data?.message || "Không lấy được bài đăng nổi bật");
+      throw new Error(
+        error.response?.data?.message || "Không lấy được bài đăng nổi bật"
+      );
     }
   }
 
@@ -225,7 +244,9 @@ class ApiService {
       const response = await this.axiosInstance.get("/posts/my", { params });
       return response.data;
     } catch (error: any) {
-      throw new Error(error.response?.data?.message || "Không lấy được bài đăng của tôi");
+      throw new Error(
+        error.response?.data?.message || "Không lấy được bài đăng của tôi"
+      );
     }
   }
 
@@ -244,14 +265,20 @@ class ApiService {
 
   async updatePost(postId: string, formData: FormData) {
     try {
-      const response = await this.axiosInstance.put(`/posts/${postId}`, formData, {
-        headers: {
-          "Content-Type": "multipart/form-data",
-        },
-      });
+      const response = await this.axiosInstance.put(
+        `/posts/${postId}`,
+        formData,
+        {
+          headers: {
+            "Content-Type": "multipart/form-data",
+          },
+        }
+      );
       return response.data;
     } catch (error: any) {
-      throw new Error(error.response?.data?.message || "Không thể cập nhật bài viết");
+      throw new Error(
+        error.response?.data?.message || "Không thể cập nhật bài viết"
+      );
     }
   }
 
@@ -260,68 +287,117 @@ class ApiService {
       const response = await this.axiosInstance.delete(`/posts/${postId}`);
       return response.data;
     } catch (error: any) {
-      throw new Error(error.response?.data?.message || "Không thể xóa bài viết");
+      throw new Error(
+        error.response?.data?.message || "Không thể xóa bài viết"
+      );
     }
   }
 
   async getDeletedPosts(limit?: number) {
     try {
       const params = limit ? { limit } : {};
-      const response = await this.axiosInstance.get("/posts/deleted", { params });
+      const response = await this.axiosInstance.get("/posts/deleted", {
+        params,
+      });
       return response.data;
     } catch (error: any) {
-      throw new Error(error.response?.data?.message || "Không lấy được bài viết đã xóa");
+      throw new Error(
+        error.response?.data?.message || "Không lấy được bài viết đã xóa"
+      );
     }
   }
 
   async restorePost(postId: string) {
     try {
-      const response = await this.axiosInstance.post(`/posts/${postId}/restore`);
+      const response = await this.axiosInstance.post(
+        `/posts/${postId}/restore`
+      );
       return response.data;
     } catch (error: any) {
-      throw new Error(error.response?.data?.message || "Không thể khôi phục bài viết");
+      throw new Error(
+        error.response?.data?.message || "Không thể khôi phục bài viết"
+      );
     }
   }
 
   async getCommentsByPost(postId: string, limit?: number) {
     try {
       const params = limit ? { limit } : {};
-      const response = await this.axiosInstance.get(`/comments/post/${postId}`, { params });
+      const response = await this.axiosInstance.get(
+        `/comments/post/${postId}`,
+        { params }
+      );
       return response.data;
     } catch (error: any) {
-      throw new Error(error.response?.data?.message || "Không lấy được bình luận");
+      throw new Error(
+        error.response?.data?.message || "Không lấy được bình luận"
+      );
     }
   }
 
   async createComment(targetId: string, content: string) {
     try {
-      const response = await this.axiosInstance.post('/comments', {
+      const response = await this.axiosInstance.post("/comments", {
         targetId,
-        content
+        content,
       });
       return response.data;
     } catch (error: any) {
-      throw new Error(error.response?.data?.message || "Không thể tạo bình luận");
+      throw new Error(
+        error.response?.data?.message || "Không thể tạo bình luận"
+      );
     }
   }
 
   async updateComment(commentId: string, content: string) {
     try {
       const response = await this.axiosInstance.put(`/comments/${commentId}`, {
-        content
+        content,
       });
       return response.data;
     } catch (error: any) {
-      throw new Error(error.response?.data?.message || "Không thể cập nhật bình luận");
+      throw new Error(
+        error.response?.data?.message || "Không thể cập nhật bình luận"
+      );
     }
   }
 
   async deleteComment(commentId: string) {
     try {
-      const response = await this.axiosInstance.delete(`/comments/${commentId}`);
+      const response = await this.axiosInstance.delete(
+        `/comments/${commentId}`
+      );
       return response.data;
     } catch (error: any) {
-      throw new Error(error.response?.data?.message || "Không thể xóa bình luận");
+      throw new Error(
+        error.response?.data?.message || "Không thể xóa bình luận"
+      );
+    }
+  }
+  async getLatestPosts() {
+    return this.axiosInstance.get("/posts/latest");
+  }
+
+  async getTopLikedPosts() {
+    return this.axiosInstance.get("/posts/top-liked");
+  }
+
+  async getTopViewedPosts() {
+    return this.axiosInstance.get("/posts/top-viewed");
+  }
+
+  async getPromotedPosts() {
+    return this.axiosInstance.get("/posts/promoted");
+  }
+
+  async toggleLike(postId: string) {
+    try {
+      const response = await this.axiosInstance.post(`/posts/${postId}/like`);
+      return response.data;
+    } catch (error: any) {
+      throw new Error(
+        error.response?.data?.message || "Không thể thích/bỏ thích bài viết"
+      );
     }
   }
 }
