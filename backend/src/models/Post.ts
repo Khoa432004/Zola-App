@@ -1,6 +1,5 @@
 import { firestore } from '../config/firebase-admin';
 import admin from 'firebase-admin';
-import { Comment } from './Comment';
 
 export interface IPost {
   postId: string;
@@ -28,22 +27,6 @@ export interface IPost {
 
 export class Post {
   private static collection = "posts";
-
-  // Helper to annotate posts with actual comment counts (includes nested replies)
-  private static async enrichPostsWithCommentCounts(posts: IPost[]): Promise<IPost[]> {
-    try {
-      const enriched = await Promise.all(
-        posts.map(async (post) => {
-          const count = await Comment.countAllCommentsForTarget(post.postId);
-          return { ...post, commentCount: count };
-        })
-      );
-      return enriched;
-    } catch (err) {
-      // If count fails, return posts as-is
-      return posts;
-    }
-  }
 
   static async findAllPublic(limit: number = 50): Promise<IPost[]> {
     if (!firestore) {
@@ -104,7 +87,7 @@ export class Post {
         })
         .slice(0, limit);
 
-      return await this.enrichPostsWithCommentCounts(posts);
+      return posts;
     } catch (error: any) {
       throw error;
     }
@@ -173,7 +156,7 @@ export class Post {
       })
       .slice(0, limit);
 
-    return await this.enrichPostsWithCommentCounts(posts);
+    return posts;
   }
 
   static async findFeatured(limit: number = 10): Promise<IPost[]> {
@@ -210,7 +193,7 @@ export class Post {
       })
       .slice(0, limit);
 
-    return await this.enrichPostsWithCommentCounts(posts);
+    return posts;
   }
 
   static async create(postData: {
@@ -277,14 +260,6 @@ export class Post {
       updatedAt: data?.updatedAt?.toDate() || new Date(),
       isLiked: false,
     } as IPost;
-
-    // Fetch actual comment count (including nested replies)
-    try {
-      const count = await Comment.countAllCommentsForTarget(postId);
-      post.commentCount = count;
-    } catch {
-      // Keep stored commentCount if fetch fails
-    }
 
     return post;
   }
@@ -393,7 +368,7 @@ export class Post {
       })
       .slice(0, limit);
 
-    return await this.enrichPostsWithCommentCounts(posts);
+    return posts;
   }
 
   static async restore(postId: string): Promise<IPost | null> {
@@ -484,6 +459,10 @@ export class Post {
   }
 
   static async findLatest(limit = 8): Promise<IPost[]> {
+    if (!firestore) {
+      throw new Error("Firestore not initialized");
+    }
+
     const snapshot = await firestore
       .collection(this.collection)
       .where("visibility", "==", "public")
@@ -602,7 +581,7 @@ export class Post {
         .sort((a, b) => b.likeCount - a.likeCount)
         .slice(skip, skip + limit);
 
-      return await this.enrichPostsWithCommentCounts(posts);
+      return posts;
     } catch (error: any) {
       throw error;
     }
@@ -712,13 +691,17 @@ export class Post {
         .sort((a, b) => b.viewCount - a.viewCount)
         .slice(skip, skip + limit);
 
-      return await this.enrichPostsWithCommentCounts(posts);
+      return posts;
     } catch (error: any) {
       throw error;
     }
   }
 
   static async findTopPromoted(limit = 4): Promise<IPost[]> {
+    if (!firestore) {
+      throw new Error("Firestore not initialized");
+    }
+
     const snapshot = await firestore
       .collection(this.collection)
       .where("visibility", "==", "public")
@@ -869,7 +852,7 @@ export class Post {
         })
         .slice(skip, skip + limit);
 
-      return await this.enrichPostsWithCommentCounts(posts);
+      return posts;
     } catch (error: any) {
       throw error;
     }

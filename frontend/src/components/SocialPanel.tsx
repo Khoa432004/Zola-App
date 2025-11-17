@@ -66,6 +66,8 @@ interface Comment {
 }
 
 type FilterType = "newest" | "mostLikes" | "mostViews" | "promotion";
+const PAGE_SIZE = 8;
+const VISIBLE_BATCH_SIZE = 2;
 
 export default function SocialPanel() {
   const { user } = useAuth();
@@ -92,9 +94,11 @@ export default function SocialPanel() {
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
+  const [visibleCount, setVisibleCount] = useState(VISIBLE_BATCH_SIZE);
   const menuRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
   const filterMenuRef = useRef<HTMLDivElement>(null);
   const observerTarget = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   // Lưu trạng thái like và số lượt like đã thay đổi để không bị mất khi filter
   // Map<postId, { isLiked: boolean, likeDelta: number, originalIsLiked: boolean }>
   // likeDelta: số lượt like đã thay đổi so với server (+1 nếu like, -1 nếu unlike, 0 nếu không đổi)
@@ -184,66 +188,69 @@ export default function SocialPanel() {
 
   const loadPosts = async (page: number = 1, append: boolean = false) => {
     if (append) {
+      if (isLoadingMore || isLoading) {
+        return;
+      }
       setIsLoadingMore(true);
     } else {
       setIsLoading(true);
     }
     setError(null);
     try {
-      const limit = 10;
-      const postsResponse = await apiService.getPosts(page, limit);
+      const postsResponse = await apiService.getPosts(page, PAGE_SIZE);
+      const serverPosts: Post[] =
+        postsResponse?.success && postsResponse.data
+          ? (extractPosts(postsResponse) as Post[])
+          : [];
+      const displayPosts = serverPosts.map(convertToDisplayPost);
 
-      if (postsResponse.success && postsResponse.data) {
-        // Lưu trạng thái ban đầu của các posts mới (chưa có trong Map)
-        setLikedPosts((prev) => {
-          const newMap = new Map(prev);
-          postsResponse.data.forEach((post: Post) => {
-            const postId = post.postId;
-            if (!newMap.has(postId)) {
-              newMap.set(postId, {
-                isLiked: post.isLiked || false,
-                likeDelta: 0,
-                originalIsLiked: post.isLiked || false,
-              });
-            }
-          });
-          return newMap;
+      setLikedPosts((prev) => {
+        const baseMap = append ? new Map(prev) : new Map();
+        serverPosts.forEach((post) => {
+          if (!post.postId) return;
+          if (!baseMap.has(post.postId)) {
+            baseMap.set(post.postId, {
+              isLiked: post.isLiked || false,
+              likeDelta: 0,
+              originalIsLiked: post.isLiked || false,
+            });
+          }
         });
+        return baseMap;
+      });
 
-        const displayPosts = postsResponse.data.map(convertToDisplayPost);
-
-
-        setPosts((prev: DisplayPost[]) => {
-          // Sử dụng Map để tự động loại bỏ duplicate
-          const postsMap = new Map<string, DisplayPost>(prev.map((p: DisplayPost) => [p.id, p]));
-          
-          // Thêm posts mới (sẽ ghi đè nếu trùng ID)
-          displayPosts.forEach((post: DisplayPost) => {
-            if (post.id) { // Chỉ thêm nếu có ID hợp lệ
-              postsMap.set(post.id, post);
-            }
-          });
-          
-          return Array.from(postsMap.values());
-        });
-        
-        setHasMore(displayPosts.length === limit);
-        setCurrentPage(page);
-      } else {
-        if (!append) {
-          setPosts([]);
+      let updatedPosts: DisplayPost[] = [];
+      setPosts((prev: DisplayPost[]) => {
+        if (append) {
+          const existingIds = new Set(prev.map((p) => p.id));
+          const newPosts = displayPosts.filter(
+            (post) => post.id && !existingIds.has(post.id)
+          );
+          updatedPosts = [...prev, ...newPosts];
+          return updatedPosts;
         }
-        setHasMore(false);
+        updatedPosts = displayPosts;
+        return displayPosts;
+      });
+      if (!append) {
+        setVisibleCount(Math.min(VISIBLE_BATCH_SIZE, displayPosts.length));
       }
+
+      const hasMoreFromServer =
+        typeof postsResponse?.hasMore === "boolean"
+          ? postsResponse.hasMore
+          : displayPosts.length === PAGE_SIZE;
+      setHasMore(hasMoreFromServer);
+      setCurrentPage(page);
 
       if (page === 1) {
         const featuredResponse = await apiService.getFeaturedPosts(10);
         if (featuredResponse.success && featuredResponse.data) {
- 
           const displayFeatured = featuredResponse.data.map(convertToDisplayPost);
-          // Loại bỏ duplicate cho featured posts
           const uniqueFeatured = Array.from(
-            new Map<string, DisplayPost>(displayFeatured.map((p: DisplayPost) => [p.id, p])).values()
+            new Map<string, DisplayPost>(
+              displayFeatured.map((p: DisplayPost) => [p.id, p])
+            ).values()
           );
           setFeaturedPosts(uniqueFeatured);
         }
@@ -252,10 +259,15 @@ export default function SocialPanel() {
       setError(err.message || "Không thể tải bài đăng");
       if (!append) {
         setPosts([]);
+        setVisibleCount(0);
       }
+      setHasMore(false);
     } finally {
-      setIsLoading(false);
-      setIsLoadingMore(false);
+      if (append) {
+        setIsLoadingMore(false);
+      } else {
+        setIsLoading(false);
+      }
     }
   };
 
@@ -264,38 +276,54 @@ export default function SocialPanel() {
   }, []);
 
   useEffect(() => {
+    const target = observerTarget.current;
+    const root = scrollContainerRef.current;
+    if (!target || !root) return;
+
     const observer = new IntersectionObserver(
       (entries) => {
+        if (!entries[0].isIntersecting) return;
+
+        if (visibleCount < posts.length) {
+          setVisibleCount((prev) =>
+            Math.min(prev + VISIBLE_BATCH_SIZE, posts.length)
+          );
+          return;
+        }
+
+        if (!hasMore || isLoadingMore || isLoading) return;
+
         if (
-          entries[0].isIntersecting &&
-          hasMore &&
-          !isLoadingMore &&
-          !isLoading
+          activeFilter &&
+          (activeFilter === "mostLikes" || activeFilter === "mostViews")
         ) {
-          // If a filter is active and it supports pagination, use fetchFilteredPosts
-          if (
-            activeFilter &&
-            (activeFilter === "mostLikes" || activeFilter === "mostViews")
-          ) {
-            fetchFilteredPosts(activeFilter, currentPage + 1, true);
-          } else {
-            loadPosts(currentPage + 1, true);
-          }
+          fetchFilteredPosts(activeFilter, currentPage + 1, true);
+        } else {
+          loadPosts(currentPage + 1, true);
         }
       },
-      { threshold: 0.1 }
+      {
+        root,
+        rootMargin: "120px 0px",
+        threshold: 0,
+      }
     );
 
-    if (observerTarget.current) {
-      observer.observe(observerTarget.current);
-    }
+    observer.observe(target);
 
     return () => {
-      if (observerTarget.current) {
-        observer.unobserve(observerTarget.current);
-      }
+      observer.unobserve(target);
+      observer.disconnect();
     };
-  }, [hasMore, isLoadingMore, isLoading, currentPage, activeFilter]);
+  }, [
+    hasMore,
+    isLoadingMore,
+    isLoading,
+    currentPage,
+    activeFilter,
+    posts.length,
+    visibleCount,
+  ]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -407,14 +435,24 @@ export default function SocialPanel() {
     page: number = 1,
     append: boolean = false
   ) => {
+    if (filterType === "newest") {
+      loadPosts(page, append);
+      return;
+    }
+    if (append) {
+      if (isLoadingMore || isLoading) {
+        return;
+      }
+      setIsLoadingMore(true);
+    } else {
+      setIsLoading(true);
+    }
+    setError(null);
     try {
       let response;
-      const limit = 10;
+      const limit = PAGE_SIZE;
 
       switch (filterType) {
-        case "newest":
-          response = await apiService.getLatestPosts();
-          break;
         case "mostLikes":
           response = await apiService.getTopLikedPosts(page, limit);
           break;
@@ -433,18 +471,17 @@ export default function SocialPanel() {
 
       // Lưu trạng thái ban đầu của các posts mới (chưa có trong Map)
       setLikedPosts((prev) => {
-        const newMap = new Map(prev);
+        const baseMap = append ? new Map(prev) : new Map();
         data.forEach((post: Post) => {
           const postId = post.postId;
-          if (!newMap.has(postId)) {
-            newMap.set(postId, {
-              isLiked: post.isLiked || false,
-              likeDelta: 0,
-              originalIsLiked: post.isLiked || false,
-            });
-          }
+          if (!postId || baseMap.has(postId)) return;
+          baseMap.set(postId, {
+            isLiked: post.isLiked || false,
+            likeDelta: 0,
+            originalIsLiked: post.isLiked || false,
+          });
         });
-        return newMap;
+        return baseMap;
       });
 
       const list = data.map(convertToDisplayPost);
@@ -457,32 +494,42 @@ export default function SocialPanel() {
           );
           return [...prev, ...newPosts];
         });
-        // Set hasMore based on response
-        if (response.hasMore !== undefined) {
-          setHasMore(response.hasMore);
-        } else {
-          setHasMore(list.length === limit);
-        }
+        setHasMore(list.length === limit);
       } else {
         setPosts(list);
-        // Set hasMore based on response
-        if (response.hasMore !== undefined) {
-          setHasMore(response.hasMore);
-        } else {
-          setHasMore(false);
-        }
+        setVisibleCount(Math.min(VISIBLE_BATCH_SIZE, list.length));
+        setHasMore(filterType === "promotion" ? false : list.length === limit);
       }
       setCurrentPage(page);
     } catch (error) {
       console.error("Lỗi khi load filter:", error);
+      setError("Không thể tải bài đăng theo bộ lọc");
+      if (!append) {
+        setPosts([]);
+        setVisibleCount(0);
+      }
+    } finally {
+      if (append) {
+        setIsLoadingMore(false);
+      } else {
+        setIsLoading(false);
+      }
     }
   };
 
   const handleFilter = (filterKey: FilterType) => {
     setActiveFilter(filterKey);
     setShowFilterMenu(false);
-    fetchFilteredPosts(filterKey);
+    if (filterKey === "newest") {
+      loadPosts(1, false);
+    } else {
+      fetchFilteredPosts(filterKey);
+    }
   };
+
+  const visiblePosts = posts.slice(0, visibleCount);
+  const shouldShowLoadMoreTrigger =
+    hasMore || visibleCount < posts.length;
 
   return (
     <div
@@ -499,6 +546,7 @@ export default function SocialPanel() {
           display: "flex",
           flexDirection: "column",
         }}
+        ref={scrollContainerRef}
       >
         {/* Header */}
         <div
@@ -859,7 +907,7 @@ export default function SocialPanel() {
               <div style={{ fontSize: 16 }}>Chưa có bài đăng nào</div>
             </div>
           ) : (
-            posts.map((post) => (
+            visiblePosts.map((post) => (
               <div
               key={post.id}
               style={{
@@ -943,22 +991,20 @@ export default function SocialPanel() {
                             menuRefs.current[post.id] = el;
                           }}
                           style={{
-                            background: "transparent",
-                            border: "none",
-                            cursor: "pointer",
-                            padding: "4px 8px",
-                            borderRadius: 4,
+                            position: "absolute",
+                            top: "calc(100% + 8px)",
+                            right: 0,
+                            minWidth: 160,
+                            background: "#ffffff",
+                            borderRadius: 8,
+                            border: "1px solid #e5e7eb",
+                            boxShadow:
+                              "0 8px 20px rgba(15, 23, 42, 0.08), 0 4px 8px rgba(15, 23, 42, 0.06)",
                             display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            transition: "background 0.2s",
+                            flexDirection: "column",
+                            padding: 4,
+                            zIndex: 20
                           }}
-                          onMouseEnter={(e) =>
-                            (e.currentTarget.style.background = "#f3f4f6")
-                          }
-                          onMouseLeave={(e) =>
-                            (e.currentTarget.style.background = "transparent")
-                          }
                         >
                           <button
                             onClick={(e) => {
@@ -968,17 +1014,18 @@ export default function SocialPanel() {
                             }}
                             style={{
                               width: "100%",
-                              padding: "10px 16px",
+                              padding: "8px 12px",
                               background: "transparent",
                               border: "none",
                               textAlign: "left",
-                              fontSize: 14,
+                              fontSize: 13,
                               color: "#374151",
                               cursor: "pointer",
                               transition: "background 0.2s",
                               display: "flex",
                               alignItems: "center",
-                              gap: 8
+                              gap: 6,
+                              borderRadius: 6
                             }}
                             onMouseEnter={(e) => (e.currentTarget.style.background = "#f9fafb")}
                             onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
@@ -1004,18 +1051,18 @@ export default function SocialPanel() {
                             }}
                             style={{
                               width: "100%",
-                              padding: "10px 16px",
+                              padding: "8px 12px",
                               background: "transparent",
                               border: "none",
                               textAlign: "left",
-                              fontSize: 14,
+                              fontSize: 13,
                               color: "#ef4444",
                               cursor: "pointer",
                               transition: "background 0.2s",
                               display: "flex",
                               alignItems: "center",
-                              gap: 8,
-                              borderTop: "1px solid #e5e7eb"
+                              gap: 6,
+                              borderRadius: 6
                             }}
                             onMouseEnter={(e) => (e.currentTarget.style.background = "#fef2f2")}
                             onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
@@ -1253,7 +1300,7 @@ export default function SocialPanel() {
           )}
 
           {/* Lazy Loading Trigger */}
-          {hasMore && (
+          {shouldShowLoadMoreTrigger && (
             <div
               ref={observerTarget}
               style={{

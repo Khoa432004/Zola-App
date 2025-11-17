@@ -46,36 +46,33 @@ a {
 }
 
 /* Custom scrollbar styles */
-.main-feed-scroll::-webkit-scrollbar,
-.sidebar-scroll::-webkit-scrollbar {
-  width: 8px;
-}
-
-.main-feed-scroll::-webkit-scrollbar-track,
-.sidebar-scroll::-webkit-scrollbar-track {
-  background: #f1f1f1;
-  border-radius: 10px;
-}
-
-.main-feed-scroll::-webkit-scrollbar-thumb,
-.sidebar-scroll::-webkit-scrollbar-thumb {
-  background: #c1c1c1;
-  border-radius: 10px;
-}
-
-.main-feed-scroll::-webkit-scrollbar-thumb:hover,
-.sidebar-scroll::-webkit-scrollbar-thumb:hover {
-  background: #a8a8a8;
-}
-
-.main-feed-scroll {
+* {
   scrollbar-width: thin;
-  scrollbar-color: #c1c1c1 #f1f1f1;
+  scrollbar-color: rgba(99, 102, 241, 0.4) transparent;
 }
 
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: rgba(99, 102, 241, 0.35);
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(99, 102, 241, 0.55);
+}
+
+.main-feed-scroll,
 .sidebar-scroll {
-  scrollbar-width: thin;
-  scrollbar-color: #c1c1c1 #f1f1f1;
+  scrollbar-color: rgba(99, 102, 241, 0.4) transparent;
 }
 
 /* Ensure inputs and form elements are interactive */

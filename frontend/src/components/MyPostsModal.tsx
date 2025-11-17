@@ -35,7 +35,12 @@ interface Post {
   timestamp: string;
   title: string;
   description: string;
-  image?: string;
+  media?: Array<{
+    type: 'image' | 'video';
+    sourceUrl: string;
+    width: number;
+    height: number;
+  }>;
   likes: number;
   isLiked: boolean;
 }
@@ -85,7 +90,7 @@ export default function MyPostsModal({ isOpen, onClose }: MyPostsModalProps) {
       timestamp: formatTimestamp(createdAt),
       title: post.caption.split('\n')[0] || post.caption.substring(0, 50) || 'Không có tiêu đề',
       description: post.caption,
-      image: post.media && post.media.length > 0 ? post.media[0].sourceUrl : undefined,
+      media: post.media && post.media.length > 0 ? post.media : [],
       likes: post.likeCount || 0,
       isLiked: false
     };
@@ -308,20 +313,98 @@ export default function MyPostsModal({ isOpen, onClose }: MyPostsModalProps) {
                     {post.description}
                   </p>
 
-                  {/* Post Image Placeholder */}
-                  {post.image && (
+                  {/* Post Media */}
+                  {post.media && post.media.length > 0 && (
                     <div style={{
                       width: '100%',
-                      height: 300,
-                      background: '#f3f4f6',
-                      borderRadius: 8,
                       marginBottom: 16,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
+                      borderRadius: 8,
+                      overflow: 'hidden',
                       border: '1px solid #e5e7eb'
                     }}>
-                      <span style={{ color: '#9ca3af', fontSize: 14 }}>Post Image</span>
+                      {post.media.length === 1 ? (
+                        <div>
+                          {post.media[0].type === 'image' ? (
+                            <img
+                              src={post.media[0].sourceUrl || '/placeholder.svg'}
+                              alt={post.title}
+                              style={{ width: '100%', height: 'auto', display: 'block' }}
+                              onError={(e) => {
+                                (e.target as HTMLImageElement).style.display = 'none';
+                              }}
+                            />
+                          ) : (
+                            <video
+                              src={post.media[0].sourceUrl}
+                              controls
+                              style={{ width: '100%', height: 'auto', display: 'block' }}
+                            />
+                          )}
+                        </div>
+                      ) : (
+                        <div style={{
+                          display: 'grid',
+                          gridTemplateColumns: post.media.length === 2 ? '1fr 1fr' : 'repeat(2, 1fr)',
+                          gap: 2
+                        }}>
+                          {post.media.slice(0, 4).map((item, index) => (
+                            <div
+                              key={index}
+                              style={{
+                                position: 'relative',
+                                aspectRatio: '1',
+                                overflow: 'hidden',
+                                background: '#f3f4f6'
+                              }}
+                            >
+                              {item.type === 'image' ? (
+                                <img
+                                  src={item.sourceUrl || '/placeholder.svg'}
+                                  alt={`${post.title} - ${index + 1}`}
+                                  style={{
+                                    width: '100%',
+                                    height: '100%',
+                                    objectFit: 'cover',
+                                    display: 'block'
+                                  }}
+                                  onError={(e) => {
+                                    (e.target as HTMLImageElement).style.display = 'none';
+                                  }}
+                                />
+                              ) : (
+                                <video
+                                  src={item.sourceUrl}
+                                  controls
+                                  style={{
+                                    width: '100%',
+                                    height: '100%',
+                                    objectFit: 'cover',
+                                    display: 'block'
+                                  }}
+                                />
+                              )}
+                              {post.media && post.media.length > 4 && index === 3 && (
+                                <div style={{
+                                  position: 'absolute',
+                                  top: 0,
+                                  left: 0,
+                                  right: 0,
+                                  bottom: 0,
+                                  background: 'rgba(0, 0, 0, 0.5)',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  color: '#ffffff',
+                                  fontSize: 24,
+                                  fontWeight: 700
+                                }}>
+                                  +{post.media.length - 4}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )}
 

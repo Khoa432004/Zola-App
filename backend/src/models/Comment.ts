@@ -18,10 +18,65 @@ export interface IComment {
   updatedAt: admin.firestore.Timestamp | Date;
   likeCount: number;
   isDeleted: boolean;
+  rootPostId?: string;
 }
 
 export class Comment {
   private static collection = 'comments';
+  private static postsCollection = 'posts';
+
+  private static async resolveRootPostId(
+    targetId: string,
+    depth: number = 0
+  ): Promise<string | null> {
+    if (!firestore || !targetId || depth > 10) {
+      return null;
+    }
+
+    // Check if target is a post
+    const postDoc = await firestore
+      .collection(this.postsCollection)
+      .doc(targetId)
+      .get();
+    if (postDoc.exists) {
+      return targetId;
+    }
+
+    // Otherwise, try to resolve via parent comment
+    const commentDoc = await firestore
+      .collection(this.collection)
+      .doc(targetId)
+      .get();
+    if (!commentDoc.exists) {
+      return null;
+    }
+
+    const data = commentDoc.data();
+    if (!data) return null;
+
+    if (data.rootPostId) {
+      return data.rootPostId as string;
+    }
+
+    return await this.resolveRootPostId(data.targetId, depth + 1);
+  }
+
+  private static async updatePostCommentCount(
+    postId: string,
+    delta: number
+  ): Promise<void> {
+    if (!firestore || !postId || delta === 0) {
+      return;
+    }
+
+    await firestore
+      .collection(this.postsCollection)
+      .doc(postId)
+      .update({
+        commentCount: admin.firestore.FieldValue.increment(delta),
+        updatedAt: admin.firestore.Timestamp.now(),
+      });
+  }
 
   static async findByTargetId(targetId: string, limit: number = 50): Promise<IComment[]> {
     if (!firestore) {
@@ -132,6 +187,8 @@ export class Comment {
     }
 
     const now = admin.firestore.Timestamp.now();
+    const rootPostId = await this.resolveRootPostId(commentData.targetId);
+
     const newComment: Omit<IComment, 'commentId'> = {
       targetId: commentData.targetId,
       authorId: commentData.authorId,
@@ -142,11 +199,16 @@ export class Comment {
       createdAt: now,
       updatedAt: now,
       likeCount: 0,
-      isDeleted: false
+      isDeleted: false,
+      rootPostId: rootPostId || undefined,
     };
 
     const docRef = await firestore.collection(this.collection).add(newComment);
-    
+
+    if (rootPostId) {
+      await this.updatePostCommentCount(rootPostId, 1);
+    }
+
     return {
     commentId: docRef.id,
     ...newComment,
@@ -226,7 +288,28 @@ export class Comment {
   }
 
   static async delete(commentId: string): Promise<void> {
+    if (!firestore) {
+      throw new Error('Firestore not initialized');
+    }
+
+    const commentDoc = await firestore.collection(this.collection).doc(commentId).get();
+    if (!commentDoc.exists) {
+      return;
+    }
+
+    const data = commentDoc.data();
+    if (!data || data.isDeleted) {
+      return;
+    }
+
     await this.update(commentId, { isDeleted: true });
+
+    const rootPostId =
+      data.rootPostId ||
+      (await this.resolveRootPostId(data.targetId));
+    if (rootPostId) {
+      await this.updatePostCommentCount(rootPostId, -1);
+    }
   }
 
   static async incrementLike(commentId: string): Promise<IComment | null> {

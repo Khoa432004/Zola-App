@@ -218,6 +218,12 @@ export default function PostDetailModal({ isOpen, post, onClose }: PostDetailMod
   };
 
   // Helper function to render reply textarea
+  const autoResize = (textarea?: HTMLTextAreaElement | null) => {
+    if (!textarea) return;
+    textarea.style.height = "auto";
+    textarea.style.height = `${Math.min(textarea.scrollHeight, 180)}px`;
+  };
+
   const renderReplyInput = (commentId: string) => {
     // Simplified and explicitly balanced JSX for the reply input
     const currentText = replyTexts[commentId] || '';
@@ -239,7 +245,7 @@ export default function PostDetailModal({ isOpen, post, onClose }: PostDetailMod
     };
 
     return (
-      <div style={{ marginTop: 8, display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+      <div style={{ marginTop: 8, display: 'flex', gap: 8, alignItems: 'center' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, flex: 1 }}>
           <textarea
             ref={(el) => { textareaRefs[commentId] = el; }}
@@ -247,6 +253,7 @@ export default function PostDetailModal({ isOpen, post, onClose }: PostDetailMod
             onChange={(e) => {
               const cursorPos = e.target.selectionStart;
               handleReplyTextChange(commentId, e.target.value, cursorPos);
+              autoResize(e.target);
             }}
             placeholder="Viết trả lời..."
             autoFocus
@@ -262,9 +269,12 @@ export default function PostDetailModal({ isOpen, post, onClose }: PostDetailMod
               fontSize: 13,
               fontFamily: 'inherit',
               outline: 'none',
-              resize: 'vertical',
+              resize: 'none',
               minHeight: 40,
-              transition: 'all 0.2s'
+              transition: 'all 0.2s',
+              background: '#ffffff',
+              color: '#111827',
+              overflow: 'hidden'
             }}
             onFocus={(e) => {
               e.target.style.borderColor = '#6366f1';
@@ -276,7 +286,7 @@ export default function PostDetailModal({ isOpen, post, onClose }: PostDetailMod
             }}
           />
 
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 6 }}>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 6 }}>
             <label style={{ cursor: 'pointer', fontSize: 12, color: '#6b7280' }}>
               <input
                 type="file"
@@ -324,6 +334,13 @@ export default function PostDetailModal({ isOpen, post, onClose }: PostDetailMod
       </div>
     );
   };
+
+  const COMMENTS_BATCH_SIZE = 5;
+  const [visibleCommentCount, setVisibleCommentCount] = useState(COMMENTS_BATCH_SIZE);
+
+  useEffect(() => {
+    setVisibleCommentCount(COMMENTS_BATCH_SIZE);
+  }, [post?.id]);
 
   // Recursive component to render nested replies
   const CommentReply = ({ reply, depth = 0 }: { reply: Comment; depth?: number }) => {
@@ -467,7 +484,10 @@ export default function PostDetailModal({ isOpen, post, onClose }: PostDetailMod
                     fontSize: 13,
                     fontFamily: 'inherit',
                     resize: 'none',
-                    minHeight: 60
+                    minHeight: 60,
+                    background: '#ffffff',
+                    color: '#111827',
+                    overflow: 'hidden'
                   }}
                   placeholder="Chỉnh sửa bình luận..."
                 />
@@ -701,6 +721,7 @@ export default function PostDetailModal({ isOpen, post, onClose }: PostDetailMod
       setComments(formattedComments);
       const total = countAllComments(formattedComments);
       setTotalCommentCount(total);
+      setVisibleCommentCount(Math.min(COMMENTS_BATCH_SIZE, formattedComments.length));
     } catch (error) {
       console.error('Error loading comments:', error);
     } finally {
@@ -766,6 +787,23 @@ export default function PostDetailModal({ isOpen, post, onClose }: PostDetailMod
         .modal-content {
           animation: slideUp 0.3s ease-out;
         }
+        .modal-scroll-area {
+          scrollbar-width: thin;
+          scrollbar-color: rgba(99, 102, 241, 0.4) transparent;
+        }
+        .modal-scroll-area::-webkit-scrollbar {
+          width: 6px;
+        }
+        .modal-scroll-area::-webkit-scrollbar-track {
+          background: transparent;
+        }
+        .modal-scroll-area::-webkit-scrollbar-thumb {
+          background: rgba(99, 102, 241, 0.35);
+          border-radius: 999px;
+        }
+        .modal-scroll-area::-webkit-scrollbar-thumb:hover {
+          background: rgba(99, 102, 241, 0.55);
+        }
       `}</style>
 
       <div
@@ -829,6 +867,7 @@ export default function PostDetailModal({ isOpen, post, onClose }: PostDetailMod
 
         {/* Content */}
         <div
+          className="modal-scroll-area"
           style={{
             flex: 1,
             overflowY: 'auto',
@@ -1048,7 +1087,7 @@ export default function PostDetailModal({ isOpen, post, onClose }: PostDetailMod
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 16, marginBottom: 20 }}>
-                {comments.map((comment) => (
+                {comments.slice(0, visibleCommentCount).map((comment) => (
                   <div key={comment.commentId} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                     {/* Main Comment */}
                     <div style={{ display: 'flex', gap: 12 }}>
@@ -1241,6 +1280,29 @@ export default function PostDetailModal({ isOpen, post, onClose }: PostDetailMod
                     )}
                   </div>
                 ))}
+                {visibleCommentCount < comments.length && (
+                  <button
+                    onClick={() =>
+                      setVisibleCommentCount(prev =>
+                        Math.min(prev + COMMENTS_BATCH_SIZE, comments.length)
+                      )
+                    }
+                    style={{
+                      alignSelf: 'center',
+                      padding: '8px 16px',
+                      borderRadius: 999,
+                      border: '1px solid #d1d5db',
+                      background: '#ffffff',
+                      color: '#6366f1',
+                      fontSize: 13,
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      transition: 'all 0.2s'
+                    }}
+                  >
+                    Xem thêm bình luận
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -1255,7 +1317,7 @@ export default function PostDetailModal({ isOpen, post, onClose }: PostDetailMod
           }}
         >
           {user ? (
-            <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end' }}>
+            <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
               <div
                 style={{
                   width: 36,
@@ -1289,10 +1351,14 @@ export default function PostDetailModal({ isOpen, post, onClose }: PostDetailMod
                     fontSize: 14,
                     fontFamily: 'inherit',
                     outline: 'none',
-                    resize: 'vertical',
+                    resize: 'none',
                     minHeight: 50,
-                    transition: 'all 0.2s'
+                    transition: 'all 0.2s',
+                    background: '#ffffff',
+                    color: '#111827',
+                    overflow: 'hidden'
                   }}
+                  onInput={(e) => autoResize(e.currentTarget)}
                   onFocus={(e) => {
                     e.target.style.borderColor = '#6366f1';
                     e.target.style.boxShadow = '0 0 0 3px rgba(99, 102, 241, 0.1)';
