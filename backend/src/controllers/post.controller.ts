@@ -11,14 +11,49 @@ export class PostController {
     this.postService = new PostService();
   }
 
-  getAllPosts = async (req: Request, res: Response) => {
+  getAllPosts = async (req: AuthRequest, res: Response) => {
     try {
-      const limit = req.query.limit
-        ? parseInt(req.query.limit as string)
-        : undefined;
-      const posts = await this.postService.getPublicPosts(limit);
-      res.json({ success: true, data: posts });
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 10;
+
+      const posts = await this.postService.getPublicPosts(page, limit);
+
+      // If user is authenticated, check which posts they liked
+      if (req.user?.uid || req.user?.userId) {
+        const userId = req.user.uid || req.user.userId;
+        const postsWithLikedStatus = await Promise.all(
+          posts.items.map(async (post) => {
+            const isLiked = await this.postService.checkUserLiked(
+              post.postId,
+              userId
+            );
+            return {
+              ...post,
+              isLiked,
+            };
+          })
+        );
+
+        return res.json({
+          success: true,
+          data: postsWithLikedStatus,
+          total: posts.total,
+          page,
+          limit,
+          hasMore: posts.hasMore,
+        });
+      }
+
+      res.json({
+        success: true,
+        data: posts.items.map((post) => ({ ...post, isLiked: false })),
+        total: posts.total,
+        page,
+        limit,
+        hasMore: posts.hasMore,
+      });
     } catch (error: any) {
+      console.error("Error in getAllPosts:", error);
       res.status(500).json({
         success: false,
         message: error.message || "Failed to fetch posts",
@@ -397,20 +432,94 @@ export class PostController {
     }
   };
 
-  getTopLikedPosts = async (req: Request, res: Response) => {
+  getTopLikedPosts = async (req: AuthRequest, res: Response) => {
     try {
-      const posts = await this.postService.getTopLikedPosts();
-      res.json({ success: true, data: posts });
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 10;
+      const posts = await this.postService.getTopLikedPosts(page, limit);
+
+      // If user is authenticated, check which posts they liked
+      if (req.user?.uid || req.user?.userId) {
+        const userId = req.user.uid || req.user.userId;
+        const postsWithLikedStatus = await Promise.all(
+          posts.items.map(async (post) => {
+            const isLiked = await this.postService.checkUserLiked(
+              post.postId,
+              userId
+            );
+            return {
+              ...post,
+              isLiked,
+            };
+          })
+        );
+
+        return res.json({
+          success: true,
+          data: postsWithLikedStatus,
+          total: posts.total,
+          page,
+          limit,
+          hasMore: posts.hasMore,
+        });
+      }
+
+      res.json({
+        success: true,
+        data: posts.items.map((post) => ({ ...post, isLiked: false })),
+        total: posts.total,
+        page,
+        limit,
+        hasMore: posts.hasMore,
+      });
     } catch (error: any) {
+      console.error("Error in getTopLikedPosts:", error);
       res.status(500).json({ success: false, message: error.message });
     }
   };
 
-  getTopViewedPosts = async (req: Request, res: Response) => {
+  getTopViewedPosts = async (req: AuthRequest, res: Response) => {
     try {
-      const posts = await this.postService.getTopViewedPosts();
-      res.json({ success: true, data: posts });
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 10;
+      const posts = await this.postService.getTopViewedPosts(page, limit);
+
+      // If user is authenticated, check which posts they liked
+      if (req.user?.uid || req.user?.userId) {
+        const userId = req.user.uid || req.user.userId;
+        const postsWithLikedStatus = await Promise.all(
+          posts.items.map(async (post) => {
+            const isLiked = await this.postService.checkUserLiked(
+              post.postId,
+              userId
+            );
+            return {
+              ...post,
+              isLiked,
+            };
+          })
+        );
+
+        return res.json({
+          success: true,
+          data: postsWithLikedStatus,
+          total: posts.total,
+          page,
+          limit,
+          hasMore: posts.hasMore,
+        });
+      }
+
+      res.json({
+        success: true,
+        data: posts.items.map((post) => ({ ...post, isLiked: false })),
+        total: posts.total,
+        page,
+        limit,
+        hasMore: posts.hasMore,
+      });
     } catch (error: any) {
+      console.error("Error in getTopViewedPosts:", error);
       res.status(500).json({ success: false, message: error.message });
     }
   };

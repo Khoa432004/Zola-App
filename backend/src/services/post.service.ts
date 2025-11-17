@@ -1,9 +1,27 @@
 import { Post, IPost } from "../models/Post";
 
 export class PostService {
-  async getPublicPosts(limit?: number): Promise<IPost[]> {
+  async getPublicPosts(
+    page: number = 1,
+    limit: number = 10
+  ): Promise<{
+    items: IPost[];
+    total: number;
+    hasMore: boolean;
+  }> {
     try {
-      return await Post.findAllPublic(limit);
+      const skip = (page - 1) * limit;
+
+      const [items, total] = await Promise.all([
+        Post.findAllPublicPaginated(skip, limit),
+        Post.countAllPublic(),
+      ]);
+
+      return {
+        items,
+        total,
+        hasMore: skip + items.length < total,
+      };
     } catch (error) {
       throw error;
     }
@@ -105,19 +123,64 @@ export class PostService {
     return Post.findLatest(); // orderBy updatedAt desc
   }
 
-  async getTopLikedPosts() {
-    return Post.findTopLiked(); // orderBy likeCount desc
+  async getTopLikedPosts(
+    page: number = 1,
+    limit: number = 10
+  ): Promise<{
+    items: IPost[];
+    total: number;
+    hasMore: boolean;
+  }> {
+    try {
+      const skip = (page - 1) * limit;
+      const [items, total] = await Promise.all([
+        Post.findTopLikedPaginated(skip, limit),
+        Post.countAllPublic(),
+      ]);
+
+      return {
+        items,
+        total,
+        hasMore: skip + items.length < total,
+      };
+    } catch (error) {
+      throw error;
+    }
   }
 
-  async getTopViewedPosts() {
-    return Post.findTopViewed(); // orderBy viewCount desc
+  async getTopViewedPosts(
+    page: number = 1,
+    limit: number = 10
+  ): Promise<{
+    items: IPost[];
+    total: number;
+    hasMore: boolean;
+  }> {
+    try {
+      const skip = (page - 1) * limit;
+      const [items, total] = await Promise.all([
+        Post.findTopViewedPaginated(skip, limit),
+        Post.countAllPublic(),
+      ]);
+
+      return {
+        items,
+        total,
+        hasMore: skip + items.length < total,
+      };
+    } catch (error) {
+      throw error;
+    }
   }
 
   async getPromotedPosts() {
     return Post.findTopPromoted(); // orderBy promotionLevel desc
   }
 
-  async toggleLike(postId: string, userId: string): Promise<{ isLiked: boolean; likeCount: number }> {
+  async toggleLike(
+    postId: string,
+    userId: string
+  ): Promise<{ isLiked: boolean; likeCount: number }> {
     try {
       return await Post.toggleLike(postId, userId);
     } catch (error) {

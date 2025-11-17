@@ -45,16 +45,37 @@ a {
   }
 }
 
-/* Hide scrollbar for all browsers */
-* {
-  scrollbar-width: none;
-  -ms-overflow-style: none;
+/* Custom scrollbar styles */
+.main-feed-scroll::-webkit-scrollbar,
+.sidebar-scroll::-webkit-scrollbar {
+  width: 8px;
 }
 
-*::-webkit-scrollbar {
-  display: none;
-  width: 0;
-  height: 0;
+.main-feed-scroll::-webkit-scrollbar-track,
+.sidebar-scroll::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 10px;
+}
+
+.main-feed-scroll::-webkit-scrollbar-thumb,
+.sidebar-scroll::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 10px;
+}
+
+.main-feed-scroll::-webkit-scrollbar-thumb:hover,
+.sidebar-scroll::-webkit-scrollbar-thumb:hover {
+  background: #a8a8a8;
+}
+
+.main-feed-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: #c1c1c1 #f1f1f1;
+}
+
+.sidebar-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: #c1c1c1 #f1f1f1;
 }
 
 /* Ensure inputs and form elements are interactive */

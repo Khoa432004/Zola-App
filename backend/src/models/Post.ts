@@ -363,6 +363,10 @@ export class Post {
   }
 
   static async findTopLiked(limit = 6): Promise<IPost[]> {
+    if (!firestore) {
+      throw new Error("Firestore not initialized");
+    }
+
     const snapshot = await firestore
       .collection(this.collection)
       .where("visibility", "==", "public")
@@ -371,13 +375,108 @@ export class Post {
       .limit(limit)
       .get();
 
-    return snapshot.docs.map((doc) => ({
-      postId: doc.id,
-      ...doc.data(),
-    })) as IPost[];
+    return snapshot.docs.map((doc) => {
+      const data = doc.data();
+      const createdAt = data.createdAt
+        ? data.createdAt.toDate
+          ? data.createdAt.toDate()
+          : new Date(data.createdAt)
+        : new Date();
+      const updatedAt = data.updatedAt
+        ? data.updatedAt.toDate
+          ? data.updatedAt.toDate()
+          : new Date(data.updatedAt)
+        : new Date();
+
+      return {
+        postId: doc.id,
+        authorId: data.authorId || "",
+        authorName: data.authorName || "",
+        authorAvatar: data.authorAvatar || "",
+        caption: data.caption || "",
+        media: data.media || [],
+        createdAt,
+        updatedAt,
+        likeCount: data.likeCount || 0,
+        viewCount: data.viewCount || 0,
+        commentCount: data.commentCount || 0,
+        promotionLevel: data.promotionLevel || 0,
+        tags: data.tags || [],
+        visibility: data.visibility || "public",
+        isDeleted: data.isDeleted || false,
+      } as IPost;
+    });
+  }
+
+  static async findTopLikedPaginated(
+    skip: number,
+    limit: number
+  ): Promise<IPost[]> {
+    if (!firestore) {
+      throw new Error("Firestore not initialized");
+    }
+
+    try {
+      const postsRef = firestore.collection(this.collection);
+      // Firestore doesn't support skip directly, so we fetch more and slice
+      const snapshot = await postsRef
+        .where("visibility", "==", "public")
+        .where("isDeleted", "==", false)
+        .orderBy("likeCount", "desc")
+        .limit((skip + limit) * 2) // Fetch more to account for pagination
+        .get();
+
+      if (snapshot.empty) {
+        return [];
+      }
+
+      const posts = snapshot.docs
+        .map((doc) => {
+          const data = doc.data();
+          const createdAt = data.createdAt
+            ? data.createdAt.toDate
+              ? data.createdAt.toDate()
+              : new Date(data.createdAt)
+            : new Date();
+          const updatedAt = data.updatedAt
+            ? data.updatedAt.toDate
+              ? data.updatedAt.toDate()
+              : new Date(data.updatedAt)
+            : new Date();
+
+          return {
+            postId: doc.id,
+            authorId: data.authorId || "",
+            authorName: data.authorName || "",
+            authorAvatar: data.authorAvatar || "",
+            caption: data.caption || "",
+            media: data.media || [],
+            createdAt,
+            updatedAt,
+            likeCount: data.likeCount || 0,
+            viewCount: data.viewCount || 0,
+            commentCount: data.commentCount || 0,
+            promotionLevel: data.promotionLevel || 0,
+            tags: data.tags || [],
+            visibility: data.visibility || "public",
+            isDeleted: data.isDeleted || false,
+          } as IPost;
+        })
+        .filter((post) => post.visibility === "public" && !post.isDeleted)
+        .sort((a, b) => b.likeCount - a.likeCount)
+        .slice(skip, skip + limit);
+
+      return posts;
+    } catch (error: any) {
+      throw error;
+    }
   }
 
   static async findTopViewed(limit = 6): Promise<IPost[]> {
+    if (!firestore) {
+      throw new Error("Firestore not initialized");
+    }
+
     const snapshot = await firestore
       .collection(this.collection)
       .where("visibility", "==", "public")
@@ -388,13 +487,99 @@ export class Post {
 
     return snapshot.docs.map((doc) => {
       const data = doc.data();
+      const createdAt = data.createdAt
+        ? data.createdAt.toDate
+          ? data.createdAt.toDate()
+          : new Date(data.createdAt)
+        : new Date();
+      const updatedAt = data.updatedAt
+        ? data.updatedAt.toDate
+          ? data.updatedAt.toDate()
+          : new Date(data.updatedAt)
+        : new Date();
+
       return {
         postId: doc.id,
-        ...data,
-        createdAt: data.createdAt?.toDate() || new Date(),
-        updatedAt: data.updatedAt?.toDate() || new Date(),
+        authorId: data.authorId || "",
+        authorName: data.authorName || "",
+        authorAvatar: data.authorAvatar || "",
+        caption: data.caption || "",
+        media: data.media || [],
+        createdAt,
+        updatedAt,
+        likeCount: data.likeCount || 0,
+        viewCount: data.viewCount || 0,
+        commentCount: data.commentCount || 0,
+        promotionLevel: data.promotionLevel || 0,
+        tags: data.tags || [],
+        visibility: data.visibility || "public",
+        isDeleted: data.isDeleted || false,
       } as IPost;
     });
+  }
+
+  static async findTopViewedPaginated(
+    skip: number,
+    limit: number
+  ): Promise<IPost[]> {
+    if (!firestore) {
+      throw new Error("Firestore not initialized");
+    }
+
+    try {
+      const postsRef = firestore.collection(this.collection);
+      // Firestore doesn't support skip directly, so we fetch more and slice
+      const snapshot = await postsRef
+        .where("visibility", "==", "public")
+        .where("isDeleted", "==", false)
+        .orderBy("viewCount", "desc")
+        .limit((skip + limit) * 2) // Fetch more to account for pagination
+        .get();
+
+      if (snapshot.empty) {
+        return [];
+      }
+
+      const posts = snapshot.docs
+        .map((doc) => {
+          const data = doc.data();
+          const createdAt = data.createdAt
+            ? data.createdAt.toDate
+              ? data.createdAt.toDate()
+              : new Date(data.createdAt)
+            : new Date();
+          const updatedAt = data.updatedAt
+            ? data.updatedAt.toDate
+              ? data.updatedAt.toDate()
+              : new Date(data.updatedAt)
+            : new Date();
+
+          return {
+            postId: doc.id,
+            authorId: data.authorId || "",
+            authorName: data.authorName || "",
+            authorAvatar: data.authorAvatar || "",
+            caption: data.caption || "",
+            media: data.media || [],
+            createdAt,
+            updatedAt,
+            likeCount: data.likeCount || 0,
+            viewCount: data.viewCount || 0,
+            commentCount: data.commentCount || 0,
+            promotionLevel: data.promotionLevel || 0,
+            tags: data.tags || [],
+            visibility: data.visibility || "public",
+            isDeleted: data.isDeleted || false,
+          } as IPost;
+        })
+        .filter((post) => post.visibility === "public" && !post.isDeleted)
+        .sort((a, b) => b.viewCount - a.viewCount)
+        .slice(skip, skip + limit);
+
+      return posts;
+    } catch (error: any) {
+      throw error;
+    }
   }
 
   static async findTopPromoted(limit = 4): Promise<IPost[]> {
@@ -412,7 +597,10 @@ export class Post {
     })) as IPost[];
   }
 
-  static async toggleLike(postId: string, userId: string): Promise<{ isLiked: boolean; likeCount: number }> {
+  static async toggleLike(
+    postId: string,
+    userId: string
+  ): Promise<{ isLiked: boolean; likeCount: number }> {
     if (!firestore) {
       throw new Error("Firestore not initialized");
     }
@@ -459,7 +647,10 @@ export class Post {
     };
   }
 
-  static async checkUserLiked(postId: string, userId: string): Promise<boolean> {
+  static async checkUserLiked(
+    postId: string,
+    userId: string
+  ): Promise<boolean> {
     if (!firestore) {
       throw new Error("Firestore not initialized");
     }
@@ -472,5 +663,97 @@ export class Post {
 
     const likeDoc = await likeRef.get();
     return likeDoc.exists;
+  }
+  static async findAllPublicPaginated(
+    skip: number,
+    limit: number
+  ): Promise<IPost[]> {
+    if (!firestore) {
+      throw new Error("Firestore not initialized");
+    }
+
+    try {
+      const postsRef = firestore.collection(this.collection);
+      // Firestore doesn't support skip directly, so we need to fetch more and slice
+      // For better performance with pagination, we should use startAfter with last document
+      // But for now, we'll fetch a reasonable amount and filter/sort in memory
+      const snapshot = await postsRef
+        .where("visibility", "==", "public")
+        .where("isDeleted", "==", false)
+        .limit((skip + limit) * 2) // Fetch more to account for filtering
+        .get();
+
+      if (snapshot.empty) {
+        return [];
+      }
+
+      const posts = snapshot.docs
+        .map((doc) => {
+          const data = doc.data();
+          const createdAt = data.createdAt
+            ? data.createdAt.toDate
+              ? data.createdAt.toDate()
+              : new Date(data.createdAt)
+            : new Date();
+          const updatedAt = data.updatedAt
+            ? data.updatedAt.toDate
+              ? data.updatedAt.toDate()
+              : new Date(data.updatedAt)
+            : new Date();
+
+          return {
+            postId: doc.id,
+            authorId: data.authorId || "",
+            authorName: data.authorName || "",
+            authorAvatar: data.authorAvatar || "",
+            caption: data.caption || "",
+            media: data.media || [],
+            createdAt,
+            updatedAt,
+            likeCount: data.likeCount || 0,
+            viewCount: data.viewCount || 0,
+            commentCount: data.commentCount || 0,
+            promotionLevel: data.promotionLevel || 0,
+            tags: data.tags || [],
+            visibility: data.visibility || "public",
+            isDeleted: data.isDeleted || false,
+          } as IPost;
+        })
+        .filter((post) => post.visibility === "public" && !post.isDeleted)
+        .sort((a, b) => {
+          const aTime =
+            a.createdAt instanceof Date
+              ? a.createdAt.getTime()
+              : (a.createdAt as any)?.toDate?.()?.getTime() || 0;
+          const bTime =
+            b.createdAt instanceof Date
+              ? b.createdAt.getTime()
+              : (b.createdAt as any)?.toDate?.()?.getTime() || 0;
+          return bTime - aTime;
+        })
+        .slice(skip, skip + limit);
+
+      return posts;
+    } catch (error: any) {
+      throw error;
+    }
+  }
+
+  static async countAllPublic(): Promise<number> {
+    if (!firestore) {
+      throw new Error("Firestore not initialized");
+    }
+
+    try {
+      const postsRef = firestore.collection(this.collection);
+      const snapshot = await postsRef
+        .where("visibility", "==", "public")
+        .where("isDeleted", "==", false)
+        .get();
+
+      return snapshot.size;
+    } catch (error: any) {
+      throw error;
+    }
   }
 }

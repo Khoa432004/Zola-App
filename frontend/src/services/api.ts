@@ -200,7 +200,13 @@ class ApiService {
     }
   }
 
-  async updateProfile(payload: { name?: string; phone?: string; address?: string; bio?: string; avatar?: string }) {
+  async updateProfile(payload: {
+    name?: string;
+    phone?: string;
+    address?: string;
+    bio?: string;
+    avatar?: string;
+  }) {
     try {
       const response = await this.axiosInstance.patch("/profile", payload);
       return response.data;
@@ -215,11 +221,15 @@ class ApiService {
     try {
       const formData = new FormData();
       formData.append("avatar", file);
-      const response = await this.axiosInstance.post("/profile/avatar", formData, {
-        headers: {
-          "Content-Type": "multipart/form-data",
-        },
-      });
+      const response = await this.axiosInstance.post(
+        "/profile/avatar",
+        formData,
+        {
+          headers: {
+            "Content-Type": "multipart/form-data",
+          },
+        }
+      );
       return response.data;
     } catch (error: any) {
       throw new Error(
@@ -229,16 +239,11 @@ class ApiService {
   }
 
   // Posts
-  async getPosts(limit?: number) {
-    try {
-      const params = limit ? { limit } : {};
-      const response = await this.axiosInstance.get("/posts", { params });
-      return response.data;
-    } catch (error: any) {
-      throw new Error(
-        error.response?.data?.message || "Không lấy được bài đăng"
-      );
-    }
+  async getPosts(page: number = 1, limit: number = 10) {
+    const response = await this.axiosInstance.get("/posts", {
+      params: { page, limit },
+    });
+    return response.data;
   }
 
   async getFeaturedPosts(limit?: number) {
@@ -395,12 +400,18 @@ class ApiService {
     return this.axiosInstance.get("/posts/latest");
   }
 
-  async getTopLikedPosts() {
-    return this.axiosInstance.get("/posts/top-liked");
+  async getTopLikedPosts(page: number = 1, limit: number = 10) {
+    const response = await this.axiosInstance.get("/posts/top-liked", {
+      params: { page, limit },
+    });
+    return response.data;
   }
 
-  async getTopViewedPosts() {
-    return this.axiosInstance.get("/posts/top-viewed");
+  async getTopViewedPosts(page: number = 1, limit: number = 10) {
+    const response = await this.axiosInstance.get("/posts/top-viewed", {
+      params: { page, limit },
+    });
+    return response.data;
   }
 
   async getPromotedPosts() {

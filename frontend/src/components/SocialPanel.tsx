@@ -203,7 +203,7 @@ export default function SocialPanel() {
     setError(null);
     try {
       const limit = 10;
-      const postsResponse = await apiService.getPosts(limit);
+      const postsResponse = await apiService.getPosts(page, limit);
 
       if (postsResponse.success && postsResponse.data) {
         // Lưu trạng thái ban đầu của các posts mới (chưa có trong Map)
@@ -269,7 +269,15 @@ export default function SocialPanel() {
           !isLoadingMore &&
           !isLoading
         ) {
-          loadPosts(currentPage + 1, true);
+          // If a filter is active and it supports pagination, use fetchFilteredPosts
+          if (
+            activeFilter &&
+            (activeFilter === "mostLikes" || activeFilter === "mostViews")
+          ) {
+            fetchFilteredPosts(activeFilter, currentPage + 1, true);
+          } else {
+            loadPosts(currentPage + 1, true);
+          }
         }
       },
       { threshold: 0.1 }
@@ -284,7 +292,7 @@ export default function SocialPanel() {
         observer.unobserve(observerTarget.current);
       }
     };
-  }, [hasMore, isLoadingMore, isLoading, currentPage]);
+  }, [hasMore, isLoadingMore, isLoading, currentPage, activeFilter]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -570,25 +578,30 @@ export default function SocialPanel() {
     return [];
   };
 
-  const fetchFilteredPosts = async (filterType: string) => {
+  const fetchFilteredPosts = async (
+    filterType: string,
+    page: number = 1,
+    append: boolean = false
+  ) => {
     try {
       let response;
+      const limit = 10;
 
       switch (filterType) {
         case "newest":
           response = await apiService.getLatestPosts();
           break;
         case "mostLikes":
-          response = await apiService.getTopLikedPosts();
+          response = await apiService.getTopLikedPosts(page, limit);
           break;
         case "mostViews":
-          response = await apiService.getTopViewedPosts();
+          response = await apiService.getTopViewedPosts(page, limit);
           break;
         case "promotion":
           response = await apiService.getPromotedPosts();
           break;
         default:
-          response = await apiService.getPosts();
+          response = await apiService.getPosts(page, limit);
           break;
       }
 
@@ -612,8 +625,30 @@ export default function SocialPanel() {
 
       const list = data.map(convertToDisplayPost);
 
-      setPosts(list);
-      setHasMore(false);
+      if (append) {
+        setPosts((prev) => {
+          const existingIds = new Set(prev.map((p: DisplayPost) => p.id));
+          const newPosts = list.filter(
+            (p: DisplayPost) => !existingIds.has(p.id)
+          );
+          return [...prev, ...newPosts];
+        });
+        // Set hasMore based on response
+        if (response.hasMore !== undefined) {
+          setHasMore(response.hasMore);
+        } else {
+          setHasMore(list.length === limit);
+        }
+      } else {
+        setPosts(list);
+        // Set hasMore based on response
+        if (response.hasMore !== undefined) {
+          setHasMore(response.hasMore);
+        } else {
+          setHasMore(false);
+        }
+      }
+      setCurrentPage(page);
     } catch (error) {
       console.error("Lỗi khi load filter:", error);
     }
@@ -631,6 +666,7 @@ export default function SocialPanel() {
     >
       {/* Main Feed */}
       <main
+        className="main-feed-scroll"
         style={{
           flex: 1,
           background: "#f9fafb",
@@ -2190,6 +2226,7 @@ export default function SocialPanel() {
 
       {/* Right Sidebar - Featured Posts */}
       <aside
+        className="sidebar-scroll"
         style={
           {
             width: 320,
