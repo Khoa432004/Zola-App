@@ -124,6 +124,22 @@ export class PostService {
     return Post.findLatest(); // orderBy updatedAt desc
   }
 
+  async incrementLike(postId: string, userId?: string): Promise<IPost | null> {
+    try {
+      return await Post.incrementLike(postId, userId);
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  async decrementLike(postId: string, userId?: string): Promise<IPost | null> {
+    try {
+      return await Post.decrementLike(postId, userId);
+    } catch (error) {
+      throw error;
+    }
+  }
+
   async getTopLikedPosts() {
     return Post.findTopLiked(); // orderBy likeCount desc
   }
@@ -135,24 +151,6 @@ export class PostService {
   async getPromotedPosts() {
     return Post.findTopPromoted(); // orderBy promotionLevel desc
   }
-
-// THÊM các method like từ incoming (quan trọng!)
-async incrementLike(postId: string, userId?: string): Promise<IPost | null> {
-  try {
-    return await Post.incrementLike(postId, userId);
-  } catch (error) {
-    throw error;
-  }
-}
-
-async decrementLike(postId: string, userId?: string): Promise<IPost | null> {
-  try {
-    return await Post.decrementLike(postId, userId);
-  } catch (error) {
-    throw error;
-  }
-}
-
 async toggleLike(
   postId: string,
   userId: string
