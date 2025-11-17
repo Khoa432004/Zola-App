@@ -1,8 +1,9 @@
 import { Post, IPost } from "../models/Post";
 
 export class PostService {
-  async getPublicPosts(limit?: number): Promise<IPost[]> {
+  async getPublicPosts(limit?: number, userId?: string): Promise<IPost[]> {
     try {
+      if (userId) return await Post.findAllPublicWithUser(limit, userId);
       return await Post.findAllPublic(limit);
     } catch (error) {
       throw error;
@@ -46,8 +47,9 @@ export class PostService {
     }
   }
 
-  async getPostById(postId: string): Promise<IPost | null> {
+  async getPostById(postId: string, userId?: string): Promise<IPost | null> {
     try {
+      if (userId) return await Post.findByIdWithUser(postId, userId);
       return await Post.findById(postId);
     } catch (error) {
       throw error;
@@ -103,6 +105,22 @@ export class PostService {
   }
   async getLatestPosts() {
     return Post.findLatest(); // orderBy updatedAt desc
+  }
+
+  async incrementLike(postId: string, userId?: string): Promise<IPost | null> {
+    try {
+      return await Post.incrementLike(postId, userId);
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  async decrementLike(postId: string, userId?: string): Promise<IPost | null> {
+    try {
+      return await Post.decrementLike(postId, userId);
+    } catch (error) {
+      throw error;
+    }
   }
 
   async getTopLikedPosts() {

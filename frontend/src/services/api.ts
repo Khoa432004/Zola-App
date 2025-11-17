@@ -45,6 +45,7 @@ class ApiService {
       (config) => {
         if (typeof window !== "undefined") {
           const token = localStorage.getItem("token");
+          console.log("Request interceptor - Token from localStorage:", token ? token.substring(0, 20) + "..." : "NO TOKEN FOUND");
           if (token) {
             config.headers.Authorization = `Bearer ${token}`;
           }
@@ -352,9 +353,25 @@ class ApiService {
     }
   }
 
-  async createComment(targetId: string, content: string) {
+  async createComment(targetId: string, content: string, files?: File | File[]) {
     try {
-      const response = await this.axiosInstance.post("/comments", {
+      if (files) {
+        const formData = new FormData();
+        formData.append('targetId', targetId);
+        formData.append('content', content || '');
+        if (Array.isArray(files)) {
+          files.forEach((f) => formData.append('media', f));
+        } else {
+          formData.append('media', files);
+        }
+
+        const response = await this.axiosInstance.post('/comments', formData, {
+          headers: { 'Content-Type': 'multipart/form-data' }
+        });
+        return response.data;
+      }
+
+      const response = await this.axiosInstance.post('/comments', {
         targetId,
         content,
       });
@@ -376,6 +393,24 @@ class ApiService {
       throw new Error(
         error.response?.data?.message || "Không thể cập nhật bình luận"
       );
+    }
+  }
+
+  async likeComment(commentId: string) {
+    try {
+      const response = await this.axiosInstance.post(`/comments/${commentId}/like`);
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.message || "Không thể thích bình luận");
+    }
+  }
+
+  async unlikeComment(commentId: string) {
+    try {
+      const response = await this.axiosInstance.delete(`/comments/${commentId}/like`);
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.message || "Không thể bỏ thích bình luận");
     }
   }
 
@@ -415,6 +450,33 @@ class ApiService {
       throw new Error(
         error.response?.data?.message || "Không thể thích/bỏ thích bài viết"
       );
+    }
+  }
+
+  async getPostById(postId: string) {
+    try {
+      const response = await this.axiosInstance.get(`/posts/${postId}`);
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.message || "Không lấy được bài viết");
+    }
+  }
+
+  async likePost(postId: string) {
+    try {
+      const response = await this.axiosInstance.post(`/posts/${postId}/like`);
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.message || "Không thể thích bài viết");
+    }
+  }
+
+  async unlikePost(postId: string) {
+    try {
+      const response = await this.axiosInstance.delete(`/posts/${postId}/like`);
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.message || "Không thể bỏ thích bài viết");
     }
   }
 }

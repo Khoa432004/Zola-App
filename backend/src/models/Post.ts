@@ -1,5 +1,6 @@
-import { firestore } from "../config/firebase-admin";
-import admin from "firebase-admin";
+import { firestore } from '../config/firebase-admin';
+import admin from 'firebase-admin';
+import { Comment } from './Comment';
 
 export interface IPost {
   postId: string;
@@ -22,10 +23,27 @@ export interface IPost {
   tags: string[];
   visibility: "public" | "friends" | "private";
   isDeleted: boolean;
+  isLiked?: boolean;
 }
 
 export class Post {
   private static collection = "posts";
+
+  // Helper to annotate posts with actual comment counts (includes nested replies)
+  private static async enrichPostsWithCommentCounts(posts: IPost[]): Promise<IPost[]> {
+    try {
+      const enriched = await Promise.all(
+        posts.map(async (post) => {
+          const count = await Comment.countAllCommentsForTarget(post.postId);
+          return { ...post, commentCount: count };
+        })
+      );
+      return enriched;
+    } catch (err) {
+      // If count fails, return posts as-is
+      return posts;
+    }
+  }
 
   static async findAllPublic(limit: number = 50): Promise<IPost[]> {
     if (!firestore) {
@@ -86,16 +104,37 @@ export class Post {
         })
         .slice(0, limit);
 
-      return posts;
+      return await this.enrichPostsWithCommentCounts(posts);
     } catch (error: any) {
       throw error;
     }
   }
 
-  static async findByAuthorId(
-    authorId: string,
-    limit: number = 50
-  ): Promise<IPost[]> {
+  // Variant that can annotate returned posts with whether the given user liked them
+  static async findAllPublicWithUser(limit: number = 50, userId?: string): Promise<IPost[]> {
+    const posts = await this.findAllPublic(limit);
+    if (!userId || posts.length === 0) return posts;
+
+    try {
+      const likesCollection = firestore!.collection('post_likes');
+      // For each post, check if a like doc exists for this user (doc id: `${postId}_${userId}`)
+      const checks = posts.map(async (p) => {
+        try {
+          const likeDoc = await likesCollection.doc(`${p.postId}_${userId}`).get();
+          p.isLiked = likeDoc.exists;
+        } catch {
+          p.isLiked = false;
+        }
+        return p;
+      });
+
+      return await Promise.all(checks);
+    } catch (err) {
+      return posts;
+    }
+  }
+
+  static async findByAuthorId(authorId: string, limit: number = 50): Promise<IPost[]> {
     if (!firestore) {
       throw new Error("Firestore not initialized");
     }
@@ -134,7 +173,7 @@ export class Post {
       })
       .slice(0, limit);
 
-    return posts;
+    return await this.enrichPostsWithCommentCounts(posts);
   }
 
   static async findFeatured(limit: number = 10): Promise<IPost[]> {
@@ -171,7 +210,7 @@ export class Post {
       })
       .slice(0, limit);
 
-    return posts;
+    return await this.enrichPostsWithCommentCounts(posts);
   }
 
   static async create(postData: {
@@ -231,12 +270,35 @@ export class Post {
     }
 
     const data = doc.data();
-    return {
+    const post = {
       postId: doc.id,
       ...data,
       createdAt: data?.createdAt?.toDate() || new Date(),
       updatedAt: data?.updatedAt?.toDate() || new Date(),
+      isLiked: false,
     } as IPost;
+
+    // Fetch actual comment count (including nested replies)
+    try {
+      const count = await Comment.countAllCommentsForTarget(postId);
+      post.commentCount = count;
+    } catch {
+      // Keep stored commentCount if fetch fails
+    }
+
+    return post;
+  }
+
+  static async findByIdWithUser(postId: string, userId?: string): Promise<IPost | null> {
+    const post = await this.findById(postId);
+    if (!post || !userId) return post;
+    try {
+      const likeDoc = await firestore!.collection('post_likes').doc(`${postId}_${userId}`).get();
+      post.isLiked = likeDoc.exists;
+    } catch {
+      post.isLiked = false;
+    }
+    return post;
   }
 
   static async update(
@@ -331,7 +393,7 @@ export class Post {
       })
       .slice(0, limit);
 
-    return posts;
+    return await this.enrichPostsWithCommentCounts(posts);
   }
 
   static async restore(postId: string): Promise<IPost | null> {
@@ -345,6 +407,80 @@ export class Post {
     });
 
     return await this.findById(postId);
+  }
+
+  static async incrementLike(postId: string, userId?: string): Promise<IPost | null> {
+    if (!firestore) {
+      throw new Error('Firestore not initialized');
+    }
+
+    try {
+      const docRef = firestore.collection(this.collection).doc(postId);
+      const likesRef = firestore.collection('post_likes').doc(`${postId}_${userId || 'anon'}`);
+
+      await firestore.runTransaction(async (tx) => {
+        const doc = await tx.get(docRef);
+        if (!doc.exists) {
+          throw new Error('Post not found');
+        }
+
+        // If userId is provided, only increment if there isn't already a like record
+        if (userId) {
+          const likeDoc = await tx.get(likesRef);
+          if (likeDoc.exists) {
+            // already liked by this user; no-op
+            return;
+          }
+          tx.set(likesRef, { postId, userId, createdAt: admin.firestore.Timestamp.now() });
+        }
+
+        const data = doc.data() || {};
+        const current = typeof data.likeCount === 'number' ? data.likeCount : 0;
+        const next = current + 1;
+        tx.update(docRef, { likeCount: next, updatedAt: admin.firestore.Timestamp.now() });
+      });
+
+      return await this.findByIdWithUser(postId, userId);
+    } catch (error: any) {
+      throw error;
+    }
+  }
+
+  static async decrementLike(postId: string, userId?: string): Promise<IPost | null> {
+    if (!firestore) {
+      throw new Error('Firestore not initialized');
+    }
+
+    try {
+      const docRef = firestore.collection(this.collection).doc(postId);
+      const likesRef = firestore.collection('post_likes').doc(`${postId}_${userId || 'anon'}`);
+
+      await firestore.runTransaction(async (tx) => {
+        const doc = await tx.get(docRef);
+        if (!doc.exists) {
+          throw new Error('Post not found');
+        }
+
+        // If userId provided, only decrement if a like record exists
+        if (userId) {
+          const likeDoc = await tx.get(likesRef);
+          if (!likeDoc.exists) {
+            // nothing to do
+            return;
+          }
+          tx.delete(likesRef);
+        }
+
+        const data = doc.data() || {};
+        const current = typeof data.likeCount === 'number' ? data.likeCount : 0;
+        const next = Math.max(0, current - 1);
+        tx.update(docRef, { likeCount: next, updatedAt: admin.firestore.Timestamp.now() });
+      });
+
+      return await this.findByIdWithUser(postId, userId);
+    } catch (error: any) {
+      throw error;
+    }
   }
 
   static async findLatest(limit = 8): Promise<IPost[]> {

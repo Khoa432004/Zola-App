@@ -60,9 +60,25 @@ export const useAuth = () => {
 
   const logout = useCallback(async () => {
     try {
+      if (typeof window !== 'undefined') {
+        const keys = Object.keys(localStorage);
+        keys.forEach(key => {
+          if (key.startsWith('liked_post_') || key.startsWith('liked_')) {
+            localStorage.removeItem(key);
+          }
+        });
+      }
       await dispatch(logoutAsync());
       router.push('/login');
     } catch (error: any) {
+      if (typeof window !== 'undefined') {
+        const keys = Object.keys(localStorage);
+        keys.forEach(key => {
+          if (key.startsWith('liked_post_') || key.startsWith('liked_')) {
+            localStorage.removeItem(key);
+          }
+        });
+      }
       router.push('/login');
     }
   }, [dispatch, router]);

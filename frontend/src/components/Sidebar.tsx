@@ -20,6 +20,7 @@ export default function Sidebar({ activePage = 'chat', onPageChange }: SidebarPr
   const [showMyPostsModal, setShowMyPostsModal] = useState(false);
   const [showTrashModal, setShowTrashModal] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [userInitial, setUserInitial] = useState('A');
   const settingsMenuRef = useRef<HTMLDivElement>(null);
   const userMenuRef = useRef<HTMLDivElement>(null);
   const dispatch = useAppDispatch();
@@ -43,14 +44,16 @@ export default function Sidebar({ activePage = 'chat', onPageChange }: SidebarPr
     if (!mounted) {
       return 'A'; // Default for server-side rendering
     }
+  // Update initial after hydration
+  useEffect(() => {
     if (user?.name) {
-      return user.name.charAt(0).toUpperCase();
+      setUserInitial(user.name.charAt(0).toUpperCase());
+    } else if (user?.email) {
+      setUserInitial(user.email.charAt(0).toUpperCase());
+    } else {
+      setUserInitial('A');
     }
-    if (user?.email) {
-      return user.email.charAt(0).toUpperCase();
-    }
-    return 'A';
-  };
+  }, [user]);
 
   // Close menu when clicking outside
   useEffect(() => {
@@ -120,13 +123,11 @@ export default function Sidebar({ activePage = 'chat', onPageChange }: SidebarPr
           }}
           onMouseEnter={(e) => (e.currentTarget.style.transform = "scale(1.1)")}
           onMouseLeave={(e) => (e.currentTarget.style.transform = "scale(1)")}
-          title={mounted && (user?.name || user?.email) ? (user?.name || user?.email || "Hồ sơ") : "Hồ sơ"}
+          title={user?.name || user?.email || "Hồ sơ"}
           suppressHydrationWarning
         >
-          {(!mounted || !user?.avatar) && (
-            <span style={{ fontSize: 14, color: "#fff", fontWeight: 600 }} suppressHydrationWarning>
-              {getInitial()}
-            </span>
+          {!user?.avatar && (
+            <span style={{ fontSize: 14, color: "#fff", fontWeight: 600 }}>{userInitial}</span>
           )}
         </div>
 
@@ -503,5 +504,6 @@ export default function Sidebar({ activePage = 'chat', onPageChange }: SidebarPr
       />
     </aside>
   );
+  }
 }
 
