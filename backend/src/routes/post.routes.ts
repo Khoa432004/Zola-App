@@ -43,17 +43,24 @@ router.put(
   upload.array("media", 10),
   controller.updatePost
 );
+
+router.get("/latest", controller.getLatestPosts);
+router.get("/top-liked", controller.getTopLikedPosts);
+router.get("/top-viewed", controller.getTopViewedPosts);
+router.get("/promoted", controller.getPromotedPosts);
+
 router.get('/:id', controller.getPostById);
+router.post('/:id/restore', authenticate, controller.restorePost);
+
+
+
 // Like / Unlike post
 router.post('/:id/like', authenticate, controller.likePost);
 router.delete('/:id/like', authenticate, controller.unlikePost);
 router.post('/', authenticate, upload.array('media', 10), controller.createPost);
 router.put('/:id', authenticate, upload.array('media', 10), controller.updatePost);
 router.delete('/:id', authenticate, controller.deletePost);
-router.post('/:id/restore', authenticate, controller.restorePost);
-router.get("/latest", controller.getLatestPosts);
-router.get("/top-liked", controller.getTopLikedPosts);
-router.get("/top-viewed", controller.getTopViewedPosts);
-router.get("/promoted", controller.getPromotedPosts);
+
+
 
 export default router;

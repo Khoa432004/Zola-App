@@ -602,7 +602,7 @@ export class Post {
         .sort((a, b) => b.likeCount - a.likeCount)
         .slice(skip, skip + limit);
 
-      return posts;
+      return await this.enrichPostsWithCommentCounts(posts);
     } catch (error: any) {
       throw error;
     }
@@ -712,7 +712,7 @@ export class Post {
         .sort((a, b) => b.viewCount - a.viewCount)
         .slice(skip, skip + limit);
 
-      return posts;
+      return await this.enrichPostsWithCommentCounts(posts);
     } catch (error: any) {
       throw error;
     }
