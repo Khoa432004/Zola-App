@@ -504,4 +504,3 @@ export default function Sidebar({ activePage = 'chat', onPageChange }: SidebarPr
     </aside>
   );
 }
-

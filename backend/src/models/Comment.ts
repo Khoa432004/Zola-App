@@ -8,6 +8,12 @@ export interface IComment {
   authorName: string;
   authorAvatar: string;
   content: string;
+  media?: Array<{
+    type: 'image' | 'video';
+    sourceUrl: string;
+    width: number;
+    height: number;
+  }>;
   createdAt: admin.firestore.Timestamp | Date;
   updatedAt: admin.firestore.Timestamp | Date;
   likeCount: number;
@@ -27,7 +33,7 @@ export class Comment {
       const snapshot = await commentsRef
         .where('targetId', '==', targetId)
         .where('isDeleted', '==', false)
-        .limit(200)
+        .limit(limit > 50 ? limit : 50)
         .get();
 
       if (snapshot.empty) {
@@ -44,18 +50,19 @@ export class Comment {
             ? (data.updatedAt.toDate ? data.updatedAt.toDate() : new Date(data.updatedAt))
             : new Date();
           
-          return {
-            commentId: doc.id,
-            targetId: data.targetId || '',
-            authorId: data.authorId || '',
-            authorName: data.authorName || '',
-            authorAvatar: data.authorAvatar || '',
-            content: data.content || '',
-            createdAt,
-            updatedAt,
-            likeCount: data.likeCount || 0,
-            isDeleted: data.isDeleted || false,
-          } as IComment;
+              return {
+                commentId: doc.id,
+                targetId: data.targetId || '',
+                authorId: data.authorId || '',
+                authorName: data.authorName || '',
+                authorAvatar: data.authorAvatar || '',
+                content: data.content || '',
+                media: data.media || [],
+                createdAt,
+                updatedAt,
+                likeCount: data.likeCount || 0,
+                isDeleted: data.isDeleted || false,
+              } as IComment;
         })
         .sort((a, b) => {
           const aTime = a.createdAt instanceof Date ? a.createdAt.getTime() : (a.createdAt as any)?.toDate?.()?.getTime() || 0;
@@ -65,6 +72,49 @@ export class Comment {
         .slice(0, limit);
 
       return comments;
+    } catch (error: any) {
+      throw error;
+    }
+  }
+
+  // Count all comments + nested replies for a target (post)
+  static async countAllCommentsForTarget(targetId: string): Promise<number> {
+    if (!firestore) {
+      throw new Error('Firestore not initialized');
+    }
+
+    try {
+      const commentsRef = firestore.collection(this.collection);
+      const snapshot = await commentsRef
+        .where('targetId', '==', targetId)
+        .where('isDeleted', '==', false)
+        .get();
+
+      // snapshot.size gives count of top-level comments
+      let totalCount = snapshot.size;
+
+      // For each top-level comment, count its nested replies
+      for (const doc of snapshot.docs) {
+        const commentId = doc.id;
+        const repliesSnapshot = await commentsRef
+          .where('targetId', '==', commentId)
+          .where('isDeleted', '==', false)
+          .get();
+        totalCount += repliesSnapshot.size;
+
+        // Recursively count replies of replies
+        for (const replyDoc of repliesSnapshot.docs) {
+          const replyId = replyDoc.id;
+          const nestedRepliesSnapshot = await commentsRef
+            .where('targetId', '==', replyId)
+            .where('isDeleted', '==', false)
+            .get();
+          totalCount += nestedRepliesSnapshot.size;
+          // Can continue recursing if needed, but typically 2-3 levels is enough
+        }
+      }
+
+      return totalCount;
     } catch (error: any) {
       throw error;
     }
@@ -88,6 +138,7 @@ export class Comment {
       authorName: commentData.authorName,
       authorAvatar: commentData.authorAvatar,
       content: commentData.content,
+      media: (commentData as any).media || [],
       createdAt: now,
       updatedAt: now,
       likeCount: 0,
@@ -97,10 +148,10 @@ export class Comment {
     const docRef = await firestore.collection(this.collection).add(newComment);
     
     return {
-      commentId: docRef.id,
-      ...newComment,
-      createdAt: now.toDate(),
-      updatedAt: now.toDate()
+    commentId: docRef.id,
+    ...newComment,
+    createdAt: now.toDate(),
+    updatedAt: now.toDate()
     };
   }
 
@@ -131,6 +182,7 @@ export class Comment {
         authorName: data.authorName || '',
         authorAvatar: data.authorAvatar || '',
         content: data.content || '',
+        media: data.media || [],
         createdAt,
         updatedAt,
         likeCount: data.likeCount || 0,
@@ -175,6 +227,52 @@ export class Comment {
 
   static async delete(commentId: string): Promise<void> {
     await this.update(commentId, { isDeleted: true });
+  }
+
+  static async incrementLike(commentId: string): Promise<IComment | null> {
+    if (!firestore) {
+      throw new Error('Firestore not initialized');
+    }
+
+    try {
+      const docRef = firestore.collection(this.collection).doc(commentId);
+      await firestore.runTransaction(async (tx) => {
+        const doc = await tx.get(docRef);
+        if (!doc.exists) {
+          throw new Error('Comment not found');
+        }
+        const data = doc.data() || {};
+        const current = typeof data.likeCount === 'number' ? data.likeCount : 0;
+        const next = current + 1;
+        tx.update(docRef, { likeCount: next, updatedAt: admin.firestore.Timestamp.now() });
+      });
+      return await this.findById(commentId);
+    } catch (error: any) {
+      throw error;
+    }
+  }
+
+  static async decrementLike(commentId: string): Promise<IComment | null> {
+    if (!firestore) {
+      throw new Error('Firestore not initialized');
+    }
+
+    try {
+      const docRef = firestore.collection(this.collection).doc(commentId);
+      await firestore.runTransaction(async (tx) => {
+        const doc = await tx.get(docRef);
+        if (!doc.exists) {
+          throw new Error('Comment not found');
+        }
+        const data = doc.data() || {};
+        const current = typeof data.likeCount === 'number' ? data.likeCount : 0;
+        const next = Math.max(0, current - 1);
+        tx.update(docRef, { likeCount: next, updatedAt: admin.firestore.Timestamp.now() });
+      });
+      return await this.findById(commentId);
+    } catch (error: any) {
+      throw error;
+    }
   }
 }
 

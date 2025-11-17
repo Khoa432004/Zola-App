@@ -12,60 +12,70 @@ export class PostController {
   }
 
   getAllPosts = async (req: AuthRequest, res: Response) => {
-    try {
-      const page = parseInt(req.query.page as string) || 1;
-      const limit = parseInt(req.query.limit as string) || 10;
+  try {
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 10;
+    
+    // Get userId if authenticated (public route, authentication is optional)
+    const userId = req.user?.userId || undefined;
+    
+    const posts = await this.postService.getPublicPosts(page, limit, userId);
 
-      const posts = await this.postService.getPublicPosts(page, limit);
+    // If user is authenticated, check which posts they liked
+    if (userId) {
+      const postsWithLikedStatus = await Promise.all(
+        posts.items.map(async (post) => {
+          const isLiked = await this.postService.checkUserLiked(
+            post.postId,
+            userId
+          );
+          return {
+            ...post,
+            isLiked,
+          };
+        })
+      );
 
-      // If user is authenticated, check which posts they liked
-      if (req.user?.uid || req.user?.userId) {
-        const userId = req.user.uid || req.user.userId;
-        const postsWithLikedStatus = await Promise.all(
-          posts.items.map(async (post) => {
-            const isLiked = await this.postService.checkUserLiked(
-              post.postId,
-              userId
-            );
-            return {
-              ...post,
-              isLiked,
-            };
-          })
-        );
-
-        return res.json({
-          success: true,
-          data: postsWithLikedStatus,
-          total: posts.total,
-          page,
-          limit,
-          hasMore: posts.hasMore,
-        });
-      }
-
-      res.json({
+      return res.json({
         success: true,
-        data: posts.items.map((post) => ({ ...post, isLiked: false })),
+        data: postsWithLikedStatus,
         total: posts.total,
         page,
         limit,
         hasMore: posts.hasMore,
       });
-    } catch (error: any) {
-      console.error("Error in getAllPosts:", error);
-      res.status(500).json({
-        success: false,
-        message: error.message || "Failed to fetch posts",
-      });
     }
-  };
+
+    // User not authenticated, return posts without isLiked status
+    res.json({
+      success: true,
+      data: posts.items.map((post) => ({ ...post, isLiked: false })),
+      total: posts.total,
+      page,
+      limit,
+      hasMore: posts.hasMore,
+    });
+  } catch (error: any) {
+    console.error("Error in getAllPosts:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message || "Failed to fetch posts",
+    });
+  }
+};
 
   getFeaturedPosts = async (req: Request, res: Response) => {
     try {
       const limit = req.query.limit ? parseInt(req.query.limit as string) : 10;
+      const userId = (req as any).user?.uid || undefined;
       const posts = await this.postService.getFeaturedPosts(limit);
-      res.json({ success: true, data: posts });
+      // featured helper currently doesn't accept userId; try to annotate if we have a user by using service getPublicPosts
+      if (userId) {
+        const annotated = await this.postService.getPublicPosts(limit, userId);
+        res.json({ success: true, data: annotated });
+      } else {
+        res.json({ success: true, data: posts });
+      }
     } catch (error: any) {
       res.status(500).json({
         success: false,
@@ -106,7 +116,7 @@ export class PostController {
         });
       }
 
-      const userId = req.user.uid || req.user.userId;
+      const userId = (req.user as any)?.uid || (req.user as any)?.userId || (req.user as any)?.id;
       if (!userId) {
         return res.status(401).json({
           success: false,
@@ -132,7 +142,7 @@ export class PostController {
         });
       }
 
-      const media = [];
+      const media: Array<{ type: 'image' | 'video'; sourceUrl: string; width: number; height: number }> = [];
       if (files && files.length > 0) {
         for (const file of files) {
           try {
@@ -207,7 +217,7 @@ export class PostController {
         });
       }
 
-      const userId = req.user.uid || req.user.userId;
+      const userId = (req.user as any)?.uid || (req.user as any)?.userId || (req.user as any)?.id;
       const postId = req.params.id;
 
       const post = await this.postService.getPostById(postId);
@@ -310,7 +320,7 @@ export class PostController {
         });
       }
 
-      const userId = req.user.uid || req.user.userId;
+      const userId = (req.user as any)?.uid || (req.user as any)?.userId || (req.user as any)?.id;
       const postId = req.params.id;
 
       const post = await this.postService.getPostById(postId);
@@ -351,7 +361,7 @@ export class PostController {
         });
       }
 
-      const userId = req.user.uid || req.user.userId;
+      const userId = (req.user as any)?.uid || (req.user as any)?.userId || (req.user as any)?.id;
       if (!userId) {
         return res.status(401).json({
           success: false,
@@ -384,7 +394,7 @@ export class PostController {
         });
       }
 
-      const userId = req.user.uid || req.user.userId;
+      const userId = (req.user as any)?.uid || (req.user as any)?.userId || (req.user as any)?.id;
       const postId = req.params.id;
 
       const post = await this.postService.getPostById(postId);
@@ -432,94 +442,21 @@ export class PostController {
     }
   };
 
-  getTopLikedPosts = async (req: AuthRequest, res: Response) => {
+  getTopLikedPosts = async (req: Request, res: Response) => {
     try {
-      const page = parseInt(req.query.page as string) || 1;
-      const limit = parseInt(req.query.limit as string) || 10;
-      const posts = await this.postService.getTopLikedPosts(page, limit);
-
-      // If user is authenticated, check which posts they liked
-      if (req.user?.uid || req.user?.userId) {
-        const userId = req.user.uid || req.user.userId;
-        const postsWithLikedStatus = await Promise.all(
-          posts.items.map(async (post) => {
-            const isLiked = await this.postService.checkUserLiked(
-              post.postId,
-              userId
-            );
-            return {
-              ...post,
-              isLiked,
-            };
-          })
-        );
-
-        return res.json({
-          success: true,
-          data: postsWithLikedStatus,
-          total: posts.total,
-          page,
-          limit,
-          hasMore: posts.hasMore,
-        });
-      }
-
-      res.json({
-        success: true,
-        data: posts.items.map((post) => ({ ...post, isLiked: false })),
-        total: posts.total,
-        page,
-        limit,
-        hasMore: posts.hasMore,
-      });
+      const posts = await this.postService.getTopLikedPosts();
+      res.json({ success: true, data: posts });
     } catch (error: any) {
-      console.error("Error in getTopLikedPosts:", error);
       res.status(500).json({ success: false, message: error.message });
     }
   };
 
-  getTopViewedPosts = async (req: AuthRequest, res: Response) => {
+
+  getTopViewedPosts = async (req: Request, res: Response) => {
     try {
-      const page = parseInt(req.query.page as string) || 1;
-      const limit = parseInt(req.query.limit as string) || 10;
-      const posts = await this.postService.getTopViewedPosts(page, limit);
-
-      // If user is authenticated, check which posts they liked
-      if (req.user?.uid || req.user?.userId) {
-        const userId = req.user.uid || req.user.userId;
-        const postsWithLikedStatus = await Promise.all(
-          posts.items.map(async (post) => {
-            const isLiked = await this.postService.checkUserLiked(
-              post.postId,
-              userId
-            );
-            return {
-              ...post,
-              isLiked,
-            };
-          })
-        );
-
-        return res.json({
-          success: true,
-          data: postsWithLikedStatus,
-          total: posts.total,
-          page,
-          limit,
-          hasMore: posts.hasMore,
-        });
-      }
-
-      res.json({
-        success: true,
-        data: posts.items.map((post) => ({ ...post, isLiked: false })),
-        total: posts.total,
-        page,
-        limit,
-        hasMore: posts.hasMore,
-      });
+      const posts = await this.postService.getTopViewedPosts();
+      res.json({ success: true, data: posts });
     } catch (error: any) {
-      console.error("Error in getTopViewedPosts:", error);
       res.status(500).json({ success: false, message: error.message });
     }
   };
@@ -542,7 +479,7 @@ export class PostController {
         });
       }
 
-      const userId = req.user.uid || req.user.userId;
+      const userId = req.user.userId;
       const postId = req.params.id;
 
       const result = await this.postService.toggleLike(postId, userId);
@@ -557,6 +494,72 @@ export class PostController {
         success: false,
         message: error.message || "Không thể thích/bỏ thích bài viết",
       });
+    }
+  };
+
+  getPostById = async (req: Request, res: Response) => {
+    try {
+      const postId = req.params.id;
+      if (!postId) {
+        return res.status(400).json({
+          success: false,
+          message: 'Post ID is required'
+        });
+      }
+
+      const userId = (req as any).user?.uid || undefined;
+      const post = await this.postService.getPostById(postId, userId);
+       if (!post) {
+         return res.status(404).json({
+           success: false,
+           message: 'Post not found'
+         });
+       }
+
+       res.json({ success: true, data: post });
+     } catch (error: any) {
+       res.status(500).json({
+         success: false,
+         message: error.message || 'Failed to fetch post'
+       });
+     }
+   };
+
+  likePost = async (req: AuthRequest, res: Response) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ success: false, message: 'Unauthorized' });
+      }
+
+      const postId = req.params.id;
+      if (!postId) {
+        return res.status(400).json({ success: false, message: 'Post ID is required' });
+      }
+
+      const userId = (req.user as any)?.uid || (req.user as any)?.userId || (req.user as any)?.id;
+      const updated = await this.postService.incrementLike(postId, userId);
+      res.json({ success: true, data: updated });
+    } catch (error: any) {
+      res.status(500).json({ success: false, message: error.message || 'Failed to like post' });
+    }
+  };
+
+  unlikePost = async (req: AuthRequest, res: Response) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ success: false, message: 'Unauthorized' });
+      }
+
+      const postId = req.params.id;
+      if (!postId) {
+        return res.status(400).json({ success: false, message: 'Post ID is required' });
+      }
+
+      const userId = (req.user as any)?.uid || (req.user as any)?.userId || (req.user as any)?.id;
+      const updated = await this.postService.decrementLike(postId, userId);
+      res.json({ success: true, data: updated });
+    } catch (error: any) {
+      res.status(500).json({ success: false, message: error.message || 'Failed to unlike post' });
     }
   };
 }
