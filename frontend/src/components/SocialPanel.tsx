@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
-import { apiService } from "@/services/api";
-import { useAuth } from "@/hooks/useAuth";
-import CreatePostModal from "./CreatePostModal";
+import { useState, useEffect, useRef } from 'react';
+import { apiService } from '@/services/api';
+import { useAuth } from '@/hooks/useAuth';
+import CreatePostModal from './CreatePostModal';
+import PostDetailModal from './PostDetailModal'; 
 
 interface Post {
   postId: string;
@@ -46,6 +47,7 @@ interface DisplayPost {
     height: number;
   }>;
   likes: number;
+  commentCount: number;
   isLiked: boolean;
 }
 
@@ -72,21 +74,14 @@ export default function SocialPanel() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [selectedPost, setSelectedPost] = useState<DisplayPost | null>(null); // State for the post to display in modal
+  const [showPostDetailModal, setShowPostDetailModal] = useState(false); // State to control the post detail modal visibility
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [editingPost, setEditingPost] = useState<DisplayPost | null>(null);
   const [activeFilter, setActiveFilter] = useState<FilterType>("newest");
   const [showFilterMenu, setShowFilterMenu] = useState(false);
-  const [openCommentsId, setOpenCommentsId] = useState<string | null>(null);
-  const [showAllComments, setShowAllComments] = useState<{
-    [key: string]: boolean;
-  }>({});
-  const [replyingTo, setReplyingTo] = useState<{
-    postId: string;
-    commentId?: string;
-  } | null>(null);
-  const [commentTexts, setCommentTexts] = useState<{ [key: string]: string }>(
-    {}
-  );
+  const [replyingTo, setReplyingTo] = useState<{ postId: string; commentId?: string } | null>(null);
+  const [commentTexts, setCommentTexts] = useState<{ [key: string]: string }>({});
   const [replyTexts, setReplyTexts] = useState<{ [key: string]: string }>({});
   const [postComments, setPostComments] = useState<{
     [key: string]: Comment[];
@@ -159,25 +154,16 @@ export default function SocialPanel() {
   };
 
   const convertToDisplayPost = (post: Post): DisplayPost => {
-    const date = parseDate(post.updatedAt || post.createdAt);
-    const postId = post.postId;
-    const serverLikeCount = post.likeCount || 0;
-    const serverIsLiked = post.isLiked || false;
+    const date = parseDate(post.createdAt);
+    
+    const liked = !!post.isLiked;
 
-    // Kiểm tra trạng thái like đã lưu
-    let isLiked = serverIsLiked;
-    let likes = serverLikeCount;
-
-    if (likedPosts.has(postId)) {
-      const savedState = likedPosts.get(postId)!;
-      isLiked = savedState.isLiked;
-      // Điều chỉnh số lượt like dựa trên delta đã lưu
-      // Delta được tính dựa trên sự khác biệt giữa trạng thái hiện tại và trạng thái ban đầu
-      likes = Math.max(0, serverLikeCount + savedState.likeDelta);
+    if (!post.postId) {
+      console.error("Post missing postId:", post);
     }
 
     return {
-      id: postId,
+      id: post.postId,
       authorId: post.authorId,
       author: post.authorName || "Người dùng",
       email: "",
@@ -189,8 +175,10 @@ export default function SocialPanel() {
       description: post.caption,
       image: post.media?.length > 0 ? post.media[0].sourceUrl : undefined,
       media: post.media || [],
-      likes: likes,
-      isLiked: isLiked,
+
+      likes: post.likeCount || 0,
+      commentCount: post.commentCount || 0,
+      isLiked: liked
     };
   };
 
@@ -223,11 +211,22 @@ export default function SocialPanel() {
         });
 
         const displayPosts = postsResponse.data.map(convertToDisplayPost);
-        if (append) {
-          setPosts((prev) => [...prev, ...displayPosts]);
-        } else {
-          setPosts(displayPosts);
-        }
+
+
+        setPosts((prev: DisplayPost[]) => {
+          // Sử dụng Map để tự động loại bỏ duplicate
+          const postsMap = new Map<string, DisplayPost>(prev.map((p: DisplayPost) => [p.id, p]));
+          
+          // Thêm posts mới (sẽ ghi đè nếu trùng ID)
+          displayPosts.forEach((post: DisplayPost) => {
+            if (post.id) { // Chỉ thêm nếu có ID hợp lệ
+              postsMap.set(post.id, post);
+            }
+          });
+          
+          return Array.from(postsMap.values());
+        });
+        
         setHasMore(displayPosts.length === limit);
         setCurrentPage(page);
       } else {
@@ -240,9 +239,13 @@ export default function SocialPanel() {
       if (page === 1) {
         const featuredResponse = await apiService.getFeaturedPosts(10);
         if (featuredResponse.success && featuredResponse.data) {
-          const displayFeatured =
-            featuredResponse.data.map(convertToDisplayPost);
-          setFeaturedPosts(displayFeatured);
+ 
+          const displayFeatured = featuredResponse.data.map(convertToDisplayPost);
+          // Loại bỏ duplicate cho featured posts
+          const uniqueFeatured = Array.from(
+            new Map<string, DisplayPost>(displayFeatured.map((p: DisplayPost) => [p.id, p])).values()
+          );
+          setFeaturedPosts(uniqueFeatured);
         }
       }
     } catch (err: any) {
@@ -325,245 +328,66 @@ export default function SocialPanel() {
     }
   }, [openMenuId, showFilterMenu]);
 
-  const handleLike = async (postId: string) => {
-    const post = posts.find((p) => p.id === postId);
-    if (!post || !user) return;
+  const handleLike = (postId: string) => {
+    const currentlyLiked = posts.find(p => p.id === postId)?.isLiked ?? false;
 
-    const currentIsLiked = post.isLiked;
-    const newIsLiked = !currentIsLiked;
-    const newLikes = newIsLiked ? post.likes + 1 : Math.max(0, post.likes - 1);
-
-    // Lấy trạng thái đã lưu
-    const savedState = likedPosts.get(postId);
-    const originalIsLiked = savedState?.originalIsLiked ?? currentIsLiked;
-
-    // Tính toán delta mới dựa trên sự khác biệt giữa trạng thái mới và trạng thái ban đầu
-    let newDelta = 0;
-    if (newIsLiked && !originalIsLiked) {
-      // Đang like (từ unliked -> liked so với trạng thái ban đầu)
-      newDelta = 1;
-    } else if (!newIsLiked && originalIsLiked) {
-      // Đang unlike (từ liked -> unliked so với trạng thái ban đầu)
-      newDelta = -1;
-    }
-
-    // Cập nhật UI ngay lập tức (optimistic update)
-    setLikedPosts((prev) => {
-      const newMap = new Map(prev);
-      newMap.set(postId, {
-        isLiked: newIsLiked,
-        likeDelta: newDelta,
-        originalIsLiked: originalIsLiked,
-      });
-      return newMap;
-    });
-
-    setPosts(
-      posts.map((p) => {
-        if (p.id === postId) {
-          return {
-            ...p,
-            isLiked: newIsLiked,
-            likes: newLikes,
-          };
-        }
-        return p;
-      })
-    );
-
-    try {
-      // Gọi API để toggle like
-      const response = await apiService.toggleLike(postId);
-
-      if (response.success && response.data) {
-        const { isLiked: serverIsLiked, likeCount: serverLikeCount } =
-          response.data;
-
-        // Cập nhật lại với dữ liệu từ server (để đảm bảo đồng bộ)
-        setLikedPosts((prev) => {
-          const newMap = new Map(prev);
-          const currentState = newMap.get(postId);
-          if (currentState) {
-            newMap.set(postId, {
-              isLiked: serverIsLiked,
-              likeDelta: currentState.likeDelta,
-              originalIsLiked: currentState.originalIsLiked,
-            });
-          }
-          return newMap;
-        });
-
-        setPosts(
-          posts.map((p) => {
-            if (p.id === postId) {
-              return {
-                ...p,
-                isLiked: serverIsLiked,
-                likes: serverLikeCount,
-              };
-            }
-            return p;
-          })
-        );
+    // Optimistically update UI
+    setPosts(prev => prev.map(p => {
+      if (p.id === postId) {
+        return {
+          ...p,
+          isLiked: !currentlyLiked,
+          likes: currentlyLiked ? Math.max(0, p.likes - 1) : p.likes + 1
+        };
       }
-    } catch (error: any) {
-      console.error("Error toggling like:", error);
+      return p;
+    }));
 
-      // Rollback nếu có lỗi
-      setLikedPosts((prev) => {
-        const newMap = new Map(prev);
-        const currentState = newMap.get(postId);
-        if (currentState) {
-          newMap.set(postId, {
-            isLiked: currentIsLiked,
-            likeDelta: currentState.likeDelta,
-            originalIsLiked: currentState.originalIsLiked,
-          });
+    // Call API
+    (async () => {
+      try {
+        if (!currentlyLiked) {
+          const res = await apiService.likePost(postId);
+          if (res && res.data) {
+            setPosts(prev => prev.map(p => 
+              p.id === postId 
+                ? { 
+                    ...p, 
+                    likes: res.data.likeCount ?? p.likes,
+                    isLiked: !!res.data.isLiked
+                  } 
+                : p
+            ));
+          }
+        } else {
+          const res = await apiService.unlikePost(postId);
+          if (res && res.data) {
+            setPosts(prev => prev.map(p => 
+              p.id === postId 
+                ? { 
+                    ...p, 
+                    likes: res.data.likeCount ?? Math.max(0, p.likes - 1),
+                    isLiked: !!res.data.isLiked
+                  } 
+                : p
+            ));
+          }
         }
-        return newMap;
-      });
-
-      setPosts(
-        posts.map((p) => {
+      } catch (err: any) {
+        console.error('Error toggling like on post:', err);
+        // Revert optimistic update on error
+        setPosts(prev => prev.map(p => {
           if (p.id === postId) {
             return {
               ...p,
-              isLiked: currentIsLiked,
-              likes: post.likes,
+              isLiked: currentlyLiked,
+              likes: currentlyLiked ? p.likes + 1 : Math.max(0, p.likes - 1)
             };
           }
           return p;
-        })
-      );
-
-      alert(error.message || "Không thể thích/bỏ thích bài viết");
-    }
-  };
-
-  const loadComments = async (postId: string) => {
-    if (postComments[postId]) return;
-
-    setIsLoadingComments({ ...isLoadingComments, [postId]: true });
-
-    try {
-      const comments = await apiService.getCommentsByPost(postId, 50);
-
-      const formattedComments: Comment[] = comments.map((comment: any) => ({
-        commentId: comment.commentId,
-        targetId: comment.targetId,
-        authorId: comment.authorId,
-        authorName: comment.authorName,
-        authorAvatar: comment.authorAvatar,
-        content: comment.content,
-        createdAt: comment.createdAt?.toDate
-          ? comment.createdAt.toDate()
-          : new Date(comment.createdAt),
-        updatedAt: comment.updatedAt?.toDate
-          ? comment.updatedAt.toDate()
-          : new Date(comment.updatedAt),
-        likeCount: comment.likeCount || 0,
-        isDeleted: comment.isDeleted || false,
-        replies: comment.replies || [],
-      }));
-
-      setPostComments({ ...postComments, [postId]: formattedComments });
-      setIsLoadingComments({ ...isLoadingComments, [postId]: false });
-    } catch (error) {
-      console.error("Error loading comments:", error);
-      setIsLoadingComments({ ...isLoadingComments, [postId]: false });
-    }
-  };
-
-  const handleCommentClick = (postId: string) => {
-    if (openCommentsId === postId) {
-      setOpenCommentsId(null);
-      setReplyingTo(null);
-    } else {
-      setOpenCommentsId(postId);
-      loadComments(postId);
-    }
-  };
-
-  const handleReplyClick = (postId: string, commentId?: string) => {
-    setReplyingTo({ postId, commentId });
-  };
-
-  const handleSubmitComment = async (postId: string) => {
-    const text = commentTexts[postId]?.trim();
-    if (!text || !user) return;
-
-    try {
-      const newComment = await apiService.createComment(postId, text);
-
-      const formattedComment: Comment = {
-        commentId: newComment.commentId,
-        targetId: newComment.targetId,
-        authorId: newComment.authorId,
-        authorName: newComment.authorName,
-        authorAvatar: newComment.authorAvatar,
-        content: newComment.content,
-        createdAt: newComment.createdAt?.toDate
-          ? newComment.createdAt.toDate()
-          : new Date(newComment.createdAt),
-        updatedAt: newComment.updatedAt?.toDate
-          ? newComment.updatedAt.toDate()
-          : new Date(newComment.updatedAt),
-        likeCount: newComment.likeCount || 0,
-        isDeleted: newComment.isDeleted || false,
-      };
-
-      setPostComments({
-        ...postComments,
-        [postId]: [formattedComment, ...(postComments[postId] || [])],
-      });
-      setCommentTexts({ ...commentTexts, [postId]: "" });
-      setReplyingTo(null);
-    } catch (error) {
-      console.error("Error creating comment:", error);
-    }
-  };
-
-  const handleSubmitReply = async (postId: string, commentId: string) => {
-    const text = replyTexts[commentId]?.trim();
-    if (!text || !user) return;
-
-    try {
-      const newReply = await apiService.createComment(commentId, text);
-
-      const formattedReply: Comment = {
-        commentId: newReply.commentId,
-        targetId: newReply.targetId,
-        authorId: newReply.authorId,
-        authorName: newReply.authorName,
-        authorAvatar: newReply.authorAvatar,
-        content: newReply.content,
-        createdAt: newReply.createdAt?.toDate
-          ? newReply.createdAt.toDate()
-          : new Date(newReply.createdAt),
-        updatedAt: newReply.updatedAt?.toDate
-          ? newReply.updatedAt.toDate()
-          : new Date(newReply.updatedAt),
-        likeCount: newReply.likeCount || 0,
-        isDeleted: newReply.isDeleted || false,
-      };
-
-      setPostComments({
-        ...postComments,
-        [postId]: postComments[postId].map((comment) => {
-          if (comment.commentId === commentId) {
-            return {
-              ...comment,
-              replies: [...(comment.replies || []), formattedReply],
-            };
-          }
-          return comment;
-        }),
-      });
-      setReplyTexts({ ...replyTexts, [commentId]: "" });
-      setReplyingTo(null);
-    } catch (error) {
-      console.error("Error creating reply:", error);
-    }
+        }));
+      }
+    })();
   };
 
   const extractPosts = (response: any) => {
@@ -1037,45 +861,35 @@ export default function SocialPanel() {
           ) : (
             posts.map((post) => (
               <div
-                key={post.id}
-                style={{
-                  background: "#ffffff",
-                  borderRadius: 12,
-                  padding: "20px",
-                  marginBottom: 20,
-                  boxShadow: "0 1px 3px rgba(0, 0, 0, 0.1)",
-                }}
-              >
-                {/* Post Header */}
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    marginBottom: 16,
-                    position: "relative",
-                  }}
-                >
-                  <div
-                    style={{
-                      width: 40,
-                      height: 40,
-                      borderRadius: 20,
-                      background:
-                        "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      marginRight: 12,
-                    }}
-                  >
-                    <span
-                      style={{ fontSize: 14, color: "#fff", fontWeight: 600 }}
-                    >
-                      {post.author
-                        .split(" ")
-                        .map((n) => n[0])
-                        .join("")}
-                    </span>
+              key={post.id}
+              style={{
+                background: "#ffffff",
+                borderRadius: 12,
+                padding: "20px",
+                marginBottom: 20,
+                boxShadow: "0 1px 3px rgba(0, 0, 0, 0.1)",
+                transition: "all 0.2s"
+              }}
+            >
+              {/* Post Header */}
+              <div style={{ display: "flex", alignItems: "center", marginBottom: 16, position: "relative" }}>
+                <div style={{
+                  width: 40,
+                  height: 40,
+                  borderRadius: 20,
+                  background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  marginRight: 12
+                }}>
+                  <span style={{ fontSize: 14, color: "#fff", fontWeight: 600 }}>
+                    {post.author.split(' ').map(n => n[0]).join('')}
+                  </span>
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 15, fontWeight: 600, color: "#111827", marginBottom: 2 }}>
+                    {post.author}
                   </div>
                   <div style={{ flex: 1 }}>
                     <div
@@ -1086,26 +900,48 @@ export default function SocialPanel() {
                         marginBottom: 2,
                       }}
                     >
-                      {post.author}
                     </div>
                     <div style={{ fontSize: 13, color: "#6b7280" }}>
                       {post.email}
                     </div>
                   </div>
-                  <div
-                    style={{ display: "flex", alignItems: "center", gap: 12 }}
-                  >
-                    <div style={{ fontSize: 12, color: "#9ca3af" }}>
-                      {post.timestamp}
-                    </div>
-                    {user && user.id === post.authorId && (
-                      <div style={{ position: "relative" }}>
-                        <button
-                          onClick={() =>
-                            setOpenMenuId(
-                              openMenuId === post.id ? null : post.id
-                            )
-                          }
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <div style={{ fontSize: 12, color: "#9ca3af" }}>
+                    {post.timestamp}
+                  </div>
+                  {user && user.id === post.authorId && (
+                    <div style={{ position: "relative" }}>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setOpenMenuId(openMenuId === post.id ? null : post.id);
+                        }}
+                        style={{
+                          background: "transparent",
+                          border: "none",
+                          cursor: "pointer",
+                          padding: "4px 8px",
+                          borderRadius: 4,
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          transition: "background 0.2s"
+                        }}
+                        onMouseEnter={(e) => (e.currentTarget.style.background = "#f3f4f6")}
+                        onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                      >
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2">
+                          <circle cx="12" cy="12" r="1" />
+                          <circle cx="12" cy="5" r="1" />
+                          <circle cx="12" cy="19" r="1" />
+                        </svg>
+                      </button>
+                      {openMenuId === post.id && (
+                        <div
+                          ref={(el) => {
+                            menuRefs.current[post.id] = el;
+                          }}
                           style={{
                             background: "transparent",
                             border: "none",
@@ -1124,1080 +960,294 @@ export default function SocialPanel() {
                             (e.currentTarget.style.background = "transparent")
                           }
                         >
-                          <svg
-                            width="20"
-                            height="20"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="#6b7280"
-                            strokeWidth="2"
-                          >
-                            <circle cx="12" cy="12" r="1" />
-                            <circle cx="12" cy="5" r="1" />
-                            <circle cx="12" cy="19" r="1" />
-                          </svg>
-                        </button>
-                        {openMenuId === post.id && (
-                          <div
-                            ref={(el) => {
-                              menuRefs.current[post.id] = el;
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setEditingPost(post);
+                              setOpenMenuId(null);
                             }}
                             style={{
-                              position: "absolute",
-                              top: "100%",
-                              right: 0,
-                              marginTop: 8,
-                              background: "#ffffff",
-                              borderRadius: 8,
-                              boxShadow:
-                                "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)",
-                              border: "1px solid #e5e7eb",
-                              zIndex: 100,
-                              minWidth: 150,
-                              overflow: "hidden",
+                              width: "100%",
+                              padding: "10px 16px",
+                              background: "transparent",
+                              border: "none",
+                              textAlign: "left",
+                              fontSize: 14,
+                              color: "#374151",
+                              cursor: "pointer",
+                              transition: "background 0.2s",
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 8
                             }}
+                            onMouseEnter={(e) => (e.currentTarget.style.background = "#f9fafb")}
+                            onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
                           >
-                            <button
-                              onClick={() => {
-                                setEditingPost(post);
-                                setOpenMenuId(null);
-                              }}
-                              style={{
-                                width: "100%",
-                                padding: "10px 16px",
-                                background: "transparent",
-                                border: "none",
-                                textAlign: "left",
-                                fontSize: 14,
-                                color: "#374151",
-                                cursor: "pointer",
-                                transition: "background 0.2s",
-                                display: "flex",
-                                alignItems: "center",
-                                gap: 8,
-                              }}
-                              onMouseEnter={(e) =>
-                                (e.currentTarget.style.background = "#f9fafb")
-                              }
-                              onMouseLeave={(e) =>
-                                (e.currentTarget.style.background =
-                                  "transparent")
-                              }
-                            >
-                              <svg
-                                width="16"
-                                height="16"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                strokeWidth="2"
-                              >
-                                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-                              </svg>
-                              Chỉnh sửa
-                            </button>
-                            <button
-                              onClick={async () => {
-                                if (
-                                  confirm(
-                                    "Bạn có chắc chắn muốn xóa bài viết này?"
-                                  )
-                                ) {
-                                  try {
-                                    await apiService.deletePost(post.id);
-                                    setOpenMenuId(null);
-                                    loadPosts();
-                                  } catch (err: any) {
-                                    alert(
-                                      err.message || "Không thể xóa bài viết"
-                                    );
-                                  }
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                            </svg>
+                            Chỉnh sửa
+                          </button>
+                          <button
+                            onClick={async (e) => {
+                              e.stopPropagation();
+                              if (confirm('Bạn có chắc chắn muốn xóa bài viết này?')) {
+                                try {
+                                  await apiService.deletePost(post.id);
+                                  setOpenMenuId(null);
+                                  loadPosts();
+                                } catch (err: any) {
+                                  alert(err.message || 'Không thể xóa bài viết');
                                 }
-                              }}
-                              style={{
-                                width: "100%",
-                                padding: "10px 16px",
-                                background: "transparent",
-                                border: "none",
-                                textAlign: "left",
-                                fontSize: 14,
-                                color: "#ef4444",
-                                cursor: "pointer",
-                                transition: "background 0.2s",
-                                display: "flex",
-                                alignItems: "center",
-                                gap: 8,
-                                borderTop: "1px solid #e5e7eb",
-                              }}
-                              onMouseEnter={(e) =>
-                                (e.currentTarget.style.background = "#fef2f2")
                               }
-                              onMouseLeave={(e) =>
-                                (e.currentTarget.style.background =
-                                  "transparent")
-                              }
-                            >
-                              <svg
-                                width="16"
-                                height="16"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                strokeWidth="2"
-                              >
-                                <polyline points="3 6 5 6 21 6" />
-                                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                              </svg>
-                              Xóa
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Post Title */}
-                <h3
-                  style={{
-                    margin: "0 0 8px 0",
-                    fontSize: 18,
-                    fontWeight: 700,
-                    color: "#111827",
-                  }}
-                >
-                  {post.title}
-                </h3>
-
-                {/* Post Description */}
-                <p
-                  style={{
-                    margin: "0 0 16px 0",
-                    fontSize: 14,
-                    color: "#374151",
-                    lineHeight: 1.6,
-                  }}
-                >
-                  {post.description}
-                </p>
-
-                {/* Post Media */}
-                {post.media && post.media.length > 0 && (
-                  <div
-                    style={{
-                      width: "100%",
-                      marginBottom: 16,
-                      borderRadius: 8,
-                      overflow: "hidden",
-                      border: "1px solid #e5e7eb",
-                    }}
-                  >
-                    {post.media.length === 1 ? (
-                      <div>
-                        {post.media[0].type === "image" ? (
-                          <img
-                            src={post.media[0].sourceUrl}
-                            alt={post.title}
+                            }}
                             style={{
                               width: "100%",
-                              height: "auto",
-                              display: "block",
+                              padding: "10px 16px",
+                              background: "transparent",
+                              border: "none",
+                              textAlign: "left",
+                              fontSize: 14,
+                              color: "#ef4444",
+                              cursor: "pointer",
+                              transition: "background 0.2s",
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 8,
+                              borderTop: "1px solid #e5e7eb"
                             }}
-                            onError={(e) => {
-                              (e.target as HTMLImageElement).style.display =
-                                "none";
-                            }}
-                          />
-                        ) : (
-                          <video
-                            src={post.media[0].sourceUrl}
-                            controls
-                            style={{
-                              width: "100%",
-                              height: "auto",
-                              display: "block",
-                            }}
-                          />
-                        )}
-                      </div>
-                    ) : (
-                      <div
-                        style={{
-                          display: "grid",
-                          gridTemplateColumns:
-                            post.media.length === 2
-                              ? "1fr 1fr"
-                              : "repeat(2, 1fr)",
-                          gap: 2,
-                        }}
-                      >
-                        {post.media.slice(0, 4).map((item, index) => (
-                          <div
-                            key={index}
-                            style={{
-                              position: "relative",
-                              aspectRatio: "1",
-                              overflow: "hidden",
-                              background: "#f3f4f6",
-                            }}
+                            onMouseEnter={(e) => (e.currentTarget.style.background = "#fef2f2")}
+                            onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
                           >
-                            {item.type === "image" ? (
-                              <img
-                                src={item.sourceUrl}
-                                alt={`${post.title} - ${index + 1}`}
-                                style={{
-                                  width: "100%",
-                                  height: "100%",
-                                  objectFit: "cover",
-                                  display: "block",
-                                }}
-                                onError={(e) => {
-                                  (e.target as HTMLImageElement).style.display =
-                                    "none";
-                                }}
-                              />
-                            ) : (
-                              <video
-                                src={item.sourceUrl}
-                                controls
-                                style={{
-                                  width: "100%",
-                                  height: "100%",
-                                  objectFit: "cover",
-                                  display: "block",
-                                }}
-                              />
-                            )}
-                            {post.media &&
-                              post.media.length > 4 &&
-                              index === 3 && (
-                                <div
-                                  style={{
-                                    position: "absolute",
-                                    top: 0,
-                                    left: 0,
-                                    right: 0,
-                                    bottom: 0,
-                                    background: "rgba(0, 0, 0, 0.5)",
-                                    display: "flex",
-                                    alignItems: "center",
-                                    justifyContent: "center",
-                                    color: "#ffffff",
-                                    fontSize: 24,
-                                    fontWeight: 700,
-                                  }}
-                                >
-                                  +{post.media.length - 4}
-                                </div>
-                              )}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Post Actions */}
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8,
-                    paddingTop: 12,
-                    borderTop: "1px solid #f3f4f6",
-                  }}
-                >
-                  <button
-                    onClick={() => handleLike(post.id)}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 6,
-                      background: "transparent",
-                      border: "none",
-                      cursor: "pointer",
-                      padding: "6px 12px",
-                      borderRadius: 6,
-                      transition: "background 0.2s",
-                    }}
-                    onMouseEnter={(e) =>
-                      (e.currentTarget.style.background = "#f9fafb")
-                    }
-                    onMouseLeave={(e) =>
-                      (e.currentTarget.style.background = "transparent")
-                    }
-                  >
-                    <svg
-                      width="20"
-                      height="20"
-                      viewBox="0 0 24 24"
-                      fill={post.isLiked ? "#ef4444" : "none"}
-                      stroke={post.isLiked ? "#ef4444" : "#6b7280"}
-                      strokeWidth="2"
-                    >
-                      <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
-                    </svg>
-                    <span
-                      style={{
-                        fontSize: 14,
-                        color: post.isLiked ? "#ef4444" : "#6b7280",
-                        fontWeight: 500,
-                      }}
-                    >
-                      Thích
-                    </span>
-                  </button>
-                  <span style={{ fontSize: 13, color: "#9ca3af" }}>
-                    {post.likes} lượt thích
-                  </span>
-                  <button
-                    onClick={() => handleCommentClick(post.id)}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 6,
-                      background: "transparent",
-                      border: "none",
-                      cursor: "pointer",
-                      padding: "6px 12px",
-                      borderRadius: 6,
-                      transition: "background 0.2s",
-                    }}
-                    onMouseEnter={(e) =>
-                      (e.currentTarget.style.background = "#f9fafb")
-                    }
-                    onMouseLeave={(e) =>
-                      (e.currentTarget.style.background = "transparent")
-                    }
-                  >
-                    <svg
-                      width="20"
-                      height="20"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="#6b7280"
-                      strokeWidth="2"
-                    >
-                      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-                    </svg>
-                    <span
-                      style={{
-                        fontSize: 14,
-                        color: "#6b7280",
-                        fontWeight: 500,
-                      }}
-                    >
-                      Bình luận
-                    </span>
-                  </button>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <polyline points="3 6 5 6 21 6" />
+                              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                            </svg>
+                            Xóa
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
+              </div>
 
-                {/* Comments Section */}
-                {openCommentsId === post.id && (
-                  <div
-                    style={{
-                      marginTop: 16,
-                      paddingTop: 16,
-                      borderTop: "1px solid #e5e7eb",
-                      background: "#fafafa",
-                      borderRadius: "0 0 12px 12px",
-                      margin: "0 -20px -20px -20px",
-                      padding: "16px 20px",
-                    }}
-                  >
-                    {isLoadingComments[post.id] ? (
-                      <div
-                        style={{
-                          textAlign: "center",
-                          padding: "20px",
-                          color: "#6b7280",
-                          fontSize: 14,
-                        }}
-                      >
-                        Đang tải bình luận...
-                      </div>
-                    ) : (
-                      <>
-                        {/* Comments List */}
-                        {postComments[post.id] &&
-                          postComments[post.id].length > 0 && (
-                            <div style={{ marginBottom: 16 }}>
-                              {(showAllComments[post.id]
-                                ? postComments[post.id]
-                                : postComments[post.id].slice(0, 3)
-                              ).map((comment) => (
-                                <div
-                                  key={comment.commentId}
-                                  style={{
-                                    marginBottom: 16,
-                                    paddingBottom: 16,
-                                    borderBottom: "1px solid #e5e7eb",
-                                  }}
-                                >
-                                  {/* Main Comment */}
-                                  <div style={{ display: "flex", gap: 12 }}>
-                                    <div
-                                      style={{
-                                        width: 36,
-                                        height: 36,
-                                        borderRadius: 18,
-                                        background: comment.authorAvatar
-                                          ? `url(${comment.authorAvatar})`
-                                          : "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
-                                        backgroundSize: comment.authorAvatar
-                                          ? "cover"
-                                          : "auto",
-                                        backgroundPosition: "center",
-                                        display: "flex",
-                                        alignItems: "center",
-                                        justifyContent: "center",
-                                        flexShrink: 0,
-                                        border: "2px solid #ffffff",
-                                        boxShadow:
-                                          "0 2px 4px rgba(0, 0, 0, 0.1)",
-                                      }}
-                                    >
-                                      {!comment.authorAvatar && (
-                                        <span
-                                          style={{
-                                            fontSize: 14,
-                                            color: "#fff",
-                                            fontWeight: 600,
-                                          }}
-                                        >
-                                          {comment.authorName
-                                            .charAt(0)
-                                            .toUpperCase()}
-                                        </span>
-                                      )}
-                                    </div>
-                                    <div style={{ flex: 1 }}>
-                                      <div
-                                        style={{
-                                          background: "#ffffff",
-                                          borderRadius: 12,
-                                          padding: "12px 14px",
-                                          marginBottom: 8,
-                                          boxShadow:
-                                            "0 1px 2px rgba(0, 0, 0, 0.05)",
-                                        }}
-                                      >
-                                        <div
-                                          style={{
-                                            fontSize: 14,
-                                            fontWeight: 600,
-                                            color: "#111827",
-                                            marginBottom: 4,
-                                          }}
-                                        >
-                                          {comment.authorName}
-                                        </div>
-                                        <div
-                                          style={{
-                                            fontSize: 14,
-                                            color: "#374151",
-                                            lineHeight: 1.5,
-                                            marginBottom: 6,
-                                          }}
-                                        >
-                                          {comment.content}
-                                        </div>
-                                        <div
-                                          style={{
-                                            fontSize: 12,
-                                            color: "#9ca3af",
-                                            display: "flex",
-                                            alignItems: "center",
-                                            gap: 12,
-                                          }}
-                                        >
-                                          <span>
-                                            {formatTimestamp(comment.createdAt)}
-                                          </span>
-                                          <button
-                                            onClick={() =>
-                                              handleReplyClick(
-                                                post.id,
-                                                comment.commentId
-                                              )
-                                            }
-                                            style={{
-                                              background: "transparent",
-                                              border: "none",
-                                              color: "#6366f1",
-                                              fontSize: 12,
-                                              fontWeight: 500,
-                                              cursor: "pointer",
-                                              padding: 0,
-                                            }}
-                                          >
-                                            Trả lời
-                                          </button>
-                                          <span>
-                                            {comment.likeCount} lượt thích
-                                          </span>
-                                        </div>
-                                      </div>
+              {/* Post Title */}
+              <h3 style={{
+                margin: "0 0 8px 0",
+                fontSize: 18,
+                fontWeight: 700,
+                color: "#111827"
+              }}>
+                {post.title}
+              </h3>
 
-                                      {/* Reply Input */}
-                                      {replyingTo?.postId === post.id &&
-                                        replyingTo?.commentId ===
-                                          comment.commentId && (
-                                          <div
-                                            style={{
-                                              display: "flex",
-                                              gap: 8,
-                                              alignItems: "flex-start",
-                                              marginLeft: 12,
-                                              marginTop: 8,
-                                            }}
-                                          >
-                                            <div
-                                              style={{
-                                                width: 28,
-                                                height: 28,
-                                                borderRadius: 14,
-                                                background: user?.avatar
-                                                  ? `url(${user.avatar})`
-                                                  : "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
-                                                backgroundSize: user?.avatar
-                                                  ? "cover"
-                                                  : "auto",
-                                                backgroundPosition: "center",
-                                                display: "flex",
-                                                alignItems: "center",
-                                                justifyContent: "center",
-                                                flexShrink: 0,
-                                              }}
-                                            >
-                                              {!user?.avatar && (
-                                                <span
-                                                  style={{
-                                                    fontSize: 11,
-                                                    color: "#fff",
-                                                    fontWeight: 600,
-                                                  }}
-                                                >
-                                                  {user?.name
-                                                    ?.charAt(0)
-                                                    .toUpperCase() || "U"}
-                                                </span>
-                                              )}
-                                            </div>
-                                            <div
-                                              style={{
-                                                flex: 1,
-                                                display: "flex",
-                                                flexDirection: "column",
-                                                gap: 6,
-                                              }}
-                                            >
-                                              <textarea
-                                                value={
-                                                  replyTexts[
-                                                    comment.commentId
-                                                  ] || ""
-                                                }
-                                                onChange={(e) =>
-                                                  setReplyTexts({
-                                                    ...replyTexts,
-                                                    [comment.commentId]:
-                                                      e.target.value,
-                                                  })
-                                                }
-                                                placeholder={`Trả lời ${comment.authorName}...`}
-                                                style={{
-                                                  width: "100%",
-                                                  padding: "8px 10px",
-                                                  border: "1px solid #e5e7eb",
-                                                  borderRadius: 8,
-                                                  fontSize: 13,
-                                                  resize: "vertical",
-                                                  minHeight: 50,
-                                                  fontFamily: "inherit",
-                                                  outline: "none",
-                                                  transition:
-                                                    "border-color 0.2s",
-                                                  color: "#111827",
-                                                  background: "#ffffff",
-                                                }}
-                                                onFocus={(e) =>
-                                                  (e.target.style.borderColor =
-                                                    "#6366f1")
-                                                }
-                                                onBlur={(e) =>
-                                                  (e.target.style.borderColor =
-                                                    "#e5e7eb")
-                                                }
-                                              />
-                                              <div
-                                                style={{
-                                                  display: "flex",
-                                                  justifyContent: "flex-end",
-                                                  gap: 6,
-                                                }}
-                                              >
-                                                <button
-                                                  onClick={() => {
-                                                    setReplyingTo(null);
-                                                    setReplyTexts({
-                                                      ...replyTexts,
-                                                      [comment.commentId]: "",
-                                                    });
-                                                  }}
-                                                  style={{
-                                                    padding: "4px 10px",
-                                                    background: "transparent",
-                                                    border: "1px solid #e5e7eb",
-                                                    borderRadius: 6,
-                                                    fontSize: 12,
-                                                    color: "#6b7280",
-                                                    cursor: "pointer",
-                                                  }}
-                                                >
-                                                  Hủy
-                                                </button>
-                                                <button
-                                                  onClick={() =>
-                                                    handleSubmitReply(
-                                                      post.id,
-                                                      comment.commentId
-                                                    )
-                                                  }
-                                                  disabled={
-                                                    !replyTexts[
-                                                      comment.commentId
-                                                    ]?.trim() || !user
-                                                  }
-                                                  style={{
-                                                    padding: "4px 12px",
-                                                    background:
-                                                      replyTexts[
-                                                        comment.commentId
-                                                      ]?.trim() && user
-                                                        ? "linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)"
-                                                        : "#d1d5db",
-                                                    color: "#ffffff",
-                                                    border: "none",
-                                                    borderRadius: 6,
-                                                    fontSize: 12,
-                                                    fontWeight: 600,
-                                                    cursor:
-                                                      replyTexts[
-                                                        comment.commentId
-                                                      ]?.trim() && user
-                                                        ? "pointer"
-                                                        : "not-allowed",
-                                                    opacity:
-                                                      replyTexts[
-                                                        comment.commentId
-                                                      ]?.trim() && user
-                                                        ? 1
-                                                        : 0.6,
-                                                  }}
-                                                >
-                                                  Đăng
-                                                </button>
-                                              </div>
-                                            </div>
-                                          </div>
-                                        )}
+              {/* Post Description */}
+              <p style={{
+                margin: "0 0 16px 0",
+                fontSize: 14,
+                color: "#374151",
+                lineHeight: 1.6
+              }}>
+                {post.description}
+              </p>
 
-                                      {/* Replies */}
-                                      {comment.replies &&
-                                        comment.replies.length > 0 && (
-                                          <div
-                                            style={{
-                                              marginLeft: 12,
-                                              marginTop: 12,
-                                            }}
-                                          >
-                                            {comment.replies.map((reply) => (
-                                              <div
-                                                key={reply.commentId}
-                                                style={{
-                                                  display: "flex",
-                                                  gap: 10,
-                                                  marginBottom: 12,
-                                                }}
-                                              >
-                                                <div
-                                                  style={{
-                                                    width: 28,
-                                                    height: 28,
-                                                    borderRadius: 14,
-                                                    background:
-                                                      reply.authorAvatar
-                                                        ? `url(${reply.authorAvatar})`
-                                                        : "linear-gradient(135deg, #10b981 0%, #059669 100%)",
-                                                    backgroundSize:
-                                                      reply.authorAvatar
-                                                        ? "cover"
-                                                        : "auto",
-                                                    backgroundPosition:
-                                                      "center",
-                                                    display: "flex",
-                                                    alignItems: "center",
-                                                    justifyContent: "center",
-                                                    flexShrink: 0,
-                                                  }}
-                                                >
-                                                  {!reply.authorAvatar && (
-                                                    <span
-                                                      style={{
-                                                        fontSize: 11,
-                                                        color: "#fff",
-                                                        fontWeight: 600,
-                                                      }}
-                                                    >
-                                                      {reply.authorName
-                                                        .charAt(0)
-                                                        .toUpperCase()}
-                                                    </span>
-                                                  )}
-                                                </div>
-                                                <div style={{ flex: 1 }}>
-                                                  <div
-                                                    style={{
-                                                      background: "#ffffff",
-                                                      borderRadius: 10,
-                                                      padding: "10px 12px",
-                                                      boxShadow:
-                                                        "0 1px 2px rgba(0, 0, 0, 0.05)",
-                                                    }}
-                                                  >
-                                                    <div
-                                                      style={{
-                                                        fontSize: 13,
-                                                        fontWeight: 600,
-                                                        color: "#111827",
-                                                        marginBottom: 4,
-                                                      }}
-                                                    >
-                                                      {reply.authorName}
-                                                    </div>
-                                                    <div
-                                                      style={{
-                                                        fontSize: 13,
-                                                        color: "#374151",
-                                                        lineHeight: 1.5,
-                                                        marginBottom: 6,
-                                                      }}
-                                                    >
-                                                      {reply.content}
-                                                    </div>
-                                                    <div
-                                                      style={{
-                                                        fontSize: 11,
-                                                        color: "#9ca3af",
-                                                        display: "flex",
-                                                        alignItems: "center",
-                                                        gap: 10,
-                                                      }}
-                                                    >
-                                                      <span>
-                                                        {formatTimestamp(
-                                                          reply.createdAt
-                                                        )}
-                                                      </span>
-                                                      <button
-                                                        onClick={() =>
-                                                          handleReplyClick(
-                                                            post.id,
-                                                            reply.commentId
-                                                          )
-                                                        }
-                                                        style={{
-                                                          background:
-                                                            "transparent",
-                                                          border: "none",
-                                                          color: "#6366f1",
-                                                          fontSize: 11,
-                                                          fontWeight: 500,
-                                                          cursor: "pointer",
-                                                          padding: 0,
-                                                        }}
-                                                      >
-                                                        Trả lời
-                                                      </button>
-                                                      <span>
-                                                        {reply.likeCount} lượt
-                                                        thích
-                                                      </span>
-                                                    </div>
-                                                  </div>
-                                                </div>
-                                              </div>
-                                            ))}
-                                          </div>
-                                        )}
-                                    </div>
-                                  </div>
-                                </div>
-                              ))}
-
-                              {/* Show More/Less Button */}
-                              {postComments[post.id].length > 3 && (
-                                <button
-                                  onClick={() =>
-                                    setShowAllComments({
-                                      ...showAllComments,
-                                      [post.id]: !showAllComments[post.id],
-                                    })
-                                  }
-                                  style={{
-                                    width: "100%",
-                                    padding: "10px",
-                                    background: "transparent",
-                                    border: "1px solid #e5e7eb",
-                                    borderRadius: 8,
-                                    fontSize: 13,
-                                    color: "#6366f1",
-                                    fontWeight: 600,
-                                    cursor: "pointer",
-                                    transition: "all 0.2s",
-                                    marginTop: 8,
-                                  }}
-                                  onMouseEnter={(e) => {
-                                    e.currentTarget.style.background =
-                                      "#f9fafb";
-                                    e.currentTarget.style.borderColor =
-                                      "#6366f1";
-                                  }}
-                                  onMouseLeave={(e) => {
-                                    e.currentTarget.style.background =
-                                      "transparent";
-                                    e.currentTarget.style.borderColor =
-                                      "#e5e7eb";
-                                  }}
-                                >
-                                  {showAllComments[post.id]
-                                    ? `Ẩn bớt bình luận`
-                                    : `Xem thêm ${
-                                        postComments[post.id].length - 3
-                                      } bình luận`}
-                                </button>
-                              )}
-                            </div>
-                          )}
-
-                        {/* Comment Input */}
-                        <div
+              {/* Post Media */}
+              {post.media && post.media.length > 0 && (
+                <div style={{
+                  width: "100%",
+                  marginBottom: 16,
+                  borderRadius: 8,
+                  overflow: "hidden",
+                  border: "1px solid #e5e7eb"
+                }}>
+                  {post.media.length === 1 ? (
+                    <div>
+                      {post.media[0].type === 'image' ? (
+                        <img 
+                          src={post.media[0].sourceUrl || "/placeholder.svg"} 
+                          alt={post.title}
                           style={{
-                            display: "flex",
-                            gap: 10,
-                            alignItems: "flex-start",
+                            width: "100%",
+                            height: "auto",
+                            display: "block"
+                          }}
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).style.display = 'none';
+                          }}
+                        />
+                      ) : (
+                        <video 
+                          src={post.media[0].sourceUrl}
+                          controls
+                          style={{
+                            width: "100%",
+                            height: "auto",
+                            display: "block"
+                          }}
+                        />
+                      )}
+                    </div>
+                  ) : (
+                    <div style={{
+                      display: "grid",
+                      gridTemplateColumns: post.media.length === 2 ? "1fr 1fr" : "repeat(2, 1fr)",
+                      gap: 2
+                    }}>
+                      {post.media.slice(0, 4).map((item, index) => (
+                        <div
+                          key={index}
+                          style={{
+                            position: "relative",
+                            aspectRatio: "1",
+                            overflow: "hidden",
+                            background: "#f3f4f6"
                           }}
                         >
-                          <div
-                            style={{
-                              width: 36,
-                              height: 36,
-                              borderRadius: 18,
-                              background: user?.avatar
-                                ? `url(${user.avatar})`
-                                : "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
-                              backgroundSize: user?.avatar ? "cover" : "auto",
-                              backgroundPosition: "center",
+                          {item.type === 'image' ? (
+                            <img 
+                              src={item.sourceUrl || "/placeholder.svg"} 
+                              alt={`${post.title} - ${index + 1}`}
+                              style={{
+                                width: "100%",
+                                height: "100%",
+                                objectFit: "cover",
+                                display: "block"
+                              }}
+                              onError={(e) => {
+                                (e.target as HTMLImageElement).style.display = 'none';
+                              }}
+                            />
+                          ) : (
+                            <video 
+                              src={item.sourceUrl}
+                              controls
+                              style={{
+                                width: "100%",
+                                height: "100%",
+                                objectFit: "cover",
+                                display: "block"
+                              }}
+                            />
+                          )}
+                          {post.media && post.media.length > 4 && index === 3 && (
+                            <div style={{
+                              position: "absolute",
+                              top: 0,
+                              left: 0,
+                              right: 0,
+                              bottom: 0,
+                              background: "rgba(0, 0, 0, 0.5)",
                               display: "flex",
                               alignItems: "center",
                               justifyContent: "center",
-                              flexShrink: 0,
-                              border: "2px solid #ffffff",
-                              boxShadow: "0 2px 4px rgba(0, 0, 0, 0.1)",
-                            }}
-                          >
-                            {!user?.avatar && (
-                              <span
-                                style={{
-                                  fontSize: 14,
-                                  color: "#fff",
-                                  fontWeight: 600,
-                                }}
-                              >
-                                {user?.name?.charAt(0).toUpperCase() || "U"}
-                              </span>
-                            )}
-                          </div>
-                          <div
-                            style={{
-                              flex: 1,
-                              display: "flex",
-                              flexDirection: "column",
-                              gap: 8,
-                            }}
-                          >
-                            {replyingTo?.postId === post.id &&
-                              !replyingTo?.commentId && (
-                                <div
-                                  style={{
-                                    padding: "6px 10px",
-                                    background: "#f3f4f6",
-                                    borderRadius: 6,
-                                    fontSize: 12,
-                                    color: "#6b7280",
-                                    display: "flex",
-                                    alignItems: "center",
-                                    justifyContent: "space-between",
-                                  }}
-                                >
-                                  <span>Đang trả lời bài viết</span>
-                                  <button
-                                    onClick={() => setReplyingTo(null)}
-                                    style={{
-                                      background: "transparent",
-                                      border: "none",
-                                      color: "#6366f1",
-                                      cursor: "pointer",
-                                      fontSize: 12,
-                                      padding: 0,
-                                    }}
-                                  >
-                                    ✕
-                                  </button>
-                                </div>
-                              )}
-                            <textarea
-                              value={commentTexts[post.id] || ""}
-                              onChange={(e) =>
-                                setCommentTexts({
-                                  ...commentTexts,
-                                  [post.id]: e.target.value,
-                                })
-                              }
-                              placeholder={
-                                replyingTo?.postId === post.id &&
-                                !replyingTo?.commentId
-                                  ? "Viết bình luận cho bài viết..."
-                                  : "Viết bình luận..."
-                              }
-                              style={{
-                                width: "100%",
-                                padding: "12px 14px",
-                                border: "2px solid #e5e7eb",
-                                borderRadius: 12,
-                                fontSize: 14,
-                                resize: "vertical",
-                                minHeight: 70,
-                                fontFamily: "inherit",
-                                outline: "none",
-                                transition: "all 0.2s",
-                                color: "#111827",
-                                background: "#ffffff",
-                                boxShadow: "0 1px 2px rgba(0, 0, 0, 0.05)",
-                              }}
-                              onFocus={(e) => {
-                                e.target.style.borderColor = "#6366f1";
-                                e.target.style.boxShadow =
-                                  "0 0 0 3px rgba(99, 102, 241, 0.1)";
-                              }}
-                              onBlur={(e) => {
-                                e.target.style.borderColor = "#e5e7eb";
-                                e.target.style.boxShadow =
-                                  "0 1px 2px rgba(0, 0, 0, 0.05)";
-                              }}
-                            />
-                            <div
-                              style={{
-                                display: "flex",
-                                justifyContent: "flex-end",
-                                gap: 8,
-                              }}
-                            >
-                              {replyingTo?.postId === post.id &&
-                                !replyingTo?.commentId && (
-                                  <button
-                                    onClick={() => {
-                                      setReplyingTo(null);
-                                      setCommentTexts({
-                                        ...commentTexts,
-                                        [post.id]: "",
-                                      });
-                                    }}
-                                    style={{
-                                      padding: "8px 14px",
-                                      background: "transparent",
-                                      border: "1px solid #e5e7eb",
-                                      borderRadius: 8,
-                                      fontSize: 13,
-                                      color: "#6b7280",
-                                      cursor: "pointer",
-                                      transition: "all 0.2s",
-                                      fontWeight: 500,
-                                    }}
-                                    onMouseEnter={(e) => {
-                                      e.currentTarget.style.background =
-                                        "#f9fafb";
-                                      e.currentTarget.style.borderColor =
-                                        "#d1d5db";
-                                    }}
-                                    onMouseLeave={(e) => {
-                                      e.currentTarget.style.background =
-                                        "transparent";
-                                      e.currentTarget.style.borderColor =
-                                        "#e5e7eb";
-                                    }}
-                                  >
-                                    Hủy
-                                  </button>
-                                )}
-                              <button
-                                onClick={() => handleSubmitComment(post.id)}
-                                disabled={
-                                  !commentTexts[post.id]?.trim() || !user
-                                }
-                                style={{
-                                  padding: "8px 20px",
-                                  background:
-                                    commentTexts[post.id]?.trim() && user
-                                      ? "linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)"
-                                      : "#d1d5db",
-                                  color: "#ffffff",
-                                  border: "none",
-                                  borderRadius: 8,
-                                  fontSize: 13,
-                                  fontWeight: 600,
-                                  cursor:
-                                    commentTexts[post.id]?.trim() && user
-                                      ? "pointer"
-                                      : "not-allowed",
-                                  transition: "all 0.2s",
-                                  opacity:
-                                    commentTexts[post.id]?.trim() && user
-                                      ? 1
-                                      : 0.6,
-                                  boxShadow:
-                                    commentTexts[post.id]?.trim() && user
-                                      ? "0 2px 4px rgba(99, 102, 241, 0.3)"
-                                      : "none",
-                                }}
-                                onMouseEnter={(e) => {
-                                  if (commentTexts[post.id]?.trim() && user) {
-                                    e.currentTarget.style.transform =
-                                      "translateY(-1px)";
-                                    e.currentTarget.style.boxShadow =
-                                      "0 4px 6px rgba(99, 102, 241, 0.4)";
-                                  }
-                                }}
-                                onMouseLeave={(e) => {
-                                  e.currentTarget.style.transform =
-                                    "translateY(0)";
-                                  e.currentTarget.style.boxShadow =
-                                    commentTexts[post.id]?.trim() && user
-                                      ? "0 2px 4px rgba(99, 102, 241, 0.3)"
-                                      : "none";
-                                }}
-                              >
-                                Đăng
-                              </button>
+                              color: "#ffffff",
+                              fontSize: 24,
+                              fontWeight: 700
+                            }}>
+                              +{post.media.length - 4}
                             </div>
-                          </div>
+                          )}
                         </div>
-                      </>
-                    )}
-                  </div>
-                )}
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Post Actions */}
+              <div style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                paddingTop: 12,
+                borderTop: "1px solid #f3f4f6"
+              }}>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleLike(post.id);
+                  }}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    background: "transparent",
+                    border: "none",
+                    cursor: "pointer",
+                    padding: "6px 12px",
+                    borderRadius: 6,
+                    transition: "background 0.2s"
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = "#f9fafb")}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                >
+                  <svg
+                    width="20"
+                    height="20"
+                    viewBox="0 0 24 24"
+                    fill={post.isLiked ? "#ef4444" : "none"}
+                    stroke={post.isLiked ? "#ef4444" : "#6b7280"}
+                    strokeWidth="2"
+                  >
+                    <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+                  </svg>
+                  <span style={{
+                    fontSize: 14,
+                    color: post.isLiked ? "#ef4444" : "#6b7280",
+                    fontWeight: 500
+                  }}>
+                    Thích
+                  </span>
+                </button>
+                <span style={{ fontSize: 13, color: "#9ca3af" }}>
+                  {post.likes} lượt thích
+                </span>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setSelectedPost(post);
+                    setShowPostDetailModal(true);
+                  }}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    background: "transparent",
+                    border: "none",
+                    cursor: "pointer",
+                    padding: "6px 12px",
+                    borderRadius: 6,
+                    transition: "background 0.2s"
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = "#f9fafb")}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                >
+                  <svg
+                    width="20"
+                    height="20"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="#6b7280"
+                    strokeWidth="2"
+                  >
+                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                  </svg>
+                  <span style={{
+                    fontSize: 14,
+                    color: "#6b7280",
+                    fontWeight: 500
+                  }}>
+                    Bình luận
+                  </span>
+                </button>
+                <span style={{ fontSize: 13, color: "#9ca3af" }}>
+                  {post.commentCount} bình luận
+                </span>
+              </div>
+
+              {/* Comments Section */}
               </div>
             ))
           )}
@@ -2333,7 +1383,15 @@ export default function SocialPanel() {
           ))}
         </div>
       </aside>
-
+      {/* Post Detail Modal */}
+      <PostDetailModal
+        isOpen={showPostDetailModal}
+        post={selectedPost}
+        onClose={() => {
+          setShowPostDetailModal(false);
+          setSelectedPost(null);
+        }}
+      />
       {/* Create Post Modal */}
       <CreatePostModal
         isOpen={showCreateModal}

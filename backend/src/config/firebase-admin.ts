@@ -72,4 +72,3 @@ if (!firestore) {
 }
 
 export { adminAuth, firestore };
-

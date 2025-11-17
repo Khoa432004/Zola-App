@@ -64,8 +64,9 @@ export class PostService {
     }
   }
 
-  async getPostById(postId: string): Promise<IPost | null> {
+  async getPostById(postId: string, userId?: string): Promise<IPost | null> {
     try {
+      if (userId) return await Post.findByIdWithUser(postId, userId);
       return await Post.findById(postId);
     } catch (error) {
       throw error;
@@ -123,76 +124,51 @@ export class PostService {
     return Post.findLatest(); // orderBy updatedAt desc
   }
 
-  async getTopLikedPosts(
-    page: number = 1,
-    limit: number = 10
-  ): Promise<{
-    items: IPost[];
-    total: number;
-    hasMore: boolean;
-  }> {
-    try {
-      const skip = (page - 1) * limit;
-      const [items, total] = await Promise.all([
-        Post.findTopLikedPaginated(skip, limit),
-        Post.countAllPublic(),
-      ]);
-
-      return {
-        items,
-        total,
-        hasMore: skip + items.length < total,
-      };
-    } catch (error) {
-      throw error;
-    }
+  async getTopLikedPosts() {
+    return Post.findTopLiked(); // orderBy likeCount desc
   }
 
-  async getTopViewedPosts(
-    page: number = 1,
-    limit: number = 10
-  ): Promise<{
-    items: IPost[];
-    total: number;
-    hasMore: boolean;
-  }> {
-    try {
-      const skip = (page - 1) * limit;
-      const [items, total] = await Promise.all([
-        Post.findTopViewedPaginated(skip, limit),
-        Post.countAllPublic(),
-      ]);
-
-      return {
-        items,
-        total,
-        hasMore: skip + items.length < total,
-      };
-    } catch (error) {
-      throw error;
-    }
+  async getTopViewedPosts() {
+    return Post.findTopViewed(); // orderBy viewCount desc
   }
 
   async getPromotedPosts() {
     return Post.findTopPromoted(); // orderBy promotionLevel desc
   }
 
-  async toggleLike(
-    postId: string,
-    userId: string
-  ): Promise<{ isLiked: boolean; likeCount: number }> {
-    try {
-      return await Post.toggleLike(postId, userId);
-    } catch (error) {
-      throw error;
-    }
+// THÊM các method like từ incoming (quan trọng!)
+async incrementLike(postId: string, userId?: string): Promise<IPost | null> {
+  try {
+    return await Post.incrementLike(postId, userId);
+  } catch (error) {
+    throw error;
   }
+}
 
-  async checkUserLiked(postId: string, userId: string): Promise<boolean> {
-    try {
-      return await Post.checkUserLiked(postId, userId);
-    } catch (error) {
-      throw error;
-    }
+async decrementLike(postId: string, userId?: string): Promise<IPost | null> {
+  try {
+    return await Post.decrementLike(postId, userId);
+  } catch (error) {
+    throw error;
   }
+}
+
+async toggleLike(
+  postId: string,
+  userId: string
+): Promise<{ isLiked: boolean; likeCount: number }> {
+  try {
+    return await Post.toggleLike(postId, userId);
+  } catch (error) {
+    throw error;
+  }
+}
+
+async checkUserLiked(postId: string, userId: string): Promise<boolean> {
+  try {
+    return await Post.checkUserLiked(postId, userId);
+  } catch (error) {
+    throw error;
+  }
+}
 }

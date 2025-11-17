@@ -11,8 +11,14 @@ export class CommentService {
     authorName: string;
     authorAvatar: string;
     content: string;
+    media?: Array<{
+      type: 'image' | 'video';
+      sourceUrl: string;
+      width: number;
+      height: number;
+    }>;
   }): Promise<IComment> {
-    return await Comment.create(commentData);
+    return await Comment.create(commentData as any);
   }
 
   static async getCommentById(commentId: string): Promise<IComment | null> {
@@ -29,6 +35,14 @@ export class CommentService {
 
   static async deleteComment(commentId: string): Promise<void> {
     return await Comment.delete(commentId);
+  }
+
+  static async incrementLike(commentId: string): Promise<IComment | null> {
+    return await Comment.incrementLike(commentId);
+  }
+
+  static async decrementLike(commentId: string): Promise<IComment | null> {
+    return await Comment.decrementLike(commentId);
   }
 }
 

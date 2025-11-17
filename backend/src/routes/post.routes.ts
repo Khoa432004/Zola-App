@@ -29,8 +29,8 @@ router.get("/", controller.getAllPosts);
 router.get("/featured", controller.getFeaturedPosts);
 
 // Protected routes
-router.get("/my", authenticate, controller.getMyPosts);
-router.get("/deleted", authenticate, controller.getDeletedPosts);
+router.get('/my', authenticate, controller.getMyPosts);
+router.get('/deleted', authenticate, controller.getDeletedPosts);
 router.post(
   "/",
   authenticate,
@@ -43,15 +43,17 @@ router.put(
   upload.array("media", 10),
   controller.updatePost
 );
-router.delete("/:id", authenticate, controller.deletePost);
-router.post("/:id/restore", authenticate, controller.restorePost);
-
+router.get('/:id', controller.getPostById);
+// Like / Unlike post
+router.post('/:id/like', authenticate, controller.likePost);
+router.delete('/:id/like', authenticate, controller.unlikePost);
+router.post('/', authenticate, upload.array('media', 10), controller.createPost);
+router.put('/:id', authenticate, upload.array('media', 10), controller.updatePost);
+router.delete('/:id', authenticate, controller.deletePost);
+router.post('/:id/restore', authenticate, controller.restorePost);
 router.get("/latest", controller.getLatestPosts);
 router.get("/top-liked", controller.getTopLikedPosts);
 router.get("/top-viewed", controller.getTopViewedPosts);
 router.get("/promoted", controller.getPromotedPosts);
-
-// Like/Unlike post
-router.post("/:id/like", authenticate, controller.toggleLike);
 
 export default router;
