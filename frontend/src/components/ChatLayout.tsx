@@ -129,6 +129,7 @@ export default function ChatLayout() {
         lastMessage,
         timestamp,
         is_group: conv.is_group,
+        members: conv.members,
       };
     });
   }, [user]);
