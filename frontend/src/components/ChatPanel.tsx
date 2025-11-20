@@ -1,10 +1,150 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useAppSelector } from '@/store/hooks';
 import { apiService } from '@/services/api';
 import { socketService } from '@/services/socket';
 import EmojiPicker from './EmojiPicker';
+
+// Voice Message Player Component
+function VoiceMessagePlayer({ src, isUser }: { src: string; isUser: boolean }) {
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [duration, setDuration] = useState(0);
+  const [currentTime, setCurrentTime] = useState(0);
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    const updateTime = () => setCurrentTime(audio.currentTime);
+    const updateDuration = () => setDuration(audio.duration);
+    const handleEnded = () => {
+      setIsPlaying(false);
+      setCurrentTime(0);
+    };
+
+    audio.addEventListener('timeupdate', updateTime);
+    audio.addEventListener('loadedmetadata', updateDuration);
+    audio.addEventListener('ended', handleEnded);
+
+    return () => {
+      audio.removeEventListener('timeupdate', updateTime);
+      audio.removeEventListener('loadedmetadata', updateDuration);
+      audio.removeEventListener('ended', handleEnded);
+    };
+  }, [src]);
+
+  const togglePlay = () => {
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    if (isPlaying) {
+      audio.pause();
+    } else {
+      audio.play();
+    }
+    setIsPlaying(!isPlaying);
+  };
+
+  const formatTime = (seconds: number) => {
+    if (isNaN(seconds)) return '0:00';
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  // Generate waveform bars (simple visualization)
+  const waveformBars = Array.from({ length: 20 }, (_, i) => {
+    const height = 20 + Math.random() * 40; // Random height between 20-60
+    return height;
+  });
+
+  return (
+    <>
+      <audio ref={audioRef} src={src} preload="metadata" />
+      <div style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        padding: "6px 12px",
+        background: isUser ? "linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)" : "#e0e7ff",
+        borderRadius: 20,
+        minWidth: "180px",
+        maxWidth: "280px",
+        height: 36,
+        cursor: "pointer"
+      }}
+      onClick={togglePlay}
+      >
+        {/* Play Button */}
+        <div style={{
+          width: 28,
+          height: 28,
+          borderRadius: 14,
+          background: isUser ? "rgba(255, 255, 255, 0.25)" : "#6366f1",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          flexShrink: 0
+        }}>
+          {isPlaying ? (
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="white">
+              <rect x="6" y="4" width="4" height="16" />
+              <rect x="14" y="4" width="4" height="16" />
+            </svg>
+          ) : (
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="white">
+              <polygon points="5 3 19 12 5 21 5 3" />
+            </svg>
+          )}
+        </div>
+
+        {/* Waveform */}
+        <div style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 2,
+          flex: 1,
+          height: 24
+        }}>
+          {waveformBars.map((height, index) => (
+            <div
+              key={index}
+              style={{
+                width: 2,
+                height: `${isPlaying ? height : height * 0.6}%`,
+                background: isUser ? "rgba(255, 255, 255, 0.8)" : "#6366f1",
+                borderRadius: 1,
+                transition: "height 0.1s ease",
+                animation: isPlaying ? `waveform ${0.5 + Math.random() * 0.5}s ease-in-out infinite` : "none",
+                animationDelay: `${index * 0.05}s`
+              }}
+            />
+          ))}
+          <style>{`
+            @keyframes waveform {
+              0%, 100% { height: 40%; }
+              50% { height: 100%; }
+            }
+          `}</style>
+        </div>
+
+        {/* Duration */}
+        <div style={{
+          fontSize: 12,
+          color: isUser ? "rgba(255, 255, 255, 0.9)" : "#6366f1",
+          fontWeight: 500,
+          flexShrink: 0,
+          minWidth: 35,
+          textAlign: "right"
+        }}>
+          {formatTime(duration || currentTime)}
+        </div>
+      </div>
+    </>
+  );
+}
 
 interface Conversation {
   id: string;
@@ -15,6 +155,7 @@ interface Conversation {
   timestamp: string;
   isOnline?: boolean;
   is_group: boolean;
+  members?: Array<{ user_id: string; user_name: string; user_avatar?: string }>;
 }
 
 interface MessageData {
@@ -34,6 +175,9 @@ interface Message {
   sender: 'user' | 'other';
   timestamp: string;
   type?: 'text' | 'image' | 'video' | 'sticker' | 'audio' | 'failed';
+  senderId?: string;
+  senderName?: string;
+  senderAvatar?: string;
 }
 
 interface ChatPanelProps {
@@ -198,12 +342,34 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
       const minutes = date.getMinutes().toString().padStart(2, '0');
       const timestamp = `${hours}:${minutes}`;
 
+      // Get sender info from conversation members (for group chat)
+      let senderName: string | undefined;
+      let senderAvatar: string | undefined;
+      
+      if (conversation.is_group && conversation.members) {
+        const sender = conversation.members.find(m => m.user_id === msg.sender_id);
+        if (sender) {
+          senderName = sender.user_name;
+          senderAvatar = sender.user_avatar || sender.user_name?.charAt(0)?.toUpperCase() || '?';
+        }
+      } else if (!isUser && conversation.members) {
+        // Private chat: get other member info
+        const sender = conversation.members.find(m => m.user_id === msg.sender_id);
+        if (sender) {
+          senderName = sender.user_name;
+          senderAvatar = sender.user_avatar || sender.user_name?.charAt(0)?.toUpperCase() || '?';
+        }
+      }
+
       return {
         id: msg.id,
         text: msg.content,
         sender: isUser ? 'user' : 'other',
         timestamp,
         type: msg.type,
+        senderId: msg.sender_id,
+        senderName: senderName || (isUser ? user.name : undefined),
+        senderAvatar: senderAvatar || (isUser ? (user.avatar || user.name?.charAt(0)?.toUpperCase() || 'U') : undefined),
       };
     });
   };
@@ -293,6 +459,24 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
             if (existingMessage.id !== messageId) {
               console.log('⚠️ Found duplicate by content+sender+recent, replacing:', existingMessage.id, 'with', messageId);
               // Replace duplicate with real message
+              // Get sender info for new message
+              let senderName: string | undefined;
+              let senderAvatar: string | undefined;
+              
+              if (conversation.is_group && conversation.members) {
+                const sender = conversation.members.find(m => m.user_id === senderId);
+                if (sender) {
+                  senderName = sender.user_name;
+                  senderAvatar = sender.user_avatar || sender.user_name?.charAt(0)?.toUpperCase() || '?';
+                }
+              } else if (!isUserMessage && conversation.members) {
+                const sender = conversation.members.find(m => m.user_id === senderId);
+                if (sender) {
+                  senderName = sender.user_name;
+                  senderAvatar = sender.user_avatar || sender.user_name?.charAt(0)?.toUpperCase() || '?';
+                }
+              }
+
               const newMessage: Message = {
                 id: messageId,
                 text: messageContent,
@@ -302,6 +486,9 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
                   minute: '2-digit',
                 }),
                 type: data.message.type || 'text',
+                senderId: senderId,
+                senderName: senderName || (isUserMessage ? user.name : undefined),
+                senderAvatar: senderAvatar || (isUserMessage ? (user.avatar || user.name?.charAt(0)?.toUpperCase() || 'U') : undefined),
               };
               const updated = [...prev];
               updated[duplicateIndex] = newMessage;
@@ -463,7 +650,7 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
     const fileToSend = file || (selectedFiles.length > 0 ? selectedFiles[0] : undefined);
     const messageType = type || (fileToSend ? (fileToSend.type.startsWith('image/') ? 'image' : 'video') : 'text');
     
-    setMessage('');
+      setMessage('');
     setSelectedFiles([]);
     setPreviewUrls([]);
     setShowEmojiPicker(false);
@@ -736,49 +923,49 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
           display: "flex",
           alignItems: "center",
           padding: "12px 16px"
+      }}>
+        <div style={{
+          width: 40,
+          height: 40,
+          borderRadius: 20,
+          background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          marginRight: 12
         }}>
-          <div style={{
-            width: 40,
-            height: 40,
-            borderRadius: 20,
-            background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            marginRight: 12
-          }}>
-            <span style={{ fontSize: 14, color: "#fff", fontWeight: 600 }}>{conversation.avatar}</span>
+          <span style={{ fontSize: 14, color: "#fff", fontWeight: 600 }}>{conversation.avatar}</span>
+        </div>
+        <div style={{ flex: 1 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <strong style={{ fontSize: 15, color: "#111827", fontWeight: 600 }}>
+              {conversation.name}
+            </strong>
+            {conversation.isOnline && (
+              <>
+                <span style={{ 
+                  width: 8, 
+                  height: 8, 
+                  borderRadius: 4, 
+                  background: "#10b981",
+                  display: "inline-block"
+                }} />
+                <span style={{ fontSize: 13, color: "#10b981", fontWeight: 500 }}>Online</span>
+              </>
+            )}
           </div>
-          <div style={{ flex: 1 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <strong style={{ fontSize: 15, color: "#111827", fontWeight: 600 }}>
-                {conversation.name}
-              </strong>
-              {conversation.isOnline && (
-                <>
-                  <span style={{ 
-                    width: 8, 
-                    height: 8, 
-                    borderRadius: 4, 
-                    background: "#10b981",
-                    display: "inline-block"
-                  }} />
-                  <span style={{ fontSize: 13, color: "#10b981", fontWeight: 500 }}>Online</span>
-                </>
-              )}
-            </div>
-          </div>
+        </div>
           <button 
             onClick={() => setShowSearch(!showSearch)}
             style={{
-              width: 32,
-              height: 32,
-              borderRadius: 8,
-              border: "none",
+          width: 32,
+          height: 32,
+          borderRadius: 8,
+          border: "none",
               background: showSearch ? "#e0e7ff" : "transparent",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
               cursor: "pointer",
               transition: "background 0.2s"
             }}
@@ -811,8 +998,8 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
               border: "1px solid #e5e7eb"
             }}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2">
-                <circle cx="11" cy="11" r="8" />
-                <path d="m21 21-4.35-4.35" />
+            <circle cx="11" cy="11" r="8" />
+            <path d="m21 21-4.35-4.35" />
               </svg>
               <input
                 type="text"
@@ -848,14 +1035,14 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2">
                     <line x1="18" y1="6" x2="6" y2="18" />
                     <line x1="6" y1="6" x2="18" y2="18" />
-                  </svg>
-                </button>
+          </svg>
+        </button>
               )}
-            </div>
-            
+      </div>
+
             {searchResults.length > 0 && (
               <>
-                <div style={{
+      <div style={{
                   fontSize: 12,
                   color: "#6b7280",
                   whiteSpace: "nowrap"
@@ -924,13 +1111,13 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
       <div 
         ref={messagesContainerRef}
         style={{
-          flex: 1,
-          overflowY: "auto",
-          padding: "16px",
-          display: "flex",
-          flexDirection: "column",
-          gap: 12,
-          background: "#ffffff"
+        flex: 1,
+        overflowY: "auto",
+        padding: "16px",
+        display: "flex",
+        flexDirection: "column",
+        gap: 12,
+        background: "#ffffff"
         }}
       >
         {messages.length === 0 ? (
@@ -939,7 +1126,7 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
           </div>
         ) : (
           <>
-            {messages.map((msg) => {
+        {messages.map((msg) => {
           if (msg.type === 'failed') {
             return (
               <div key={msg.id} style={{
@@ -991,8 +1178,9 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
             const isSticker = msg.type === 'sticker';
             const isAudio = msg.type === 'audio';
             const mediaUrl = msg.text; // For media messages, content is the URL from Cloudinary
+            const showAvatarAndName = !isUser && conversation.is_group && msg.senderName;
             
-            return (
+          return (
               <div 
                 key={msg.id} 
                 ref={(el) => {
@@ -1003,67 +1191,90 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
                   }
                 }}
                 style={{
-                  display: "flex",
-                  justifyContent: isUser ? "flex-end" : "flex-start",
+              display: "flex",
+              justifyContent: isUser ? "flex-end" : "flex-start",
+                  alignItems: showAvatarAndName ? "flex-start" : "flex-end",
                   marginBottom: 4,
                   transition: "background 0.2s",
                   background: isCurrentSearchResult ? "#fef3c7" : "transparent",
                   borderRadius: 8,
-                  padding: isCurrentSearchResult ? "4px" : "0"
+                  padding: isCurrentSearchResult ? "4px" : "0",
+                  gap: 8
                 }}
               >
-                <div style={{
-                  maxWidth: isSticker ? "200px" : isAudio ? "300px" : "60%",
-                  borderRadius: 12,
-                  overflow: "hidden",
-                  boxShadow: isUser ? "0 2px 4px rgba(99, 102, 241, 0.2)" : "0 1px 2px rgba(0, 0, 0, 0.05)",
-                  border: isCurrentSearchResult ? "2px solid #f59e0b" : (isUser ? "none" : "1px solid #e5e7eb"),
-                  position: "relative",
-                  background: isVideo ? "#000" : (isAudio ? (isUser ? "linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)" : "#ffffff") : "transparent"),
-                  padding: isAudio ? "12px" : 0
-                }}>
-                  {isAudio ? (
-                    <div style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 12
-                    }}>
-                      <div style={{
-                        width: 48,
-                        height: 48,
-                        borderRadius: 24,
-                        background: isUser ? "rgba(255, 255, 255, 0.2)" : "#e0e7ff",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        flexShrink: 0
-                      }}>
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill={isUser ? "#ffffff" : "#6366f1"} stroke={isUser ? "#ffffff" : "#6366f1"} strokeWidth="2">
-                          <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
-                          <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-                          <line x1="12" y1="19" x2="12" y2="23" />
-                          <line x1="8" y1="23" x2="16" y2="23" />
-                        </svg>
-                      </div>
-                      <audio
-                        src={mediaUrl}
-                        controls
+                {/* Avatar - only show for group chat, other messages */}
+                {showAvatarAndName && (
+                  <div style={{
+                    width: 32,
+                    height: 32,
+                    borderRadius: 16,
+                    background: msg.senderAvatar && msg.senderAvatar.length === 1 
+                      ? "linear-gradient(135deg, #667eea 0%, #764ba2 100%)" 
+                      : "transparent",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    flexShrink: 0,
+                    overflow: "hidden"
+                  }}>
+                    {msg.senderAvatar && msg.senderAvatar.length === 1 ? (
+                      <span style={{ fontSize: 14, color: "#fff", fontWeight: 600 }}>
+                        {msg.senderAvatar}
+                      </span>
+                    ) : msg.senderAvatar ? (
+                      <img 
+                        src={msg.senderAvatar} 
+                        alt={msg.senderName || ''}
                         style={{
-                          flex: 1,
-                          maxWidth: "100%",
-                          height: 40,
-                          outline: "none"
+                          width: "100%",
+                          height: "100%",
+                          objectFit: "cover"
                         }}
                         onError={(e) => {
-                          console.error('Error loading audio:', mediaUrl);
-                          const parent = e.currentTarget.parentElement?.parentElement;
-                          if (parent) {
-                            parent.innerHTML = '<div style="padding: 40px; text-align: center; color: #9ca3af;">Không thể tải audio</div>';
+                          const target = e.target as HTMLImageElement;
+                          target.style.display = 'none';
+                          if (target.parentElement) {
+                            target.parentElement.innerHTML = `<span style="font-size: 14px; color: #fff; font-weight: 600;">${msg.senderName?.charAt(0)?.toUpperCase() || '?'}</span>`;
                           }
                         }}
                       />
+                    ) : null}
+                  </div>
+                )}
+              <div style={{
+                  display: "flex", 
+                  flexDirection: "column",
+                  maxWidth: showAvatarAndName ? "60%" : (isSticker ? "200px" : isAudio ? "320px" : "60%"),
+                  gap: 4
+                }}>
+                  {/* Sender name - only show for group chat, other messages */}
+                  {showAvatarAndName && msg.senderName && (
+                    <div style={{
+                      fontSize: 12,
+                      color: "#6b7280",
+                      fontWeight: 600,
+                      paddingLeft: 4
+                    }}>
+                      {msg.senderName}
                     </div>
-                  ) : isVideo ? (
+                  )}
+                  {isAudio ? (
+                    <VoiceMessagePlayer 
+                      src={mediaUrl}
+                      isUser={isUser}
+                    />
+                  ) : (
+                  <div style={{
+                    maxWidth: "100%",
+                    borderRadius: 12,
+                    overflow: "hidden",
+                    boxShadow: isUser ? "0 2px 4px rgba(99, 102, 241, 0.2)" : "0 1px 2px rgba(0, 0, 0, 0.05)",
+                    border: isCurrentSearchResult ? "2px solid #f59e0b" : (isUser ? "none" : "1px solid #e5e7eb"),
+                    position: "relative",
+                    background: isVideo ? "#000" : "transparent",
+                    padding: 0
+                  }}>
+                  {isVideo ? (
                     <video
                       src={mediaUrl}
                       controls
@@ -1140,10 +1351,12 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
                       fontSize: 11,
                       color: isUser ? "rgba(255, 255, 255, 0.7)" : "#9ca3af",
                       textAlign: "right",
-                      marginTop: 8
+                      marginTop: 4
                     }}>
                       {msg.timestamp}
                     </div>
+                  )}
+                  </div>
                   )}
                 </div>
               </div>
@@ -1151,6 +1364,8 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
           }
           
           // Render text messages
+          const showAvatarAndName = !isUser && conversation.is_group && msg.senderName;
+          
           return (
             <div 
               key={msg.id} 
@@ -1164,29 +1379,87 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
               style={{
                 display: "flex",
                 justifyContent: isUser ? "flex-end" : "flex-start",
+                alignItems: showAvatarAndName ? "flex-start" : "flex-end",
                 marginBottom: 4,
                 transition: "background 0.2s",
                 background: isCurrentSearchResult ? "#fef3c7" : "transparent",
                 borderRadius: 8,
-                padding: isCurrentSearchResult ? "4px" : "0"
+                padding: isCurrentSearchResult ? "4px" : "0",
+                gap: 8
               }}
             >
-              <div style={{
+              {/* Avatar - only show for group chat, other messages */}
+              {showAvatarAndName && (
+                <div style={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: 16,
+                  background: msg.senderAvatar && msg.senderAvatar.length === 1 
+                    ? "linear-gradient(135deg, #667eea 0%, #764ba2 100%)" 
+                    : "transparent",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flexShrink: 0,
+                  overflow: "hidden"
+                }}>
+                  {msg.senderAvatar && msg.senderAvatar.length === 1 ? (
+                    <span style={{ fontSize: 14, color: "#fff", fontWeight: 600 }}>
+                      {msg.senderAvatar}
+                    </span>
+                  ) : msg.senderAvatar ? (
+                    <img 
+                      src={msg.senderAvatar} 
+                      alt={msg.senderName || ''}
+                      style={{
+                        width: "100%",
+                        height: "100%",
+                        objectFit: "cover"
+                      }}
+                      onError={(e) => {
+                        const target = e.target as HTMLImageElement;
+                        target.style.display = 'none';
+                        if (target.parentElement) {
+                          target.parentElement.innerHTML = `<span style="font-size: 14px; color: #fff; font-weight: 600;">${msg.senderName?.charAt(0)?.toUpperCase() || '?'}</span>`;
+                        }
+                      }}
+                    />
+                  ) : null}
+                </div>
+              )}
+              <div style={{ 
+                display: "flex", 
+                flexDirection: "column",
                 maxWidth: "60%",
+                gap: 4
+              }}>
+                {/* Sender name - only show for group chat, other messages */}
+                {showAvatarAndName && msg.senderName && (
+                  <div style={{
+                    fontSize: 12,
+                    color: "#6b7280",
+                    fontWeight: 600,
+                    paddingLeft: 4
+                  }}>
+                    {msg.senderName}
+                  </div>
+                )}
+                <div style={{
+                  maxWidth: "100%",
                 background: isUser ? "linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)" : "#ffffff",
                 color: isUser ? "#ffffff" : "#111827",
                 borderRadius: 12,
                 padding: "10px 14px",
                 boxShadow: isUser ? "0 2px 4px rgba(99, 102, 241, 0.2)" : "0 1px 2px rgba(0, 0, 0, 0.05)",
-                border: isUser ? "none" : "1px solid #e5e7eb",
-                borderColor: isCurrentSearchResult ? "#f59e0b" : (isUser ? "transparent" : "#e5e7eb"),
-                borderWidth: isCurrentSearchResult ? 2 : (isUser ? 0 : 1)
+                  border: isUser ? "none" : "1px solid #e5e7eb",
+                  borderColor: isCurrentSearchResult ? "#f59e0b" : (isUser ? "transparent" : "#e5e7eb"),
+                  borderWidth: isCurrentSearchResult ? 2 : (isUser ? 0 : 1)
               }}>
                 <div style={{ fontSize: 14, lineHeight: 1.5, marginBottom: 4 }}>
-                  {searchQuery.trim() && msg.type === 'text' 
-                    ? highlightText(msg.text, searchQuery.trim())
-                    : msg.text
-                  }
+                    {searchQuery.trim() && msg.type === 'text' 
+                      ? highlightText(msg.text, searchQuery.trim())
+                      : msg.text
+                    }
                 </div>
                 <div style={{
                   fontSize: 11,
@@ -1194,6 +1467,7 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
                   textAlign: "right"
                 }}>
                   {msg.timestamp}
+                  </div>
                 </div>
               </div>
             </div>
@@ -1294,15 +1568,15 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
           <button
             onClick={() => setShowEmojiPicker(!showEmojiPicker)}
             style={{
-              width: 36,
-              height: 36,
-              borderRadius: 8,
-              border: "none",
+          width: 36,
+          height: 36,
+          borderRadius: 8,
+          border: "none",
               background: showEmojiPicker ? "#e0e7ff" : "transparent",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              cursor: "pointer",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          cursor: "pointer",
               color: "#6b7280",
               transition: "background 0.2s"
             }}
@@ -1432,15 +1706,15 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
         <button
           onClick={() => videoInputRef.current?.click()}
           style={{
-            width: 36,
-            height: 36,
-            borderRadius: 8,
-            border: "none",
-            background: "transparent",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            cursor: "pointer",
+          width: 36,
+          height: 36,
+          borderRadius: 8,
+          border: "none",
+          background: "transparent",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          cursor: "pointer",
             color: "#6b7280",
             transition: "background 0.2s"
           }}
