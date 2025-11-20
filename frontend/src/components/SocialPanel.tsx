@@ -66,7 +66,7 @@ interface Comment {
 }
 
 type FilterType = "newest" | "mostLikes" | "mostViews" | "promotion";
-const PAGE_SIZE = 8;
+const LOAD_BATCH_SIZE = 10; // Số posts load mỗi lần
 const VISIBLE_BATCH_SIZE = 2;
 
 export default function SocialPanel() {
@@ -93,11 +93,10 @@ export default function SocialPanel() {
   }>({});
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
-  const [currentPage, setCurrentPage] = useState(1);
   const [visibleCount, setVisibleCount] = useState(VISIBLE_BATCH_SIZE);
+  const [loadedPostsCount, setLoadedPostsCount] = useState(0); // Track số posts đã load
   const menuRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
   const filterMenuRef = useRef<HTMLDivElement>(null);
-  const observerTarget = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   // Lưu trạng thái like và số lượt like đã thay đổi để không bị mất khi filter
   // Map<postId, { isLiked: boolean, likeDelta: number, originalIsLiked: boolean }>
@@ -186,7 +185,7 @@ export default function SocialPanel() {
     };
   };
 
-  const loadPosts = async (page: number = 1, append: boolean = false) => {
+  const loadPosts = async (append: boolean = false) => {
     if (append) {
       if (isLoadingMore || isLoading) {
         return;
@@ -194,10 +193,13 @@ export default function SocialPanel() {
       setIsLoadingMore(true);
     } else {
       setIsLoading(true);
+      setLoadedPostsCount(0);
     }
     setError(null);
     try {
-      const postsResponse = await apiService.getPosts(page, PAGE_SIZE);
+      // Load posts dựa trên số lượng đã load
+      const page = Math.floor(loadedPostsCount / LOAD_BATCH_SIZE) + 1;
+      const postsResponse = await apiService.getPosts(page, LOAD_BATCH_SIZE);
       const serverPosts: Post[] =
         postsResponse?.success && postsResponse.data
           ? (extractPosts(postsResponse) as Post[])
@@ -227,9 +229,11 @@ export default function SocialPanel() {
             (post) => post.id && !existingIds.has(post.id)
           );
           updatedPosts = [...prev, ...newPosts];
+          setLoadedPostsCount(updatedPosts.length);
           return updatedPosts;
         }
         updatedPosts = displayPosts;
+        setLoadedPostsCount(displayPosts.length);
         return displayPosts;
       });
       if (!append) {
@@ -239,11 +243,11 @@ export default function SocialPanel() {
       const hasMoreFromServer =
         typeof postsResponse?.hasMore === "boolean"
           ? postsResponse.hasMore
-          : displayPosts.length === PAGE_SIZE;
+          : displayPosts.length === LOAD_BATCH_SIZE;
       setHasMore(hasMoreFromServer);
-      setCurrentPage(page);
 
-      if (page === 1) {
+      // Load featured posts only on first load
+      if (!append && loadedPostsCount === 0) {
         const featuredResponse = await apiService.getFeaturedPosts(10);
         if (featuredResponse.success && featuredResponse.data) {
           const displayFeatured = featuredResponse.data.map(convertToDisplayPost);
@@ -260,6 +264,7 @@ export default function SocialPanel() {
       if (!append) {
         setPosts([]);
         setVisibleCount(0);
+        setLoadedPostsCount(0);
       }
       setHasMore(false);
     } finally {
@@ -272,54 +277,66 @@ export default function SocialPanel() {
   };
 
   useEffect(() => {
-    loadPosts(1, false);
+    loadPosts(false);
   }, []);
 
+  // Lazy loading theo scroll - tự động load khi cuộn xuống gần cuối
   useEffect(() => {
-    const target = observerTarget.current;
-    const root = scrollContainerRef.current;
-    if (!target || !root) return;
+    const container = scrollContainerRef.current;
+    if (!container) return;
 
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (!entries[0].isIntersecting) return;
+    let throttleTimer: NodeJS.Timeout | null = null;
 
-        if (visibleCount < posts.length) {
-          setVisibleCount((prev) =>
-            Math.min(prev + VISIBLE_BATCH_SIZE, posts.length)
-          );
-          return;
+    const handleScroll = () => {
+      // Throttle để tránh gọi quá nhiều lần
+      if (throttleTimer) return;
+      
+      throttleTimer = setTimeout(() => {
+        throttleTimer = null;
+        const { scrollTop, scrollHeight, clientHeight } = container;
+        
+        // Tránh chia cho 0
+        if (scrollHeight <= clientHeight) return;
+        
+        const scrollPercentage = (scrollTop + clientHeight) / scrollHeight;
+
+        // Khi cuộn xuống gần cuối (85% trở lên)
+        if (scrollPercentage >= 0.85) {
+          // Nếu còn posts chưa hiển thị, hiển thị thêm
+          if (visibleCount < posts.length) {
+            setVisibleCount((prev) =>
+              Math.min(prev + VISIBLE_BATCH_SIZE, posts.length)
+            );
+            return;
+          }
+
+          // Nếu đã hiển thị hết và còn posts để load, load thêm
+          if (hasMore && !isLoadingMore && !isLoading) {
+            if (
+              activeFilter &&
+              (activeFilter === "mostLikes" || activeFilter === "mostViews")
+            ) {
+              fetchFilteredPosts(activeFilter, true);
+            } else {
+              loadPosts(true);
+            }
+          }
         }
+      }, 200); // Throttle 200ms
+    };
 
-        if (!hasMore || isLoadingMore || isLoading) return;
-
-        if (
-          activeFilter &&
-          (activeFilter === "mostLikes" || activeFilter === "mostViews")
-        ) {
-          fetchFilteredPosts(activeFilter, currentPage + 1, true);
-        } else {
-          loadPosts(currentPage + 1, true);
-        }
-      },
-      {
-        root,
-        rootMargin: "120px 0px",
-        threshold: 0,
-      }
-    );
-
-    observer.observe(target);
-
+    container.addEventListener('scroll', handleScroll, { passive: true });
+    
     return () => {
-      observer.unobserve(target);
-      observer.disconnect();
+      container.removeEventListener('scroll', handleScroll);
+      if (throttleTimer) {
+        clearTimeout(throttleTimer);
+      }
     };
   }, [
     hasMore,
     isLoadingMore,
     isLoading,
-    currentPage,
     activeFilter,
     posts.length,
     visibleCount,
@@ -432,11 +449,10 @@ export default function SocialPanel() {
 
   const fetchFilteredPosts = async (
     filterType: string,
-    page: number = 1,
     append: boolean = false
   ) => {
     if (filterType === "newest") {
-      loadPosts(page, append);
+      loadPosts(append);
       return;
     }
     if (append) {
@@ -446,11 +462,15 @@ export default function SocialPanel() {
       setIsLoadingMore(true);
     } else {
       setIsLoading(true);
+      setLoadedPostsCount(0);
     }
     setError(null);
     try {
       let response;
-      const limit = PAGE_SIZE;
+      const limit = LOAD_BATCH_SIZE;
+
+      // Calculate page based on loaded count
+      const page = Math.floor(loadedPostsCount / LOAD_BATCH_SIZE) + 1;
 
       switch (filterType) {
         case "mostLikes":
@@ -492,21 +512,24 @@ export default function SocialPanel() {
           const newPosts = list.filter(
             (p: DisplayPost) => !existingIds.has(p.id)
           );
-          return [...prev, ...newPosts];
+          const updated = [...prev, ...newPosts];
+          setLoadedPostsCount(updated.length);
+          return updated;
         });
         setHasMore(list.length === limit);
       } else {
         setPosts(list);
+        setLoadedPostsCount(list.length);
         setVisibleCount(Math.min(VISIBLE_BATCH_SIZE, list.length));
         setHasMore(filterType === "promotion" ? false : list.length === limit);
       }
-      setCurrentPage(page);
     } catch (error) {
       console.error("Lỗi khi load filter:", error);
       setError("Không thể tải bài đăng theo bộ lọc");
       if (!append) {
         setPosts([]);
         setVisibleCount(0);
+        setLoadedPostsCount(0);
       }
     } finally {
       if (append) {
@@ -521,9 +544,9 @@ export default function SocialPanel() {
     setActiveFilter(filterKey);
     setShowFilterMenu(false);
     if (filterKey === "newest") {
-      loadPosts(1, false);
+      loadPosts(false);
     } else {
-      fetchFilteredPosts(filterKey);
+      fetchFilteredPosts(filterKey, false);
     }
   };
 
@@ -1043,7 +1066,7 @@ export default function SocialPanel() {
                                 try {
                                   await apiService.deletePost(post.id);
                                   setOpenMenuId(null);
-                                  loadPosts();
+                                  loadPosts(false);
                                 } catch (err: any) {
                                   alert(err.message || 'Không thể xóa bài viết');
                                 }
@@ -1299,23 +1322,20 @@ export default function SocialPanel() {
             ))
           )}
 
-          {/* Lazy Loading Trigger */}
-          {shouldShowLoadMoreTrigger && (
+          {/* Loading indicator khi đang load thêm */}
+          {isLoadingMore && (
             <div
-              ref={observerTarget}
               style={{
-                height: 20,
+                height: 60,
                 marginTop: 20,
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
               }}
             >
-              {isLoadingMore && (
-                <div style={{ fontSize: 14, color: "#6b7280" }}>
-                  Đang tải thêm...
-                </div>
-              )}
+              <div style={{ fontSize: 14, color: "#6b7280" }}>
+                Đang tải thêm...
+              </div>
             </div>
           )}
         </div>
@@ -1445,7 +1465,7 @@ export default function SocialPanel() {
         onClose={() => setShowCreateModal(false)}
         onPostCreated={() => {
           setShowCreateModal(false);
-          loadPosts();
+          loadPosts(false);
         }}
       />
       <CreatePostModal
@@ -1453,7 +1473,7 @@ export default function SocialPanel() {
         onClose={() => setEditingPost(null)}
         onPostCreated={() => {
           setEditingPost(null);
-          loadPosts();
+          loadPosts(false);
         }}
         editingPost={
           editingPost
