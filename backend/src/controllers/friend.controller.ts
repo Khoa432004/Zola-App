@@ -28,16 +28,26 @@ export class FriendController {
 
       const request = await friendService.sendFriendRequest(userId, email);
 
-      // Emit WebSocket event for real-time updates
       const io = (global as any).io;
       if (io) {
-        // Get recipient user info
         const Account = (await import('../models/Account')).Account;
         const toAccount = await Account.findByEmail(email);
         if (toAccount) {
+          const fromAccount = await Account.findById(userId);
+          const requestWithUser = {
+            ...request,
+            fromUser: fromAccount ? {
+              id: fromAccount.id,
+              email: fromAccount.email,
+              name: fromAccount.name,
+              avatar: fromAccount.avatar,
+            } : null,
+          };
+          
           io.to(`user:${toAccount.id}`).emit('friend_request_received', {
-            request: request,
+            request: requestWithUser,
           });
+          console.log(`📤 Emitted friend_request_received to user:${toAccount.id} with fromUser info`);
         }
       }
 
@@ -77,20 +87,37 @@ export class FriendController {
 
       const friendship = await friendService.acceptFriendRequest(requestId, userId);
 
-      // Emit WebSocket event for real-time updates
       const io = (global as any).io;
       if (io) {
-        // Get request to find the sender
+        const Account = (await import('../models/Account')).Account;
         const FriendRequest = (await import('../models/FriendRequest')).FriendRequest;
-        const request = await FriendRequest.findById(requestId);
+        
+        const otherUserId = friendship.users.find((id: string) => id !== userId);
+        
+        const [request, otherUser] = await Promise.all([
+          FriendRequest.findById(requestId),
+          otherUserId ? Account.findById(otherUserId) : Promise.resolve(null)
+        ]);
+        
         if (request && request.from) {
-          // Notify both users
-          io.to(`user:${request.from}`).emit('friend_request_accepted', {
-            friend: friendship,
-          });
-          io.to(`user:${userId}`).emit('friend_request_accepted', {
-            friend: friendship,
-          });
+          const friendData = otherUser ? {
+            id: otherUser.id,
+            name: otherUser.name,
+            email: otherUser.email,
+            avatar: otherUser.avatar,
+          } : null;
+          
+          const eventData = {
+            friend: {
+              ...friendship,
+              friendData: friendData,
+            },
+            requestId: requestId,
+          };
+          
+          io.to(`user:${request.from}`).emit('friend_request_accepted', eventData);
+          io.to(`user:${userId}`).emit('friend_request_accepted', eventData);
+          console.log(`📤 Emitted friend_request_accepted to users ${request.from} and ${userId} with requestId ${requestId}`);
         }
       }
 
@@ -130,7 +157,6 @@ export class FriendController {
 
       await friendService.rejectFriendRequest(requestId, userId);
 
-      // Emit WebSocket event for real-time updates
       const io = (global as any).io;
       if (io) {
         const FriendRequest = (await import('../models/FriendRequest')).FriendRequest;
@@ -138,7 +164,17 @@ export class FriendController {
         if (request && request.from) {
           io.to(`user:${request.from}`).emit('friend_request_rejected', {
             userId: userId,
+            requestId: requestId,
+            from: request.from,
+            to: request.to,
           });
+          io.to(`user:${userId}`).emit('friend_request_rejected', {
+            userId: userId,
+            requestId: requestId,
+            from: request.from,
+            to: request.to,
+          });
+          console.log(`📤 Emitted friend_request_rejected to users ${request.from} and ${userId} with requestId ${requestId}`);
         }
       }
 

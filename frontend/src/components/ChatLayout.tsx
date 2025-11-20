@@ -13,6 +13,7 @@ interface ConversationData {
   id: string;
   con_id: string;
   is_group: boolean;
+  groupName?: string;
   members: Array<{ user_id: string; user_name: string }>;
   mess_info?: { content: string; timestamp: number; sender_id?: string };
   updatedAt: Date | string;
@@ -80,7 +81,7 @@ export default function ChatLayout() {
       
       if (conv.is_group) {
         // Nhóm chat: lấy tên nhóm hoặc tên các thành viên
-        name = `Nhóm (${conv.members.length})`;
+        name = conv.groupName || `Nhóm (${conv.members.length})`;
         avatar = conv.members.length > 0 ? conv.members.length.toString() : 'G';
       } else {
         // Private chat: lấy tên đối phương
@@ -163,18 +164,24 @@ export default function ChatLayout() {
       }
     }
 
-    // Listen for conversation updates
     const handleConversationUpdate = (data: { conversationId: string; lastMessage: any }) => {
       console.log('📢 Conversation updated via WebSocket:', data);
-      // Reload conversations to get updated last message
+      loadedRef.current = false;
+      loadConversations(true);
+    };
+
+    const handleConversationCreated = (data: { conversation: ConversationData }) => {
+      console.log('📢 Conversation created via WebSocket:', data);
       loadedRef.current = false;
       loadConversations(true);
     };
 
     socketService.on('conversation_updated', handleConversationUpdate);
+    socketService.on('conversation_created', handleConversationCreated);
 
     return () => {
       socketService.off('conversation_updated', handleConversationUpdate);
+      socketService.off('conversation_created', handleConversationCreated);
     };
   }, [mounted, user, loadConversations]);
 
@@ -264,11 +271,7 @@ export default function ChatLayout() {
           flex: 1, 
           overflowY: "auto"
         }}>
-          {isLoading ? (
-            <div style={{ padding: '20px', textAlign: 'center', color: '#6b7280' }}>
-              Đang tải...
-            </div>
-          ) : conversations.length === 0 ? (
+          {conversations.length === 0 ? (
             <div style={{ padding: '20px', textAlign: 'center', color: '#6b7280' }}>
               Chưa có cuộc trò chuyện nào
             </div>

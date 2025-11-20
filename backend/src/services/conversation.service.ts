@@ -93,6 +93,7 @@ export class ConversationService {
       return await Conversation.create({
         con_id: conId,
         is_group: true,
+        groupName: groupName || undefined,
         members,
       });
     } catch (error: any) {

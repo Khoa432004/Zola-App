@@ -28,6 +28,18 @@ export class ConversationController {
 
       const conversation = await conversationService.createPrivateConversation(userId, friendId);
 
+      const io = (global as any).io;
+      if (io && conversation) {
+        conversation.members.forEach(member => {
+          if (member.user_id !== userId) {
+            io.to(`user:${member.user_id}`).emit('conversation_created', {
+              conversation: conversation,
+            });
+            console.log(`📤 Emitted conversation_created to user:${member.user_id}`);
+          }
+        });
+      }
+
       return res.status(200).json({
         success: true,
         message: 'Đã tạo cuộc trò chuyện',
@@ -63,6 +75,18 @@ export class ConversationController {
       }
 
       const conversation = await conversationService.createGroupConversation(userId, memberIds, groupName);
+
+      const io = (global as any).io;
+      if (io && conversation) {
+        conversation.members.forEach(member => {
+          if (member.user_id !== userId) {
+            io.to(`user:${member.user_id}`).emit('conversation_created', {
+              conversation: conversation,
+            });
+            console.log(`📤 Emitted conversation_created to user:${member.user_id}`);
+          }
+        });
+      }
 
       return res.status(200).json({
         success: true,

@@ -27,6 +27,7 @@ export interface IConversation {
   createdAt: Date;
   updatedAt: Date;
   is_group: boolean;
+  groupName?: string; // Tên nhóm (chỉ cho group conversations)
   members: IConversationMember[];
   mess_info?: IConversationMessageInfo; // Last message info
 }

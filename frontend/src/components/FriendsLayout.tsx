@@ -35,15 +35,12 @@ export default function FriendsLayout() {
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingRequests, setIsLoadingRequests] = useState(false);
   
-  // Track loading states to prevent duplicate calls
   const loadingFriendsRef = useRef(false);
   const loadingRequestsRef = useRef(false);
   const friendsLoadedRef = useRef(false);
   const requestsLoadedRef = useRef(false);
 
-  // Load friends - only when needed
   const loadFriends = useCallback(async (force = false) => {
-    // Skip if already loading or already loaded (unless forced)
     if (loadingFriendsRef.current || (!force && friendsLoadedRef.current)) {
       return;
     }
@@ -53,26 +50,31 @@ export default function FriendsLayout() {
       setIsLoading(true);
       const response = await apiService.getFriends();
       if (response.success && response.data) {
-        setFriends(response.data.map((friend: any) => ({
-          id: friend.id,
-          name: friend.name,
-          email: friend.email,
-          avatar: friend.avatar || friend.name?.substring(0, 2).toUpperCase() || 'U'
-        })));
+        const uniqueFriends = response.data.reduce((acc: Friend[], friend: any) => {
+          const exists = acc.some(f => f.id === friend.id);
+          if (!exists) {
+            acc.push({
+              id: friend.id,
+              name: friend.name,
+              email: friend.email,
+              avatar: friend.avatar || friend.name?.substring(0, 2).toUpperCase() || 'U'
+            });
+          }
+          return acc;
+        }, []);
+        setFriends(uniqueFriends);
         friendsLoadedRef.current = true;
       }
     } catch (error) {
       console.error('Error loading friends:', error);
-      friendsLoadedRef.current = false; // Allow retry on error
+      friendsLoadedRef.current = false;
     } finally {
       setIsLoading(false);
       loadingFriendsRef.current = false;
     }
   }, []);
 
-  // Load received requests - only when viewing invitations
   const loadRequests = useCallback(async (force = false) => {
-    // Skip if already loading or already loaded (unless forced)
     if (loadingRequestsRef.current || (!force && requestsLoadedRef.current)) {
       return;
     }
@@ -82,12 +84,19 @@ export default function FriendsLayout() {
       setIsLoadingRequests(true);
       const response = await apiService.getReceivedRequests();
       if (response.success && response.data) {
-        setReceivedRequests(response.data);
+        const uniqueRequests = response.data.reduce((acc: FriendRequest[], request: FriendRequest) => {
+          const exists = acc.some(r => r.id === request.id || (r.from === request.from && r.to === request.to));
+          if (!exists) {
+            acc.push(request);
+          }
+          return acc;
+        }, []);
+        setReceivedRequests(uniqueRequests);
         requestsLoadedRef.current = true;
       }
     } catch (error) {
       console.error('Error loading requests:', error);
-      requestsLoadedRef.current = false; // Allow retry on error
+      requestsLoadedRef.current = false;
     } finally {
       setIsLoadingRequests(false);
       loadingRequestsRef.current = false;
@@ -96,9 +105,7 @@ export default function FriendsLayout() {
 
   const user = useAppSelector((state) => state.auth.user);
 
-  // Connect WebSocket and setup listeners
   useEffect(() => {
-    // Connect WebSocket if not connected
     if (!socketService.isConnected() && typeof window !== 'undefined') {
       const token = localStorage.getItem('token');
       if (token) {
@@ -106,27 +113,66 @@ export default function FriendsLayout() {
       }
     }
 
-    // Listen for friend request received
     const handleFriendRequestReceived = (data: { request: any }) => {
-      setReceivedRequests(prev => [...prev, data.request]);
-      requestsLoadedRef.current = false; // Allow reload
+      setReceivedRequests(prev => {
+        const existingIndex = prev.findIndex(r => 
+          r.id === data.request.id || 
+          (r.id && data.request.id && r.id === data.request.id) ||
+          (r.from === data.request.from && r.to === data.request.to)
+        );
+        
+        if (existingIndex !== -1) {
+          console.log('⚠️ Friend request already exists, skipping:', data.request.id);
+          const updated = [...prev];
+          updated[existingIndex] = data.request;
+          return updated;
+        }
+        
+        console.log('✅ Adding new friend request:', data.request.id);
+        return [...prev, data.request];
+      });
+      requestsLoadedRef.current = false;
     };
 
-    // Listen for friend request accepted
-    const handleFriendRequestAccepted = (data: { friend: any }) => {
-      // Reload friends list
-      friendsLoadedRef.current = false;
-      loadFriends(true);
-      // Remove from requests if viewing invitations
-      if (activeView === 'invitations') {
-        requestsLoadedRef.current = false;
-        loadRequests(true);
+    const handleFriendRequestAccepted = (data: { friend: any; requestId?: string }) => {
+      setReceivedRequests(prev => {
+        if (data.requestId) {
+          return prev.filter(r => r.id !== data.requestId);
+        }
+        return prev.filter(r => r.from !== data.friend?.id && r.to !== data.friend?.id);
+      });
+      
+      if (data.friend && data.friend.friendData) {
+        const friendData = data.friend.friendData;
+        setFriends(prev => {
+          const exists = prev.some(f => f.id === friendData.id);
+          if (exists) return prev;
+          return [...prev, {
+            id: friendData.id,
+            name: friendData.name || 'Người dùng',
+            email: friendData.email || 'Email không khả dụng',
+            avatar: friendData.avatar || friendData.name?.substring(0, 2).toUpperCase() || 'U'
+          }];
+        });
+      } else if (data.friend && data.friend.users) {
+        if (!loadingFriendsRef.current) {
+          friendsLoadedRef.current = false;
+          loadFriends(true);
+        }
       }
     };
 
-    // Listen for friend request rejected
-    const handleFriendRequestRejected = () => {
-      // Reload requests
+    const handleFriendRequestRejected = (data: { requestId?: string; from?: string; to?: string }) => {
+      setReceivedRequests(prev => {
+        if (data.requestId) {
+          return prev.filter(r => r.id !== data.requestId);
+        }
+        if (data.from && data.to) {
+          return prev.filter(r => !(r.from === data.from && r.to === data.to));
+        }
+        return prev;
+      });
+      
       requestsLoadedRef.current = false;
       if (activeView === 'invitations') {
         loadRequests(true);
@@ -137,7 +183,6 @@ export default function FriendsLayout() {
     socketService.on('friend_request_accepted', handleFriendRequestAccepted);
     socketService.on('friend_request_rejected', handleFriendRequestRejected);
 
-    // Cleanup
     return () => {
       socketService.off('friend_request_received', handleFriendRequestReceived);
       socketService.off('friend_request_accepted', handleFriendRequestAccepted);
@@ -145,53 +190,65 @@ export default function FriendsLayout() {
     };
   }, [activeView, loadFriends, loadRequests]);
 
-  // Load friends on mount
   useEffect(() => {
     loadFriends();
   }, [loadFriends]);
 
-  // Load requests only when switching to invitations view
   useEffect(() => {
     if (activeView === 'invitations') {
       loadRequests();
     }
   }, [activeView, loadRequests]);
 
-  // Handle accept request with optimistic update
   const handleAcceptRequest = useCallback(async (requestId: string) => {
-    // Optimistic update - remove from UI immediately
     const requestToAccept = receivedRequests.find(r => r.id === requestId);
+    if (requestToAccept?.fromUser) {
+      const fromUser = requestToAccept.fromUser;
+      setFriends(prev => {
+        const exists = prev.some(f => f.id === fromUser.id);
+        if (exists) return prev;
+        return [...prev, {
+          id: fromUser.id,
+          name: fromUser.name || 'Người dùng',
+          email: fromUser.email || 'Email không khả dụng',
+          avatar: fromUser.avatar || fromUser.name?.substring(0, 2).toUpperCase() || 'U'
+        }];
+      });
+    }
     setReceivedRequests(prev => prev.filter(req => req.id !== requestId));
     
     try {
       await apiService.acceptFriendRequest(requestId);
-      // Refresh both friends and requests to get updated data
-      friendsLoadedRef.current = false;
-      requestsLoadedRef.current = false;
-      loadFriends(true);
-      loadRequests(true);
+      setTimeout(() => {
+        if (friendsLoadedRef.current) {
+          friendsLoadedRef.current = false;
+          loadFriends(true);
+        }
+      }, 2000);
     } catch (error: any) {
-      // Revert optimistic update on error
       if (requestToAccept) {
-        setReceivedRequests(prev => [...prev, requestToAccept]);
+        setReceivedRequests(prev => {
+          const exists = prev.some(r => r.id === requestToAccept.id);
+          if (!exists) return [...prev, requestToAccept];
+          return prev;
+        });
+        if (requestToAccept.fromUser) {
+          setFriends(prev => prev.filter(f => f.id !== requestToAccept.fromUser!.id));
+        }
       }
       alert(error.message || 'Chấp nhận lời mời thất bại');
     }
-  }, [receivedRequests, loadFriends, loadRequests]);
+  }, [receivedRequests, loadFriends]);
 
-  // Handle reject request with optimistic update
   const handleRejectRequest = useCallback(async (requestId: string) => {
-    // Optimistic update - remove from UI immediately
     const requestToReject = receivedRequests.find(r => r.id === requestId);
     setReceivedRequests(prev => prev.filter(req => req.id !== requestId));
     
     try {
       await apiService.rejectFriendRequest(requestId);
-      // Only refresh requests since friends don't change
       requestsLoadedRef.current = false;
       loadRequests(true);
     } catch (error: any) {
-      // Revert optimistic update on error
       if (requestToReject) {
         setReceivedRequests(prev => [...prev, requestToReject]);
       }
@@ -200,7 +257,6 @@ export default function FriendsLayout() {
   }, [receivedRequests, loadRequests]);
 
   const handleRequestSent = useCallback(() => {
-    // When sending a request, only refresh requests (new request might be received)
     requestsLoadedRef.current = false;
     if (activeView === 'invitations') {
       loadRequests(true);
@@ -208,7 +264,6 @@ export default function FriendsLayout() {
   }, [activeView, loadRequests]);
 
   const handleRequestProcessed = useCallback(() => {
-    // When processing a request, refresh both
     friendsLoadedRef.current = false;
     requestsLoadedRef.current = false;
     loadFriends(true);
@@ -426,9 +481,22 @@ export default function FriendsLayout() {
                 Không có lời mời kết bạn nào
               </div>
             ) : (
-              receivedRequests.map((request) => (
-                <div
-                  key={request.id}
+              receivedRequests
+                .filter((request, index, self) => {
+                  const firstIndex = self.findIndex(r => 
+                    (r.id && request.id && r.id === request.id) || 
+                    (!r.id && !request.id && r.from === request.from && r.to === request.to)
+                  );
+                  return index === firstIndex;
+                })
+                .map((request, index) => {
+                  const uniqueKey = request.id 
+                    ? `request-${request.id}-${index}`
+                    : `request-${request.from}-${request.to}-${index}`;
+                  
+                  return (
+                    <div
+                      key={uniqueKey}
                   style={{ 
                     padding: "14px 16px", 
                     borderBottom: "1px solid #f3f4f6"
@@ -510,7 +578,8 @@ export default function FriendsLayout() {
                     </button>
                   </div>
                 </div>
-              ))
+                  );
+                })
             )
           )}
         </div>

@@ -577,23 +577,12 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
           background: "#ffffff"
         }}
       >
-        {isLoading ? (
-          <div style={{ textAlign: 'center', padding: '40px 0', color: '#6b7280' }}>
-            Đang tải tin nhắn...
-          </div>
-        ) : messages.length === 0 ? (
+        {messages.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '40px 0', color: '#6b7280' }}>
             Chưa có tin nhắn nào. Hãy bắt đầu cuộc trò chuyện!
           </div>
         ) : (
           <>
-            {/* Loading indicator for older messages */}
-            {isLoadingMore && (
-              <div style={{ textAlign: 'center', padding: '20px 0', color: '#6b7280' }}>
-                Đang tải tin nhắn cũ hơn...
-              </div>
-            )}
-            
             {messages.map((msg) => {
           if (msg.type === 'failed') {
             return (
