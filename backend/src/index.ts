@@ -9,6 +9,8 @@ import profileRoutes from "./routes/profile.routes";
 import postRoutes from "./routes/post.routes";
 import commentRoutes from "./routes/comment.routes";
 import friendRoutes from "./routes/friend.routes";
+import conversationRoutes from "./routes/conversation.routes";
+import messageRoutes from "./routes/message.routes";
 
 const app = express();
 
@@ -57,6 +59,10 @@ app.use("/api/posts", postRoutes);
 app.use("/api/comments", commentRoutes);
 // Friend routes
 app.use("/api/friends", friendRoutes);
+// Conversation routes
+app.use("/api/conversations", conversationRoutes);
+// Message routes
+app.use("/api/messages", messageRoutes);
 
 // Start server
 const port = Number(process.env.PORT) || 4000;
