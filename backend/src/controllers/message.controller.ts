@@ -30,7 +30,7 @@ export class MessageController {
       }
 
       // Xác định message type và content dựa trên file hoặc type được gửi
-      let messageType: 'text' | 'image' | 'video' | 'sticker' = (type || 'text') as any;
+      let messageType: 'text' | 'image' | 'video' | 'sticker' | 'audio' = (type || 'text') as any;
       let messageContent = content || '';
 
       // Nếu có file upload, xử lý file
@@ -45,6 +45,8 @@ export class MessageController {
             messageType = type === 'sticker' ? 'sticker' : 'image';
           } else if (file.mimetype.startsWith('video/')) {
             messageType = 'video';
+          } else if (file.mimetype.startsWith('audio/')) {
+            messageType = 'audio';
           }
           
           // Content là URL của file đã upload từ Cloudinary

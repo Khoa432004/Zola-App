@@ -9,7 +9,7 @@ export interface IMessage {
   con_id: string; // Conversation ID
   sender_id: string;
   content: string;
-  type: 'text' | 'image' | 'video' | 'sticker';
+  type: 'text' | 'image' | 'video' | 'sticker' | 'audio';
   createdAt: Date;
   updatedAt: Date;
   seen: boolean;

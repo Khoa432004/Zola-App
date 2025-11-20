@@ -22,7 +22,7 @@ interface MessageData {
   con_id: string;
   sender_id: string;
   content: string;
-  type: 'text' | 'image' | 'video' | 'sticker';
+  type: 'text' | 'image' | 'video' | 'sticker' | 'audio';
   timestamp: number;
   createdAt: Date | string;
   seen: boolean;
@@ -33,7 +33,7 @@ interface Message {
   text: string;
   sender: 'user' | 'other';
   timestamp: string;
-  type?: 'text' | 'image' | 'video' | 'sticker' | 'failed';
+  type?: 'text' | 'image' | 'video' | 'sticker' | 'audio' | 'failed';
 }
 
 interface ChatPanelProps {
@@ -55,12 +55,17 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [previewUrls, setPreviewUrls] = useState<string[]>([]);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingTime, setRecordingTime] = useState(0);
   const user = useAppSelector((state) => state.auth.user);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const searchMessageRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const fileInputRef = useRef<HTMLInputElement>(null);
   const videoInputRef = useRef<HTMLInputElement>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
   const loadingRef = useRef(false);
   const loadingMoreRef = useRef(false);
   const userScrollingRef = useRef(false);
@@ -451,7 +456,7 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
     };
   }, [hasMore, isLoading, isLoadingMore, oldestTimestamp, loadOlderMessages]);
 
-  const handleSend = async (file?: File, type: 'text' | 'image' | 'video' | 'sticker' = 'text') => {
+  const handleSend = async (file?: File, type: 'text' | 'image' | 'video' | 'sticker' | 'audio' = 'text') => {
     if ((!message.trim() && !file) || isSending || !conversation?.con_id) return;
 
     const messageText = message.trim() || '';
@@ -557,6 +562,67 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
   const handleEmojiSelect = (emoji: string) => {
     setMessage(prev => prev + emoji);
     setShowEmojiPicker(false);
+  };
+
+  // Voice recording functions
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream, {
+        mimeType: 'audio/webm;codecs=opus'
+      });
+      
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+      setRecordingTime(0);
+      
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+      
+      mediaRecorder.onstop = async () => {
+        // Stop all tracks to release microphone
+        stream.getTracks().forEach(track => track.stop());
+        
+        // Create audio file from chunks
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm;codecs=opus' });
+        const audioFile = new File([audioBlob], `recording_${Date.now()}.webm`, { 
+          type: 'audio/webm;codecs=opus' 
+        });
+        
+        // Send audio file
+        handleSend(audioFile, 'audio');
+      };
+      
+      mediaRecorder.start();
+      setIsRecording(true);
+      
+      // Start timer
+      let seconds = 0;
+      recordingTimerRef.current = setInterval(() => {
+        seconds++;
+        setRecordingTime(seconds);
+      }, 1000);
+      
+    } catch (error: any) {
+      console.error('Error starting recording:', error);
+      alert('Không thể truy cập microphone. Vui lòng cho phép quyền truy cập microphone.');
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+      setRecordingTime(0);
+      
+      if (recordingTimerRef.current) {
+        clearInterval(recordingTimerRef.current);
+        recordingTimerRef.current = null;
+      }
+    }
   };
 
   const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -919,10 +985,11 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
           const isSearchMatch = searchQuery.trim() && msg.text.toLowerCase().includes(searchQuery.trim().toLowerCase()) && msg.type === 'text';
           const isCurrentSearchResult = searchResults[currentSearchIndex] === messageIndex;
           
-          // Render image/video/sticker messages
-          if (msg.type === 'image' || msg.type === 'video' || msg.type === 'sticker') {
+          // Render image/video/sticker/audio messages
+          if (msg.type === 'image' || msg.type === 'video' || msg.type === 'sticker' || msg.type === 'audio') {
             const isVideo = msg.type === 'video';
             const isSticker = msg.type === 'sticker';
+            const isAudio = msg.type === 'audio';
             const mediaUrl = msg.text; // For media messages, content is the URL from Cloudinary
             
             return (
@@ -946,15 +1013,57 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
                 }}
               >
                 <div style={{
-                  maxWidth: isSticker ? "200px" : "60%",
+                  maxWidth: isSticker ? "200px" : isAudio ? "300px" : "60%",
                   borderRadius: 12,
                   overflow: "hidden",
                   boxShadow: isUser ? "0 2px 4px rgba(99, 102, 241, 0.2)" : "0 1px 2px rgba(0, 0, 0, 0.05)",
                   border: isCurrentSearchResult ? "2px solid #f59e0b" : (isUser ? "none" : "1px solid #e5e7eb"),
                   position: "relative",
-                  background: isVideo ? "#000" : "transparent"
+                  background: isVideo ? "#000" : (isAudio ? (isUser ? "linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)" : "#ffffff") : "transparent"),
+                  padding: isAudio ? "12px" : 0
                 }}>
-                  {isVideo ? (
+                  {isAudio ? (
+                    <div style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 12
+                    }}>
+                      <div style={{
+                        width: 48,
+                        height: 48,
+                        borderRadius: 24,
+                        background: isUser ? "rgba(255, 255, 255, 0.2)" : "#e0e7ff",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        flexShrink: 0
+                      }}>
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill={isUser ? "#ffffff" : "#6366f1"} stroke={isUser ? "#ffffff" : "#6366f1"} strokeWidth="2">
+                          <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+                          <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                          <line x1="12" y1="19" x2="12" y2="23" />
+                          <line x1="8" y1="23" x2="16" y2="23" />
+                        </svg>
+                      </div>
+                      <audio
+                        src={mediaUrl}
+                        controls
+                        style={{
+                          flex: 1,
+                          maxWidth: "100%",
+                          height: 40,
+                          outline: "none"
+                        }}
+                        onError={(e) => {
+                          console.error('Error loading audio:', mediaUrl);
+                          const parent = e.currentTarget.parentElement?.parentElement;
+                          if (parent) {
+                            parent.innerHTML = '<div style="padding: 40px; text-align: center; color: #9ca3af;">Không thể tải audio</div>';
+                          }
+                        }}
+                      />
+                    </div>
+                  ) : isVideo ? (
                     <video
                       src={mediaUrl}
                       controls
@@ -1011,19 +1120,31 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
                       }}
                     />
                   )}
-                  <div style={{
-                    position: "absolute",
-                    bottom: 8,
-                    right: 8,
-                    fontSize: 11,
-                    color: "#ffffff",
-                    background: "rgba(0, 0, 0, 0.6)",
-                    padding: "4px 8px",
-                    borderRadius: 6,
-                    pointerEvents: "none"
-                  }}>
-                    {msg.timestamp}
-                  </div>
+                  {!isAudio && (
+                    <div style={{
+                      position: "absolute",
+                      bottom: 8,
+                      right: 8,
+                      fontSize: 11,
+                      color: "#ffffff",
+                      background: "rgba(0, 0, 0, 0.6)",
+                      padding: "4px 8px",
+                      borderRadius: 6,
+                      pointerEvents: "none"
+                    }}>
+                      {msg.timestamp}
+                    </div>
+                  )}
+                  {isAudio && (
+                    <div style={{
+                      fontSize: 11,
+                      color: isUser ? "rgba(255, 255, 255, 0.7)" : "#9ca3af",
+                      textAlign: "right",
+                      marginTop: 8
+                    }}>
+                      {msg.timestamp}
+                    </div>
+                  )}
                 </div>
               </div>
             );
@@ -1211,6 +1332,65 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
             </div>
           )}
         </div>
+
+        {/* Voice Recording Button */}
+        <button
+          onMouseDown={startRecording}
+          onMouseUp={stopRecording}
+          onTouchStart={startRecording}
+          onTouchEnd={stopRecording}
+          style={{
+            width: 36,
+            height: 36,
+            borderRadius: 8,
+            border: "none",
+            background: isRecording ? "#ef4444" : "transparent",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            cursor: "pointer",
+            color: isRecording ? "#ffffff" : "#6b7280",
+            transition: "background 0.2s, color 0.2s",
+            position: "relative"
+          }}
+          title={isRecording ? `Đang ghi âm... ${Math.floor(recordingTime / 60)}:${(recordingTime % 60).toString().padStart(2, '0')}` : "Ghi âm"}
+          onMouseEnter={(e) => {
+            if (!isRecording) {
+              e.currentTarget.style.background = "#f3f4f6";
+            }
+          }}
+          onMouseLeave={(e) => {
+            if (!isRecording) {
+              e.currentTarget.style.background = "transparent";
+            }
+            stopRecording(); // Stop recording if mouse leaves button
+          }}
+        >
+          {isRecording ? (
+            <>
+              <div style={{
+                width: 20,
+                height: 20,
+                borderRadius: 4,
+                background: "#ffffff",
+                animation: "pulse 1s ease-in-out infinite"
+              }} />
+              <style>{`
+                @keyframes pulse {
+                  0%, 100% { opacity: 1; }
+                  50% { opacity: 0.5; }
+                }
+              `}</style>
+            </>
+          ) : (
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+              <line x1="12" y1="19" x2="12" y2="23" />
+              <line x1="8" y1="23" x2="16" y2="23" />
+            </svg>
+          )}
+        </button>
 
         {/* Image/Attachment Button */}
         <button

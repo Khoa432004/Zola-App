@@ -624,7 +624,7 @@ class ApiService {
   /**
    * Gửi message (có thể có file)
    */
-  async sendMessage(conId: string, content: string, type: 'text' | 'image' | 'video' | 'sticker' = 'text', file?: File) {
+  async sendMessage(conId: string, content: string, type: 'text' | 'image' | 'video' | 'sticker' | 'audio' = 'text', file?: File) {
     try {
       const formData = new FormData();
       formData.append('conId', conId);
