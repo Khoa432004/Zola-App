@@ -624,7 +624,7 @@ class ApiService {
   /**
    * Gửi message (có thể có file)
    */
-  async sendMessage(conId: string, content: string, type: 'text' | 'image' | 'video' | 'sticker' | 'audio' = 'text', file?: File) {
+  async sendMessage(conId: string, content: string, type: 'text' | 'image' | 'video' | 'sticker' | 'audio' = 'text', file?: File, replyToId?: string) {
     try {
       const formData = new FormData();
       formData.append('conId', conId);
@@ -633,6 +633,10 @@ class ApiService {
       
       if (file) {
         formData.append('file', file);
+      }
+
+      if (replyToId) {
+        formData.append('replyToId', replyToId);
       }
 
       const response = await this.axiosInstance.post("/messages/send", formData, {
@@ -685,6 +689,46 @@ class ApiService {
       return response.data;
     } catch (error: any) {
       throw new Error(error.response?.data?.message || "Xóa tin nhắn thất bại");
+    }
+  }
+
+  /**
+   * Toggle reaction cho message
+   */
+  async toggleMessageReaction(messageId: string, emoji: string) {
+    try {
+      const response = await this.axiosInstance.post(`/messages/${messageId}/reaction`, {
+        emoji,
+      });
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.message || "Thả cảm xúc thất bại");
+    }
+  }
+
+  /**
+   * Lấy reactions của message
+   */
+  async getMessageReactions(messageId: string) {
+    try {
+      const response = await this.axiosInstance.get(`/messages/${messageId}/reactions`);
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.message || "Lấy danh sách cảm xúc thất bại");
+    }
+  }
+
+  /**
+   * Tìm kiếm messages theo keyword
+   */
+  async searchMessages(keyword: string, limit?: number) {
+    try {
+      const params: any = { keyword };
+      if (limit) params.limit = limit.toString();
+      const response = await this.axiosInstance.get("/messages/search/all", { params });
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.message || "Tìm kiếm tin nhắn thất bại");
     }
   }
 }

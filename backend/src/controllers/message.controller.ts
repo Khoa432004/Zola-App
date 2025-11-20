@@ -19,7 +19,7 @@ export class MessageController {
         });
       }
 
-      const { conId, content, type } = req.body;
+      const { conId, content, type, replyToId } = req.body;
       const file = req.file; // Using upload.single('file'), so it's req.file not req.files
 
       if (!conId) {
@@ -72,7 +72,8 @@ export class MessageController {
         conId,
         userId,
         messageContent,
-        messageType
+        messageType,
+        replyToId
       );
 
       // Emit WebSocket event for real-time updates
@@ -253,6 +254,139 @@ export class MessageController {
       return res.status(400).json({
         success: false,
         message: error.message || 'Xóa tin nhắn thất bại',
+      });
+    }
+  };
+
+  /**
+   * Toggle reaction cho message
+   */
+  toggleReaction = async (req: AuthRequest, res: Response) => {
+    try {
+      const userId = req.user?.userId;
+      if (!userId) {
+        return res.status(401).json({
+          success: false,
+          message: 'Chưa đăng nhập',
+        });
+      }
+
+      const { messageId } = req.params;
+      const { emoji } = req.body;
+
+      if (!messageId) {
+        return res.status(400).json({
+          success: false,
+          message: 'Vui lòng cung cấp ID tin nhắn',
+        });
+      }
+
+      if (!emoji || emoji.trim().length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Vui lòng chọn cảm xúc',
+        });
+      }
+
+      const result = await messageService.toggleReaction(messageId, userId, emoji.trim());
+
+      // Emit WebSocket event for real-time updates
+      const io = (global as any).io;
+      if (io) {
+        const Message = (await import('../models/Message')).Message;
+        const message = await Message.findById(messageId);
+        if (message) {
+          io.to(`conversation:${message.con_id}`).emit('reaction_updated', {
+            messageId,
+            userId,
+            emoji: result.added ? emoji.trim() : null,
+            added: result.added,
+          });
+          console.log(`📤 Emitted reaction_updated for message ${messageId}`);
+        }
+      }
+
+      return res.status(200).json({
+        success: true,
+        message: result.added ? 'Đã thả cảm xúc' : 'Đã xóa cảm xúc',
+        data: result,
+      });
+    } catch (error: any) {
+      return res.status(400).json({
+        success: false,
+        message: error.message || 'Thả cảm xúc thất bại',
+      });
+    }
+  };
+
+  /**
+   * Lấy reactions của message
+   */
+  getMessageReactions = async (req: AuthRequest, res: Response) => {
+    try {
+      const userId = req.user?.userId;
+      if (!userId) {
+        return res.status(401).json({
+          success: false,
+          message: 'Chưa đăng nhập',
+        });
+      }
+
+      const { messageId } = req.params;
+      if (!messageId) {
+        return res.status(400).json({
+          success: false,
+          message: 'Vui lòng cung cấp ID tin nhắn',
+        });
+      }
+
+      const reactions = await messageService.getMessageReactions(messageId);
+
+      return res.status(200).json({
+        success: true,
+        data: reactions,
+      });
+    } catch (error: any) {
+      return res.status(400).json({
+        success: false,
+        message: error.message || 'Lấy danh sách cảm xúc thất bại',
+      });
+    }
+  };
+
+  /**
+   * Tìm kiếm messages theo keyword
+   */
+  searchMessages = async (req: AuthRequest, res: Response) => {
+    try {
+      const userId = req.user?.userId;
+      if (!userId) {
+        return res.status(401).json({
+          success: false,
+          message: 'Chưa đăng nhập',
+        });
+      }
+
+      const { keyword } = req.query;
+      if (!keyword || typeof keyword !== 'string' || keyword.trim().length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Vui lòng nhập từ khóa tìm kiếm',
+        });
+      }
+
+      const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
+
+      const results = await messageService.searchMessages(userId, keyword.trim(), limit);
+
+      return res.status(200).json({
+        success: true,
+        data: results,
+      });
+    } catch (error: any) {
+      return res.status(400).json({
+        success: false,
+        message: error.message || 'Tìm kiếm tin nhắn thất bại',
       });
     }
   };
