@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { apiService } from '@/services/api';
 import { useAuth } from '@/hooks/useAuth';
+import { socketService } from '@/services/socket';
 
 interface DisplayPost {
   id: string;
@@ -234,13 +235,14 @@ export default function PostDetailModal({ isOpen, post, onClose }: PostDetailMod
       const file = currentFile;
       if (!replyText && !file) return;
       try {
-        const newReply = await apiService.createComment(commentId, replyText, file || undefined);
-        setComments(prev => prev.map(c => addReplyToComment(c, commentId, newReply)));
+        await apiService.createComment(commentId, replyText, file || undefined);
+        // WebSocket will handle adding the reply in real-time
         setReplyTexts(prev => ({ ...prev, [commentId]: '' }));
         setReplyFiles(prev => ({ ...prev, [commentId]: null }));
         setReplyingToCommentId(null);
       } catch (err) {
         console.error('Error posting reply:', err);
+        alert('Không thể gửi trả lời');
       }
     };
 
@@ -389,21 +391,48 @@ export default function PostDetailModal({ isOpen, post, onClose }: PostDetailMod
               <button
                 onClick={async () => {
                   try {
+                    const currentLikeCount = reply.likeCount || 0;
                     const likedKey = `liked_${reply.commentId}`;
                     const current = (localStorage.getItem(likedKey) === 'true');
-                    let updated;
-                    if (!current) {
-                      updated = await apiService.likeComment(reply.commentId);
-                      localStorage.setItem(likedKey, 'true');
-                    } else {
-                      updated = await apiService.unlikeComment(reply.commentId);
-                      localStorage.setItem(likedKey, 'false');
-                    }
+                    
+                    // Optimistically update UI
                     setComments(prev => 
-                      prev.map(c => updateCommentLike(c, reply.commentId, updated.likeCount))
+                      prev.map(c => {
+                        const updateReplyLike = (comment: Comment): Comment => {
+                          if (comment.commentId === reply.commentId) {
+                            return { ...comment, likeCount: current ? Math.max(0, currentLikeCount - 1) : currentLikeCount + 1 };
+                          }
+                          if (comment.replies && comment.replies.length > 0) {
+                            return {
+                              ...comment,
+                              replies: comment.replies.map(r => 
+                                r.commentId === reply.commentId 
+                                  ? { ...r, likeCount: current ? Math.max(0, currentLikeCount - 1) : currentLikeCount + 1 }
+                                  : r
+                              )
+                            };
+                          }
+                          return comment;
+                        };
+                        return updateReplyLike(c);
+                      })
                     );
+                    
+                    if (!current) {
+                      await apiService.likeComment(reply.commentId);
+                      localStorage.setItem(likedKey, 'true');
+                      // WebSocket will handle real-time update
+                    } else {
+                      await apiService.unlikeComment(reply.commentId);
+                      localStorage.setItem(likedKey, 'false');
+                      // WebSocket will handle real-time update
+                    }
                   } catch (err) {
                     console.error('Error toggling like on reply:', err);
+                    // Revert optimistic update on error
+                    setComments(prev => 
+                      prev.map(c => updateCommentLike(c, reply.commentId, reply.likeCount || 0))
+                    );
                   }
                 }}
                 style={{
@@ -478,16 +507,27 @@ export default function PostDetailModal({ isOpen, post, onClose }: PostDetailMod
                   onChange={(e) => setEditTexts(prev => ({ ...prev, [reply.commentId]: e.target.value }))}
                   style={{
                     flex: 1,
-                    padding: 10,
-                    borderRadius: 8,
-                    border: '1px solid #e5e7eb',
-                    fontSize: 13,
+                    padding: '12px 16px',
+                    borderRadius: 12,
+                    border: '2px solid #e5e7eb',
+                    fontSize: 14,
                     fontFamily: 'inherit',
                     resize: 'none',
-                    minHeight: 60,
+                    minHeight: 80,
+                    maxHeight: 200,
                     background: '#ffffff',
                     color: '#111827',
-                    overflow: 'hidden'
+                    lineHeight: 1.5,
+                    transition: 'border-color 0.2s, box-shadow 0.2s',
+                    outline: 'none'
+                  }}
+                  onFocus={(e) => {
+                    e.currentTarget.style.borderColor = '#6366f1';
+                    e.currentTarget.style.boxShadow = '0 0 0 3px rgba(99, 102, 241, 0.1)';
+                  }}
+                  onBlur={(e) => {
+                    e.currentTarget.style.borderColor = '#e5e7eb';
+                    e.currentTarget.style.boxShadow = 'none';
                   }}
                   placeholder="Chỉnh sửa bình luận..."
                 />
@@ -618,18 +658,7 @@ export default function PostDetailModal({ isOpen, post, onClose }: PostDetailMod
     
     try {
       await apiService.deleteComment(commentId);
-      setComments((prev: Comment[]) => {
-        const newComments = prev
-          .map((c: Comment) => removeCommentRecursively(c, commentId))
-          .filter((c): c is Comment => c !== null);
-        return newComments;
-      });
-      
-      setComments((prev: Comment[]) => {
-        const total = countAllComments(prev);
-        setTotalCommentCount(total);
-        return prev;
-      });
+      // WebSocket will handle deleting the comment in real-time
     } catch (err) {
       console.error('Error deleting comment:', err);
       alert('Không thể xóa bình luận');
@@ -644,9 +673,7 @@ export default function PostDetailModal({ isOpen, post, onClose }: PostDetailMod
 
     try {
       await apiService.updateComment(commentId, newContent.trim());
-      setComments(prev =>
-        prev.map(c => updateCommentRecursively(c, commentId, newContent.trim()))
-      );
+      // WebSocket will handle updating the comment in real-time
       setEditingCommentId(null);
       setEditTexts(prev => {
         const updated = { ...prev };
@@ -662,28 +689,25 @@ export default function PostDetailModal({ isOpen, post, onClose }: PostDetailMod
   const handleLikePost = async () => {
     if (!post) return;
     
+    const currentlyLiked = isPostLiked;
+    
+    // Optimistically update UI
+    setPostLikeCount(prev => currentlyLiked ? Math.max(0, prev - 1) : prev + 1);
+    setIsPostLiked(!currentlyLiked);
+    
     try {
-      if (!isPostLiked) {
-        const res = await apiService.likePost(post.id);
-        if (res?.data) {
-          setPostLikeCount(res.data.likeCount ?? postLikeCount + 1);
-          setIsPostLiked(!!res.data.isLiked);
-        } else {
-          setPostLikeCount(prev => prev + 1);
-          setIsPostLiked(true);
-        }
+      if (!currentlyLiked) {
+        await apiService.likePost(post.id);
+        // WebSocket will handle real-time update
       } else {
-        const res = await apiService.unlikePost(post.id);
-        if (res?.data) {
-          setPostLikeCount(res.data.likeCount ?? Math.max(0, postLikeCount - 1));
-          setIsPostLiked(!!res.data.isLiked);
-        } else {
-          setPostLikeCount(prev => prev - 1);
-          setIsPostLiked(false);
-        }
+        await apiService.unlikePost(post.id);
+        // WebSocket will handle real-time update
       }
     } catch (err) {
       console.error('Error toggling like on post:', err);
+      // Revert optimistic update on error
+      setPostLikeCount(prev => currentlyLiked ? prev + 1 : Math.max(0, prev - 1));
+      setIsPostLiked(currentlyLiked);
       alert('Không thể thao tác với bài viết');
     }
   };
@@ -696,6 +720,257 @@ export default function PostDetailModal({ isOpen, post, onClose }: PostDetailMod
       setIsPostLiked(!!post.isLiked);
     }
   }, [isOpen, post?.id, post?.isLiked, post?.likes]);
+
+  // WebSocket connection and listeners for real-time updates
+  useEffect(() => {
+    if (!isOpen || !post || !user) return;
+
+    // Connect WebSocket if not connected
+    if (!socketService.isConnected() && typeof window !== 'undefined') {
+      const token = localStorage.getItem('token');
+      if (token) {
+        const socket = socketService.connect(token);
+        // Wait for connection before joining room
+        if (socket && !socket.connected) {
+          socket.once('connect', () => {
+            console.log('✅ Socket connected, joining post room:', post.id);
+            socketService.joinRoom(`post:${post.id}`);
+          });
+        } else if (socket?.connected) {
+          // Already connected, join room immediately
+          console.log('✅ Socket already connected, joining room:', post.id);
+          socketService.joinRoom(`post:${post.id}`);
+        }
+      }
+    } else if (socketService.isConnected()) {
+      // Already connected, join room immediately
+      console.log('✅ Socket connected, joining room:', post.id);
+      socketService.joinRoom(`post:${post.id}`);
+    }
+
+    // Also listen for connection events to join room
+    const socket = socketService.getSocket();
+    if (socket && !socket.connected) {
+      socket.once('connect', () => {
+        console.log('✅ Socket connected via listener, joining room:', post.id);
+        socketService.joinRoom(`post:${post.id}`);
+      });
+    }
+
+    // Listen for post liked
+    const handlePostLiked = (data: { postId: string; likeCount: number; userId: string }) => {
+      console.log('🔔 Post liked event received:', data);
+      if (data.postId === post.id) {
+        setPostLikeCount(data.likeCount);
+        if (user.id === data.userId) {
+          setIsPostLiked(true);
+        }
+      }
+    };
+
+    // Listen for post unliked
+    const handlePostUnliked = (data: { postId: string; likeCount: number; userId: string }) => {
+      console.log('🔔 Post unliked event received:', data);
+      if (data.postId === post.id) {
+        setPostLikeCount(data.likeCount);
+        if (user.id === data.userId) {
+          setIsPostLiked(false);
+        }
+      }
+    };
+
+    // Listen for comment added (new comment or reply)
+    const handleCommentAdded = (data: { postId: string; comment: any }) => {
+      console.log('🔔 Comment added event received:', data);
+      if (data.postId === post.id) {
+        const formattedComment: Comment = {
+          commentId: data.comment.commentId || data.comment.id,
+          targetId: data.comment.targetId,
+          authorId: data.comment.authorId,
+          authorName: data.comment.authorName,
+          authorAvatar: data.comment.authorAvatar,
+          content: data.comment.content,
+          createdAt: data.comment.createdAt?.toDate ? data.comment.createdAt.toDate() : new Date(data.comment.createdAt),
+          updatedAt: data.comment.updatedAt?.toDate ? data.comment.updatedAt.toDate() : new Date(data.comment.updatedAt),
+          likeCount: data.comment.likeCount || 0,
+          isDeleted: data.comment.isDeleted || false,
+          replies: data.comment.replies || []
+        };
+
+        // Check if comment already exists (prevent duplicates)
+        setComments(prev => {
+          const exists = prev.some(c => 
+            c.commentId === formattedComment.commentId ||
+            (c.commentId === formattedComment.commentId && c.content === formattedComment.content)
+          );
+          if (exists) {
+            console.log('⚠️ Comment already exists, skipping:', formattedComment.commentId);
+            return prev;
+          }
+
+          // If it's a reply (targetId is a commentId, not postId), add to replies
+          if (formattedComment.targetId !== post.id) {
+            console.log('📝 Adding reply to comment:', formattedComment.targetId);
+            return prev.map(comment => {
+              // Check if this comment or any nested reply matches targetId
+              const addReplyRecursively = (c: Comment): Comment => {
+                if (c.commentId === formattedComment.targetId) {
+                  // Check if reply already exists
+                  const replyExists = (c.replies || []).some(r => r.commentId === formattedComment.commentId);
+                  if (replyExists) {
+                    console.log('⚠️ Reply already exists, skipping:', formattedComment.commentId);
+                    return c;
+                  }
+                  return {
+                    ...c,
+                    replies: [...(c.replies || []), formattedComment]
+                  };
+                }
+                if (c.replies && c.replies.length > 0) {
+                  return {
+                    ...c,
+                    replies: c.replies.map(addReplyRecursively)
+                  };
+                }
+                return c;
+              };
+              return addReplyRecursively(comment);
+            });
+          }
+
+          // New top-level comment
+          console.log('✅ Adding new top-level comment:', formattedComment.commentId);
+          return [formattedComment, ...prev];
+        });
+
+        setTotalCommentCount(prev => prev + 1);
+      }
+    };
+
+    // Listen for comment updated
+    const handleCommentUpdated = (data: { postId: string; commentId: string; comment: any }) => {
+      console.log('🔔 Comment updated event received:', data);
+      if (data.postId === post.id) {
+        const updateCommentRecursively = (comments: Comment[]): Comment[] => {
+          return comments.map(comment => {
+            if (comment.commentId === data.commentId) {
+              return {
+                ...comment,
+                content: data.comment.content || comment.content,
+                updatedAt: data.comment.updatedAt?.toDate ? data.comment.updatedAt.toDate() : new Date(data.comment.updatedAt || comment.updatedAt),
+              };
+            }
+            if (comment.replies && comment.replies.length > 0) {
+              return {
+                ...comment,
+                replies: updateCommentRecursively(comment.replies)
+              };
+            }
+            return comment;
+          });
+        };
+
+        setComments(prev => updateCommentRecursively(prev));
+      }
+    };
+
+    // Listen for comment deleted
+    const handleCommentDeleted = (data: { postId: string; commentId: string }) => {
+      console.log('🔔 Comment deleted event received:', data);
+      if (data.postId === post.id) {
+        const deleteCommentRecursively = (comments: Comment[]): Comment[] => {
+          return comments
+            .filter(comment => comment.commentId !== data.commentId)
+            .map(comment => {
+              if (comment.replies && comment.replies.length > 0) {
+                return {
+                  ...comment,
+                  replies: deleteCommentRecursively(comment.replies)
+                };
+              }
+              return comment;
+            });
+        };
+
+        setComments(prev => deleteCommentRecursively(prev));
+        setTotalCommentCount(prev => Math.max(0, prev - 1));
+      }
+    };
+
+    // Listen for comment liked
+    const handleCommentLiked = (data: { postId: string; commentId: string; likeCount: number; userId: string }) => {
+      console.log('🔔 Comment liked event received:', data);
+      if (data.postId === post.id) {
+        const updateCommentLikeRecursively = (comments: Comment[]): Comment[] => {
+          return comments.map(comment => {
+            if (comment.commentId === data.commentId) {
+              return {
+                ...comment,
+                likeCount: data.likeCount,
+              };
+            }
+            if (comment.replies && comment.replies.length > 0) {
+              return {
+                ...comment,
+                replies: updateCommentLikeRecursively(comment.replies)
+              };
+            }
+            return comment;
+          });
+        };
+
+        setComments(prev => updateCommentLikeRecursively(prev));
+      }
+    };
+
+    // Listen for comment unliked
+    const handleCommentUnliked = (data: { postId: string; commentId: string; likeCount: number; userId: string }) => {
+      console.log('🔔 Comment unliked event received:', data);
+      if (data.postId === post.id) {
+        const updateCommentLikeRecursively = (comments: Comment[]): Comment[] => {
+          return comments.map(comment => {
+            if (comment.commentId === data.commentId) {
+              return {
+                ...comment,
+                likeCount: data.likeCount,
+              };
+            }
+            if (comment.replies && comment.replies.length > 0) {
+              return {
+                ...comment,
+                replies: updateCommentLikeRecursively(comment.replies)
+              };
+            }
+            return comment;
+          });
+        };
+
+        setComments(prev => updateCommentLikeRecursively(prev));
+      }
+    };
+
+    // Register listeners
+    socketService.on('post_liked', handlePostLiked);
+    socketService.on('post_unliked', handlePostUnliked);
+    socketService.on('comment_added', handleCommentAdded);
+    socketService.on('comment_updated', handleCommentUpdated);
+    socketService.on('comment_deleted', handleCommentDeleted);
+    socketService.on('comment_liked', handleCommentLiked);
+    socketService.on('comment_unliked', handleCommentUnliked);
+
+    // Cleanup
+    return () => {
+      console.log('🧹 Cleaning up WebSocket listeners for post:', post.id);
+      socketService.leaveRoom(`post:${post.id}`);
+      socketService.off('post_liked', handlePostLiked);
+      socketService.off('post_unliked', handlePostUnliked);
+      socketService.off('comment_added', handleCommentAdded);
+      socketService.off('comment_updated', handleCommentUpdated);
+      socketService.off('comment_deleted', handleCommentDeleted);
+      socketService.off('comment_liked', handleCommentLiked);
+      socketService.off('comment_unliked', handleCommentUnliked);
+    };
+  }, [isOpen, post?.id, user?.id]);
 
   const loadComments = async () => {
     if (!post) return;
@@ -734,27 +1009,13 @@ export default function PostDetailModal({ isOpen, post, onClose }: PostDetailMod
     if ((!text && !commentFile) || !user || !post) return;
 
     try {
-      const newComment = await apiService.createComment(post.id, text, commentFile || undefined);
-      
-      const formattedComment: Comment = {
-        commentId: newComment.commentId,
-        targetId: newComment.targetId,
-        authorId: newComment.authorId,
-        authorName: newComment.authorName,
-        authorAvatar: newComment.authorAvatar,
-        content: newComment.content,
-        createdAt: newComment.createdAt?.toDate ? newComment.createdAt.toDate() : new Date(newComment.createdAt),
-        updatedAt: newComment.updatedAt?.toDate ? newComment.updatedAt.toDate() : new Date(newComment.updatedAt),
-        likeCount: newComment.likeCount || 0,
-        isDeleted: newComment.isDeleted || false
-      };
-
-      setComments([formattedComment, ...comments]);
-      setTotalCommentCount(prev => prev + 1);
+      await apiService.createComment(post.id, text, commentFile || undefined);
+      // WebSocket will handle adding the comment in real-time
       setCommentText('');
       setCommentFile(null);
     } catch (error: any) {
       console.error('Error submitting comment:', error);
+      alert('Không thể gửi bình luận');
     }
   };
 
@@ -1129,19 +1390,34 @@ export default function PostDetailModal({ isOpen, post, onClose }: PostDetailMod
                           <button
                             onClick={async () => {
                               try {
+                                const currentLikeCount = comment.likeCount || 0;
                                 const likedKey = `liked_${comment.commentId}`;
                                 const current = (localStorage.getItem(likedKey) === 'true');
-                                let updated;
+                                
+                                // Optimistically update UI
+                                setComments(prev => prev.map(c => 
+                                  c.commentId === comment.commentId 
+                                    ? { ...c, likeCount: current ? Math.max(0, currentLikeCount - 1) : currentLikeCount + 1 } 
+                                    : c
+                                ));
+                                
                                 if (!current) {
-                                  updated = await apiService.likeComment(comment.commentId);
+                                  await apiService.likeComment(comment.commentId);
                                   localStorage.setItem(likedKey, 'true');
+                                  // WebSocket will handle real-time update
                                 } else {
-                                  updated = await apiService.unlikeComment(comment.commentId);
+                                  await apiService.unlikeComment(comment.commentId);
                                   localStorage.setItem(likedKey, 'false');
+                                  // WebSocket will handle real-time update
                                 }
-                                setComments(prev => prev.map(c => c.commentId === comment.commentId ? { ...c, likeCount: updated.likeCount } : c));
                               } catch (err) {
                                 console.error('Error toggling like on comment:', err);
+                                // Revert optimistic update on error
+                                setComments(prev => prev.map(c => 
+                                  c.commentId === comment.commentId 
+                                    ? { ...c, likeCount: comment.likeCount || 0 } 
+                                    : c
+                                ));
                               }
                             }}
                             style={{
@@ -1216,13 +1492,27 @@ export default function PostDetailModal({ isOpen, post, onClose }: PostDetailMod
                               onChange={(e) => setEditTexts(prev => ({ ...prev, [comment.commentId]: e.target.value }))}
                               style={{
                                 flex: 1,
-                                padding: 10,
-                                borderRadius: 8,
-                                border: '1px solid #e5e7eb',
-                                fontSize: 13,
+                                padding: '12px 16px',
+                                borderRadius: 12,
+                                border: '2px solid #e5e7eb',
+                                fontSize: 14,
                                 fontFamily: 'inherit',
                                 resize: 'none',
-                                minHeight: 60
+                                minHeight: 80,
+                                maxHeight: 200,
+                                background: '#ffffff',
+                                color: '#111827',
+                                lineHeight: 1.5,
+                                transition: 'border-color 0.2s, box-shadow 0.2s',
+                                outline: 'none'
+                              }}
+                              onFocus={(e) => {
+                                e.currentTarget.style.borderColor = '#6366f1';
+                                e.currentTarget.style.boxShadow = '0 0 0 3px rgba(99, 102, 241, 0.1)';
+                              }}
+                              onBlur={(e) => {
+                                e.currentTarget.style.borderColor = '#e5e7eb';
+                                e.currentTarget.style.boxShadow = 'none';
                               }}
                               placeholder="Chỉnh sửa bình luận..."
                             />

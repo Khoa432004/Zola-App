@@ -28,6 +28,29 @@ export class FriendController {
 
       const request = await friendService.sendFriendRequest(userId, email);
 
+      const io = (global as any).io;
+      if (io) {
+        const Account = (await import('../models/Account')).Account;
+        const toAccount = await Account.findByEmail(email);
+        if (toAccount) {
+          const fromAccount = await Account.findById(userId);
+          const requestWithUser = {
+            ...request,
+            fromUser: fromAccount ? {
+              id: fromAccount.id,
+              email: fromAccount.email,
+              name: fromAccount.name,
+              avatar: fromAccount.avatar,
+            } : null,
+          };
+          
+          io.to(`user:${toAccount.id}`).emit('friend_request_received', {
+            request: requestWithUser,
+          });
+          console.log(`📤 Emitted friend_request_received to user:${toAccount.id} with fromUser info`);
+        }
+      }
+
       return res.status(200).json({
         success: true,
         message: 'Đã gửi lời mời kết bạn',
@@ -64,6 +87,40 @@ export class FriendController {
 
       const friendship = await friendService.acceptFriendRequest(requestId, userId);
 
+      const io = (global as any).io;
+      if (io) {
+        const Account = (await import('../models/Account')).Account;
+        const FriendRequest = (await import('../models/FriendRequest')).FriendRequest;
+        
+        const otherUserId = friendship.users.find((id: string) => id !== userId);
+        
+        const [request, otherUser] = await Promise.all([
+          FriendRequest.findById(requestId),
+          otherUserId ? Account.findById(otherUserId) : Promise.resolve(null)
+        ]);
+        
+        if (request && request.from) {
+          const friendData = otherUser ? {
+            id: otherUser.id,
+            name: otherUser.name,
+            email: otherUser.email,
+            avatar: otherUser.avatar,
+          } : null;
+          
+          const eventData = {
+            friend: {
+              ...friendship,
+              friendData: friendData,
+            },
+            requestId: requestId,
+          };
+          
+          io.to(`user:${request.from}`).emit('friend_request_accepted', eventData);
+          io.to(`user:${userId}`).emit('friend_request_accepted', eventData);
+          console.log(`📤 Emitted friend_request_accepted to users ${request.from} and ${userId} with requestId ${requestId}`);
+        }
+      }
+
       return res.status(200).json({
         success: true,
         message: 'Đã chấp nhận lời mời kết bạn',
@@ -99,6 +156,27 @@ export class FriendController {
       }
 
       await friendService.rejectFriendRequest(requestId, userId);
+
+      const io = (global as any).io;
+      if (io) {
+        const FriendRequest = (await import('../models/FriendRequest')).FriendRequest;
+        const request = await FriendRequest.findById(requestId);
+        if (request && request.from) {
+          io.to(`user:${request.from}`).emit('friend_request_rejected', {
+            userId: userId,
+            requestId: requestId,
+            from: request.from,
+            to: request.to,
+          });
+          io.to(`user:${userId}`).emit('friend_request_rejected', {
+            userId: userId,
+            requestId: requestId,
+            from: request.from,
+            to: request.to,
+          });
+          console.log(`📤 Emitted friend_request_rejected to users ${request.from} and ${userId} with requestId ${requestId}`);
+        }
+      }
 
       return res.status(200).json({
         success: true,

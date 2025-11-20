@@ -83,14 +83,13 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated, editin
         newFiles.push(file);
         const reader = new FileReader();
         reader.onloadend = () => {
-          newPreviews.push(reader.result as string);
-          setPreviews([...previews, ...newPreviews]);
+          setPreviews(prev => [...prev, reader.result as string]);
         };
         reader.readAsDataURL(file);
       }
     });
 
-    setFiles([...files, ...newFiles]);
+    setFiles(prev => [...prev, ...newFiles]);
   };
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -125,6 +124,11 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated, editin
     setPreviews(newPreviews);
   };
 
+  const removeExistingMedia = (index: number) => {
+    const newExistingMedia = existingMedia.filter((_, i) => i !== index);
+    setExistingMedia(newExistingMedia);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -153,9 +157,15 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated, editin
         formData.append('tags', JSON.stringify(tagsArray));
       }
       
+      // Append new files
       files.forEach((file) => {
         formData.append('media', file);
       });
+
+      // Append existing media URLs (for editing mode)
+      if (editingPost && existingMedia.length > 0) {
+        formData.append('existingMedia', JSON.stringify(existingMedia));
+      }
 
       let response;
       if (editingPost) {
@@ -482,51 +492,165 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated, editin
               </p>
             </div>
 
-            {/* File Previews */}
+            {/* Existing Media (for editing mode) */}
+            {editingPost && existingMedia.length > 0 && (
+              <div style={{ marginTop: 16 }}>
+                <label style={{
+                  display: 'block',
+                  fontSize: 14,
+                  fontWeight: 600,
+                  color: '#374151',
+                  marginBottom: 8
+                }}>
+                  Ảnh/Video hiện có
+                </label>
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))',
+                  gap: 12
+                }}>
+                  {existingMedia.map((media, index) => (
+                    <div key={`existing-${index}`} style={{ position: 'relative' }}>
+                      {media.type === 'image' ? (
+                        <img
+                          src={media.sourceUrl}
+                          alt={`Existing ${index + 1}`}
+                          style={{
+                            width: '100%',
+                            height: 100,
+                            objectFit: 'cover',
+                            borderRadius: 8,
+                            border: '1px solid #e5e7eb'
+                          }}
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).style.display = 'none';
+                          }}
+                        />
+                      ) : (
+                        <video
+                          src={media.sourceUrl}
+                          style={{
+                            width: '100%',
+                            height: 100,
+                            objectFit: 'cover',
+                            borderRadius: 8,
+                            border: '1px solid #e5e7eb'
+                          }}
+                          controls={false}
+                        />
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => removeExistingMedia(index)}
+                        style={{
+                          position: 'absolute',
+                          top: 4,
+                          right: 4,
+                          width: 24,
+                          height: 24,
+                          borderRadius: '50%',
+                          background: 'rgba(239, 68, 68, 0.9)',
+                          border: 'none',
+                          color: '#ffffff',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontSize: 16,
+                          fontWeight: 'bold',
+                          transition: 'background 0.2s'
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = 'rgba(220, 38, 38, 1)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = 'rgba(239, 68, 68, 0.9)';
+                        }}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <p style={{
+                  margin: '8px 0 0 0',
+                  fontSize: 12,
+                  color: '#6b7280'
+                }}>
+                  Nhấn × để xóa ảnh/video. Bạn có thể thêm ảnh/video mới bên dưới.
+                </p>
+              </div>
+            )}
+
+            {/* File Previews (New files) */}
             {previews.length > 0 && (
-              <div style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))',
-                gap: 12,
-                marginTop: 16
-              }}>
-                {previews.map((preview, index) => (
-                  <div key={index} style={{ position: 'relative' }}>
-                    <img
-                      src={preview}
-                      alt={`Preview ${index + 1}`}
-                      style={{
-                        width: '100%',
-                        height: 100,
-                        objectFit: 'cover',
-                        borderRadius: 8,
-                        border: '1px solid #e5e7eb'
-                      }}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => removeFile(index)}
-                      style={{
-                        position: 'absolute',
-                        top: 4,
-                        right: 4,
-                        width: 24,
-                        height: 24,
-                        borderRadius: '50%',
-                        background: 'rgba(0, 0, 0, 0.6)',
-                        border: 'none',
-                        color: '#ffffff',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        fontSize: 14
-                      }}
-                    >
-                      ×
-                    </button>
-                  </div>
-                ))}
+              <div style={{ marginTop: 16 }}>
+                <label style={{
+                  display: 'block',
+                  fontSize: 14,
+                  fontWeight: 600,
+                  color: '#374151',
+                  marginBottom: 8
+                }}>
+                  Ảnh/Video mới
+                </label>
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))',
+                  gap: 12
+                }}>
+                  {previews.map((preview, index) => (
+                    <div key={`new-${index}`} style={{ position: 'relative' }}>
+                      {files[index]?.type.startsWith('video/') ? (
+                        <video
+                          src={preview}
+                          style={{
+                            width: '100%',
+                            height: 100,
+                            objectFit: 'cover',
+                            borderRadius: 8,
+                            border: '1px solid #e5e7eb'
+                          }}
+                          controls={false}
+                        />
+                      ) : (
+                        <img
+                          src={preview}
+                          alt={`Preview ${index + 1}`}
+                          style={{
+                            width: '100%',
+                            height: 100,
+                            objectFit: 'cover',
+                            borderRadius: 8,
+                            border: '1px solid #e5e7eb'
+                          }}
+                        />
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => removeFile(index)}
+                        style={{
+                          position: 'absolute',
+                          top: 4,
+                          right: 4,
+                          width: 24,
+                          height: 24,
+                          borderRadius: '50%',
+                          background: 'rgba(0, 0, 0, 0.6)',
+                          border: 'none',
+                          color: '#ffffff',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontSize: 14
+                        }}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
 

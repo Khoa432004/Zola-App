@@ -45,19 +45,29 @@ export default function FriendsPanel({ friends, activeView, receivedRequests = [
       return;
     }
 
-    setIsLoading(true);
+    // Optimistic update - show success immediately
+    const emailToSend = email.trim();
+    setSuccess('Đang gửi lời mời kết bạn...');
     setError('');
-    setSuccess('');
+    setIsLoading(true);
+    setEmail(''); // Clear input immediately for better UX
 
     try {
-      await apiService.sendFriendRequest(email.trim());
+      await apiService.sendFriendRequest(emailToSend);
       setSuccess('Đã gửi lời mời kết bạn');
-      setEmail('');
+      // WebSocket will handle updating the recipient's UI
       if (onRequestSent) {
         onRequestSent();
       }
+      // Clear success message after 3 seconds
+      setTimeout(() => {
+        setSuccess('');
+      }, 3000);
     } catch (err: any) {
       setError(err.message || 'Gửi lời mời thất bại');
+      setSuccess('');
+      // Restore email on error so user can retry
+      setEmail(emailToSend);
     } finally {
       setIsLoading(false);
     }
@@ -273,7 +283,7 @@ export default function FriendsPanel({ friends, activeView, receivedRequests = [
               border: "4px solid #e5e7eb",
               borderTop: "4px solid #6366f1",
               animation: "spin 1s linear infinite"
-            }}>
+      }}>
               <style>{`
                 @keyframes spin {
                   0% { transform: rotate(0deg); }
@@ -300,40 +310,40 @@ export default function FriendsPanel({ friends, activeView, receivedRequests = [
           </div>
         ) : receivedRequests.length === 0 ? (
           <div style={{ textAlign: "center", maxWidth: 400 }}>
-            <div style={{
+          <div style={{
               width: 120,
               height: 120,
-              margin: "0 auto 24px",
+            margin: "0 auto 24px",
               borderRadius: 60,
-              background: "linear-gradient(135deg, #e0e7ff 0%, #ddd6fe 100%)",
-              display: "flex",
-              alignItems: "center",
+            background: "linear-gradient(135deg, #e0e7ff 0%, #ddd6fe 100%)",
+            display: "flex",
+            alignItems: "center",
               justifyContent: "center"
-            }}>
+          }}>
               <svg width="60" height="60" viewBox="0 0 24 24" fill="none" stroke="#6366f1" strokeWidth="1.5">
                 <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
                 <polyline points="22,6 12,13 2,6" />
-              </svg>
-            </div>
-            
-            <h2 style={{ 
-              margin: 0, 
+            </svg>
+          </div>
+          
+          <h2 style={{ 
+            margin: 0, 
               fontSize: 24, 
-              fontWeight: 700, 
+            fontWeight: 700,
               color: "#111827",
               marginBottom: 8
-            }}>
+          }}>
               Lời mời kết bạn (0)
-            </h2>
-            
-            <p style={{ 
+          </h2>
+          
+          <p style={{ 
               margin: 0, 
-              color: "#6b7280",
+            color: "#6b7280",
               fontSize: 16
-            }}>
+          }}>
               Không có lời mời kết bạn nào.
-            </p>
-          </div>
+          </p>
+        </div>
         ) : (
           <div style={{ width: "100%", maxWidth: 600 }}>
             <h2 style={{ 
@@ -361,9 +371,22 @@ export default function FriendsPanel({ friends, activeView, receivedRequests = [
             )}
 
             <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-              {receivedRequests.map((request) => (
-                <div
-                  key={request.id}
+              {receivedRequests
+                .filter((request, index, self) => {
+                  const firstIndex = self.findIndex(r => 
+                    (r.id && request.id && r.id === request.id) || 
+                    (!r.id && !request.id && r.from === request.from && r.to === request.to)
+                  );
+                  return index === firstIndex;
+                })
+                .map((request, index) => {
+                  const uniqueKey = request.id 
+                    ? `request-${request.id}-${index}`
+                    : `request-${request.from}-${request.to}-${index}`;
+                  
+                  return (
+                    <div
+                      key={uniqueKey}
                   style={{
                     padding: "20px",
                     border: "1px solid #e5e7eb",
@@ -447,7 +470,8 @@ export default function FriendsPanel({ friends, activeView, receivedRequests = [
                     </button>
                   </div>
                 </div>
-              ))}
+                  );
+                })}
             </div>
           </div>
         )}

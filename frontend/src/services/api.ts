@@ -563,6 +563,130 @@ class ApiService {
       throw new Error(error.response?.data?.message || "Hủy kết bạn thất bại");
     }
   }
+
+  // ========== CONVERSATION METHODS ==========
+
+  /**
+   * Tạo conversation riêng tư
+   */
+  async createPrivateConversation(friendId: string) {
+    try {
+      const response = await this.axiosInstance.post("/conversations/private", {
+        friendId,
+      });
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.message || "Tạo cuộc trò chuyện thất bại");
+    }
+  }
+
+  /**
+   * Tạo conversation nhóm
+   */
+  async createGroupConversation(memberIds: string[], groupName?: string) {
+    try {
+      const response = await this.axiosInstance.post("/conversations/group", {
+        memberIds,
+        groupName,
+      });
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.message || "Tạo nhóm chat thất bại");
+    }
+  }
+
+  /**
+   * Lấy danh sách conversations của user
+   */
+  async getConversations() {
+    try {
+      const response = await this.axiosInstance.get("/conversations");
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.message || "Lấy danh sách cuộc trò chuyện thất bại");
+    }
+  }
+
+  /**
+   * Lấy conversation theo ID
+   */
+  async getConversationById(conversationId: string) {
+    try {
+      const response = await this.axiosInstance.get(`/conversations/${conversationId}`);
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.message || "Lấy cuộc trò chuyện thất bại");
+    }
+  }
+
+  // ========== MESSAGE METHODS ==========
+
+  /**
+   * Gửi message (có thể có file)
+   */
+  async sendMessage(conId: string, content: string, type: 'text' | 'image' | 'video' | 'sticker' | 'audio' = 'text', file?: File) {
+    try {
+      const formData = new FormData();
+      formData.append('conId', conId);
+      formData.append('content', content);
+      formData.append('type', type);
+      
+      if (file) {
+        formData.append('file', file);
+      }
+
+      const response = await this.axiosInstance.post("/messages/send", formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.message || "Gửi tin nhắn thất bại");
+    }
+  }
+
+  /**
+   * Lấy messages của conversation
+   * @param conId Conversation ID
+   * @param limit Số lượng messages
+   * @param beforeTimestamp Load messages trước timestamp này (cho lazy loading)
+   */
+  async getMessages(conId: string, limit?: number, beforeTimestamp?: number) {
+    try {
+      const params: any = {};
+      if (limit) params.limit = limit.toString();
+      if (beforeTimestamp) params.beforeTimestamp = beforeTimestamp.toString();
+      const response = await this.axiosInstance.get(`/messages/${conId}`, { params });
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.message || "Lấy tin nhắn thất bại");
+    }
+  }
+
+  /**
+   * Đánh dấu conversation đã xem
+   */
+  async markConversationAsSeen(conId: string) {
+    try {
+      const response = await this.axiosInstance.post(`/messages/conversation/${conId}/seen`);
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.message || "Đánh dấu cuộc trò chuyện đã xem thất bại");
+    }
+  }
+
+  /**
+   * Xóa message
+   */
+  async deleteMessage(messageId: string) {
+    try {
+      const response = await this.axiosInstance.delete(`/messages/${messageId}`);
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.message || "Xóa tin nhắn thất bại");
+    }
+  }
 }
 
 // Export the class

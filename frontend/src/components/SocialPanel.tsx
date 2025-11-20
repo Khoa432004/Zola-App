@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { apiService } from '@/services/api';
 import { useAuth } from '@/hooks/useAuth';
+import { socketService } from '@/services/socket';
 import CreatePostModal from './CreatePostModal';
 import PostDetailModal from './PostDetailModal'; 
 
@@ -66,7 +67,7 @@ interface Comment {
 }
 
 type FilterType = "newest" | "mostLikes" | "mostViews" | "promotion";
-const PAGE_SIZE = 8;
+const LOAD_BATCH_SIZE = 10; // Số posts load mỗi lần
 const VISIBLE_BATCH_SIZE = 2;
 
 export default function SocialPanel() {
@@ -93,11 +94,10 @@ export default function SocialPanel() {
   }>({});
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
-  const [currentPage, setCurrentPage] = useState(1);
   const [visibleCount, setVisibleCount] = useState(VISIBLE_BATCH_SIZE);
+  const [loadedPostsCount, setLoadedPostsCount] = useState(0); // Track số posts đã load
   const menuRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
   const filterMenuRef = useRef<HTMLDivElement>(null);
-  const observerTarget = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   // Lưu trạng thái like và số lượt like đã thay đổi để không bị mất khi filter
   // Map<postId, { isLiked: boolean, likeDelta: number, originalIsLiked: boolean }>
@@ -186,7 +186,7 @@ export default function SocialPanel() {
     };
   };
 
-  const loadPosts = async (page: number = 1, append: boolean = false) => {
+  const loadPosts = async (append: boolean = false) => {
     if (append) {
       if (isLoadingMore || isLoading) {
         return;
@@ -194,10 +194,13 @@ export default function SocialPanel() {
       setIsLoadingMore(true);
     } else {
       setIsLoading(true);
+      setLoadedPostsCount(0);
     }
     setError(null);
     try {
-      const postsResponse = await apiService.getPosts(page, PAGE_SIZE);
+      // Load posts dựa trên số lượng đã load
+      const page = Math.floor(loadedPostsCount / LOAD_BATCH_SIZE) + 1;
+      const postsResponse = await apiService.getPosts(page, LOAD_BATCH_SIZE);
       const serverPosts: Post[] =
         postsResponse?.success && postsResponse.data
           ? (extractPosts(postsResponse) as Post[])
@@ -227,9 +230,11 @@ export default function SocialPanel() {
             (post) => post.id && !existingIds.has(post.id)
           );
           updatedPosts = [...prev, ...newPosts];
+          setLoadedPostsCount(updatedPosts.length);
           return updatedPosts;
         }
         updatedPosts = displayPosts;
+        setLoadedPostsCount(displayPosts.length);
         return displayPosts;
       });
       if (!append) {
@@ -239,11 +244,11 @@ export default function SocialPanel() {
       const hasMoreFromServer =
         typeof postsResponse?.hasMore === "boolean"
           ? postsResponse.hasMore
-          : displayPosts.length === PAGE_SIZE;
+          : displayPosts.length === LOAD_BATCH_SIZE;
       setHasMore(hasMoreFromServer);
-      setCurrentPage(page);
 
-      if (page === 1) {
+      // Load featured posts only on first load
+      if (!append && loadedPostsCount === 0) {
         const featuredResponse = await apiService.getFeaturedPosts(10);
         if (featuredResponse.success && featuredResponse.data) {
           const displayFeatured = featuredResponse.data.map(convertToDisplayPost);
@@ -260,6 +265,7 @@ export default function SocialPanel() {
       if (!append) {
         setPosts([]);
         setVisibleCount(0);
+        setLoadedPostsCount(0);
       }
       setHasMore(false);
     } finally {
@@ -271,55 +277,335 @@ export default function SocialPanel() {
     }
   };
 
+  // Ref to track if we should trigger lazy loading after delete
+  const shouldLoadMoreRef = useRef(false);
+
+  // Connect WebSocket and setup listeners
   useEffect(() => {
-    loadPosts(1, false);
+    // Connect WebSocket if not connected
+    if (!socketService.isConnected() && typeof window !== 'undefined') {
+      const token = localStorage.getItem('token');
+      if (token) {
+        socketService.connect(token);
+      }
+    }
+
+    // Listen for new post
+    const handlePostCreated = (data: { post: any }) => {
+      const postId = data.post.postId || data.post.id;
+      const authorId = data.post.authorId;
+      const caption = data.post.caption || '';
+      const createdAt = data.post.createdAt;
+      
+      // Format post to display format
+      const newPost: DisplayPost = {
+        id: postId,
+        authorId: authorId,
+        author: data.post.authorName,
+        email: data.post.authorEmail || '',
+        timestamp: new Date(createdAt).toLocaleString('vi-VN'),
+        title: caption?.split('\n')[0] || '',
+        description: caption?.replace(/^[^\n]+\n?/, '') || '',
+        media: data.post.media || [],
+        likes: data.post.likeCount || 0,
+        commentCount: data.post.commentCount || 0,
+        isLiked: false,
+      };
+      
+      // Add to beginning of posts list with duplicate check
+      setPosts(prev => {
+        // 1. Check if post already exists by ID
+        const existsById = prev.some(p => p.id === postId);
+        if (existsById) {
+          console.log('⚠️ Post already exists by ID, skipping:', postId);
+          return prev;
+        }
+        
+        // 2. Check if duplicate by author + title + recent (within last 10 posts)
+        // This prevents duplicate from same author with same title sent at nearly same time
+        const duplicateIndex = prev.findIndex(p => {
+          const isSameAuthor = p.authorId === authorId;
+          const isSameTitle = p.title.trim() === newPost.title.trim();
+          const isRecent = prev.indexOf(p) < 10; // Within last 10 posts
+          
+          if (isSameAuthor && isSameTitle && isRecent) {
+            // Check if timestamps are very close (within 5 seconds) - likely duplicate
+            try {
+              const postTime = new Date(p.timestamp).getTime();
+              const newPostTime = new Date(createdAt).getTime();
+              return Math.abs(postTime - newPostTime) < 5000; // 5 seconds
+            } catch {
+              // If can't parse timestamps, assume duplicate if recent and same author+title
+              return true;
+            }
+          }
+          return false;
+        });
+        
+        if (duplicateIndex !== -1) {
+          const existingPost = prev[duplicateIndex];
+          if (existingPost.id !== postId) {
+            console.log('⚠️ Found duplicate post by author+title+recent, replacing:', existingPost.id, 'with', postId);
+            // Replace duplicate with real post
+            const updated = [...prev];
+            updated[duplicateIndex] = newPost;
+            return updated;
+          } else {
+            // Same ID, already exists, skip
+            console.log('⚠️ Post with same ID already exists, skipping');
+            return prev;
+          }
+        }
+        
+        // 3. New post - add to beginning of list
+        console.log('✅ Adding new post to UI:', postId);
+        setLoadedPostsCount(prev => prev + 1);
+        return [newPost, ...prev];
+      });
+    };
+
+    // Listen for post updated
+    const handlePostUpdated = (data: { postId: string; post: any }) => {
+      setPosts(prev => prev.map(p => 
+        p.id === data.postId 
+          ? {
+              ...p,
+              title: data.post.caption?.split('\n')[0] || p.title,
+              description: data.post.caption?.replace(/^[^\n]+\n?/, '') || p.description,
+              media: data.post.media || p.media,
+              likes: data.post.likeCount ?? p.likes,
+              commentCount: data.post.commentCount ?? p.commentCount,
+            }
+          : p
+      ));
+    };
+
+    // Listen for post deleted
+    const handlePostDeleted = (data: { postId: string }) => {
+      setPosts(prev => {
+        const filtered = prev.filter(p => p.id !== data.postId);
+        // Check if we should load more after delete
+        const currentPosts = filtered.length;
+        setLoadedPostsCount(prevCount => {
+          const newCount = Math.max(prevCount - 1, 0);
+          // If we have less posts than loaded count and there are more to load, trigger lazy loading
+          if (hasMore && !isLoadingMore && currentPosts < newCount && currentPosts < visibleCount) {
+            shouldLoadMoreRef.current = true;
+          }
+          return newCount;
+        });
+        return filtered;
+      });
+    };
+
+    // Listen for new comment
+    const handleCommentAdded = (data: { postId: string; comment: any }) => {
+      // Add comment to post comments
+      setPostComments(prev => {
+        const existingComments = prev[data.postId] || [];
+        // Check if comment already exists
+        const exists = existingComments.some(c => c.commentId === data.comment.commentId || c.commentId === data.comment.id);
+        if (exists) {
+          return prev;
+        }
+        return {
+          ...prev,
+          [data.postId]: [...existingComments, data.comment],
+        };
+      });
+
+      // Update comment count
+      setPosts(prev => prev.map(p => 
+        p.id === data.postId 
+          ? { ...p, commentCount: (p.commentCount || 0) + 1 }
+          : p
+      ));
+    };
+
+    // Listen for comment updated
+    const handleCommentUpdated = (data: { postId: string; commentId: string; comment: any }) => {
+      setPostComments(prev => {
+        const existingComments = prev[data.postId] || [];
+        return {
+          ...prev,
+          [data.postId]: existingComments.map(c => 
+            c.commentId === data.commentId ? { ...c, ...data.comment } : c
+          ),
+        };
+      });
+    };
+
+    // Listen for comment deleted
+    const handleCommentDeleted = (data: { postId: string; commentId: string }) => {
+      setPostComments(prev => {
+        const existingComments = prev[data.postId] || [];
+        return {
+          ...prev,
+          [data.postId]: existingComments.filter(c => c.commentId !== data.commentId),
+        };
+      });
+
+      // Update comment count
+      setPosts(prev => prev.map(p => 
+        p.id === data.postId 
+          ? { ...p, commentCount: Math.max((p.commentCount || 0) - 1, 0) }
+          : p
+      ));
+    };
+
+    // Listen for post liked
+    const handlePostLiked = (data: { postId: string; likeCount: number; userId: string }) => {
+      const currentUserId = user?.id;
+      setPosts(prev => prev.map(p => 
+        p.id === data.postId 
+          ? { 
+              ...p, 
+              likes: data.likeCount,
+              // Update isLiked status if it's the current user
+              isLiked: currentUserId === data.userId ? true : p.isLiked
+            }
+          : p
+      ));
+    };
+
+    // Listen for post unliked
+    const handlePostUnliked = (data: { postId: string; likeCount: number; userId: string }) => {
+      const currentUserId = user?.id;
+      setPosts(prev => prev.map(p => 
+        p.id === data.postId 
+          ? { 
+              ...p, 
+              likes: data.likeCount,
+              // Update isLiked status if it's the current user
+              isLiked: currentUserId === data.userId ? false : p.isLiked
+            }
+          : p
+      ));
+    };
+
+    // Listen for post comment count updated
+    const handlePostCommentCountUpdated = (data: { postId: string; commentCount: number }) => {
+      setPosts(prev => prev.map(p => 
+        p.id === data.postId 
+          ? { ...p, commentCount: data.commentCount }
+          : p
+      ));
+    };
+
+    // Remove any existing listeners first to prevent duplicate
+    socketService.off('post_created');
+    socketService.off('post_updated');
+    socketService.off('post_deleted');
+    socketService.off('post_liked');
+    socketService.off('post_unliked');
+    socketService.off('post_comment_count_updated');
+    socketService.off('comment_added');
+    socketService.off('comment_updated');
+    socketService.off('comment_deleted');
+    
+    // Add new listeners
+    socketService.on('post_created', handlePostCreated);
+    socketService.on('post_updated', handlePostUpdated);
+    socketService.on('post_deleted', handlePostDeleted);
+    socketService.on('post_liked', handlePostLiked);
+    socketService.on('post_unliked', handlePostUnliked);
+    socketService.on('post_comment_count_updated', handlePostCommentCountUpdated);
+    socketService.on('comment_added', handleCommentAdded);
+    socketService.on('comment_updated', handleCommentUpdated);
+    socketService.on('comment_deleted', handleCommentDeleted);
+
+    // Cleanup
+    return () => {
+      socketService.off('post_created', handlePostCreated);
+      socketService.off('post_updated', handlePostUpdated);
+      socketService.off('post_deleted', handlePostDeleted);
+      socketService.off('post_liked', handlePostLiked);
+      socketService.off('post_unliked', handlePostUnliked);
+      socketService.off('post_comment_count_updated', handlePostCommentCountUpdated);
+      socketService.off('comment_added', handleCommentAdded);
+      socketService.off('comment_updated', handleCommentUpdated);
+      socketService.off('comment_deleted', handleCommentDeleted);
+    };
+  }, [user?.id]);
+
+  useEffect(() => {
+    loadPosts(false);
   }, []);
 
+  // Lazy loading sau khi xóa post
   useEffect(() => {
-    const target = observerTarget.current;
-    const root = scrollContainerRef.current;
-    if (!target || !root) return;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (!entries[0].isIntersecting) return;
-
-        if (visibleCount < posts.length) {
-          setVisibleCount((prev) =>
-            Math.min(prev + VISIBLE_BATCH_SIZE, posts.length)
-          );
-          return;
-        }
-
-        if (!hasMore || isLoadingMore || isLoading) return;
-
-        if (
-          activeFilter &&
-          (activeFilter === "mostLikes" || activeFilter === "mostViews")
-        ) {
-          fetchFilteredPosts(activeFilter, currentPage + 1, true);
+    if (shouldLoadMoreRef.current && hasMore && !isLoadingMore && !isLoading) {
+      shouldLoadMoreRef.current = false;
+      setTimeout(() => {
+        if (activeFilter === "mostLikes" || activeFilter === "mostViews") {
+          const fetchFn = (window as any).fetchFilteredPosts;
+          if (fetchFn) {
+            fetchFn(activeFilter, true);
+          }
         } else {
-          loadPosts(currentPage + 1, true);
+          loadPosts(true);
         }
-      },
-      {
-        root,
-        rootMargin: "120px 0px",
-        threshold: 0,
-      }
-    );
+      }, 300);
+    }
+  }, [posts.length, hasMore, isLoadingMore, isLoading, activeFilter, loadPosts]);
 
-    observer.observe(target);
+  // Lazy loading theo scroll - tự động load khi cuộn xuống gần cuối
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
 
+    let throttleTimer: NodeJS.Timeout | null = null;
+
+    const handleScroll = () => {
+      // Throttle để tránh gọi quá nhiều lần
+      if (throttleTimer) return;
+      
+      throttleTimer = setTimeout(() => {
+        throttleTimer = null;
+        const { scrollTop, scrollHeight, clientHeight } = container;
+        
+        // Tránh chia cho 0
+        if (scrollHeight <= clientHeight) return;
+        
+        const scrollPercentage = (scrollTop + clientHeight) / scrollHeight;
+
+        // Khi cuộn xuống gần cuối (85% trở lên)
+        if (scrollPercentage >= 0.85) {
+          // Nếu còn posts chưa hiển thị, hiển thị thêm
+          if (visibleCount < posts.length) {
+            setVisibleCount((prev) =>
+              Math.min(prev + VISIBLE_BATCH_SIZE, posts.length)
+            );
+            return;
+          }
+
+          // Nếu đã hiển thị hết và còn posts để load, load thêm
+          if (hasMore && !isLoadingMore && !isLoading) {
+            if (
+              activeFilter &&
+              (activeFilter === "mostLikes" || activeFilter === "mostViews")
+            ) {
+              fetchFilteredPosts(activeFilter, true);
+            } else {
+              loadPosts(true);
+            }
+          }
+        }
+      }, 200); // Throttle 200ms
+    };
+
+    container.addEventListener('scroll', handleScroll, { passive: true });
+    
     return () => {
-      observer.unobserve(target);
-      observer.disconnect();
+      container.removeEventListener('scroll', handleScroll);
+      if (throttleTimer) {
+        clearTimeout(throttleTimer);
+      }
     };
   }, [
     hasMore,
     isLoadingMore,
     isLoading,
-    currentPage,
     activeFilter,
     posts.length,
     visibleCount,
@@ -432,11 +718,12 @@ export default function SocialPanel() {
 
   const fetchFilteredPosts = async (
     filterType: string,
-    page: number = 1,
     append: boolean = false
   ) => {
+    // Store function reference for use in effects
+    (window as any).fetchFilteredPosts = fetchFilteredPosts;
     if (filterType === "newest") {
-      loadPosts(page, append);
+      loadPosts(append);
       return;
     }
     if (append) {
@@ -446,11 +733,15 @@ export default function SocialPanel() {
       setIsLoadingMore(true);
     } else {
       setIsLoading(true);
+      setLoadedPostsCount(0);
     }
     setError(null);
     try {
       let response;
-      const limit = PAGE_SIZE;
+      const limit = LOAD_BATCH_SIZE;
+
+      // Calculate page based on loaded count
+      const page = Math.floor(loadedPostsCount / LOAD_BATCH_SIZE) + 1;
 
       switch (filterType) {
         case "mostLikes":
@@ -492,21 +783,24 @@ export default function SocialPanel() {
           const newPosts = list.filter(
             (p: DisplayPost) => !existingIds.has(p.id)
           );
-          return [...prev, ...newPosts];
+          const updated = [...prev, ...newPosts];
+          setLoadedPostsCount(updated.length);
+          return updated;
         });
         setHasMore(list.length === limit);
       } else {
         setPosts(list);
+        setLoadedPostsCount(list.length);
         setVisibleCount(Math.min(VISIBLE_BATCH_SIZE, list.length));
         setHasMore(filterType === "promotion" ? false : list.length === limit);
       }
-      setCurrentPage(page);
     } catch (error) {
       console.error("Lỗi khi load filter:", error);
       setError("Không thể tải bài đăng theo bộ lọc");
       if (!append) {
         setPosts([]);
         setVisibleCount(0);
+        setLoadedPostsCount(0);
       }
     } finally {
       if (append) {
@@ -521,9 +815,9 @@ export default function SocialPanel() {
     setActiveFilter(filterKey);
     setShowFilterMenu(false);
     if (filterKey === "newest") {
-      loadPosts(1, false);
+      loadPosts(false);
     } else {
-      fetchFilteredPosts(filterKey);
+      fetchFilteredPosts(filterKey, false);
     }
   };
 
@@ -1043,7 +1337,32 @@ export default function SocialPanel() {
                                 try {
                                   await apiService.deletePost(post.id);
                                   setOpenMenuId(null);
-                                  loadPosts();
+                                  // Don't reload all posts - WebSocket will handle removing the post
+                                  // Remove post from list immediately for better UX
+                                  setPosts(prev => {
+                                    const filtered = prev.filter(p => p.id !== post.id);
+                                    // Update loaded count
+                                    setLoadedPostsCount(prevCount => {
+                                      const newCount = Math.max(prevCount - 1, 0);
+                                      // If we have less posts than expected and there are more to load, trigger lazy loading
+                                      if (hasMore && !isLoadingMore && filtered.length < newCount && filtered.length < visibleCount) {
+                                        shouldLoadMoreRef.current = true;
+                                        // Trigger lazy loading after a short delay
+                                        setTimeout(() => {
+                                          if (shouldLoadMoreRef.current) {
+                                            if (activeFilter === "mostLikes" || activeFilter === "mostViews") {
+                                              fetchFilteredPosts(activeFilter, true);
+                                            } else {
+                                              loadPosts(true);
+                                            }
+                                            shouldLoadMoreRef.current = false;
+                                          }
+                                        }, 300);
+                                      }
+                                      return newCount;
+                                    });
+                                    return filtered;
+                                  });
                                 } catch (err: any) {
                                   alert(err.message || 'Không thể xóa bài viết');
                                 }
@@ -1256,6 +1575,10 @@ export default function SocialPanel() {
                     e.stopPropagation();
                     setSelectedPost(post);
                     setShowPostDetailModal(true);
+                    // Join post room for real-time comments
+                    if (socketService.isConnected()) {
+                      socketService.joinRoom(`post:${post.id}`);
+                    }
                   }}
                   style={{
                     display: "flex",
@@ -1299,23 +1622,20 @@ export default function SocialPanel() {
             ))
           )}
 
-          {/* Lazy Loading Trigger */}
-          {shouldShowLoadMoreTrigger && (
+          {/* Loading indicator khi đang load thêm */}
+          {isLoadingMore && (
             <div
-              ref={observerTarget}
               style={{
-                height: 20,
+                height: 60,
                 marginTop: 20,
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
               }}
             >
-              {isLoadingMore && (
-                <div style={{ fontSize: 14, color: "#6b7280" }}>
-                  Đang tải thêm...
-                </div>
-              )}
+              <div style={{ fontSize: 14, color: "#6b7280" }}>
+                Đang tải thêm...
+              </div>
             </div>
           )}
         </div>
@@ -1435,6 +1755,10 @@ export default function SocialPanel() {
         isOpen={showPostDetailModal}
         post={selectedPost}
         onClose={() => {
+          // Leave post room when closing modal
+          if (selectedPost && socketService.isConnected()) {
+            socketService.leaveRoom(`post:${selectedPost.id}`);
+          }
           setShowPostDetailModal(false);
           setSelectedPost(null);
         }}
@@ -1445,7 +1769,8 @@ export default function SocialPanel() {
         onClose={() => setShowCreateModal(false)}
         onPostCreated={() => {
           setShowCreateModal(false);
-          loadPosts();
+          // Don't reload posts - WebSocket will handle adding the new post
+          // This prevents duplicate posts from callback + WebSocket
         }}
       />
       <CreatePostModal
@@ -1453,7 +1778,8 @@ export default function SocialPanel() {
         onClose={() => setEditingPost(null)}
         onPostCreated={() => {
           setEditingPost(null);
-          loadPosts();
+          // Don't reload posts - WebSocket will handle updating the post
+          // handlePostUpdated will update the post in the list without reloading
         }}
         editingPost={
           editingPost

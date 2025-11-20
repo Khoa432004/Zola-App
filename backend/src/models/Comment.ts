@@ -249,6 +249,7 @@ export class Comment {
         updatedAt,
         likeCount: data.likeCount || 0,
         isDeleted: data.isDeleted || false,
+        rootPostId: data.rootPostId || undefined,
       } as IComment;
     } catch (error: any) {
       throw error;
