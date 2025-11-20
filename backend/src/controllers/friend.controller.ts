@@ -28,6 +28,19 @@ export class FriendController {
 
       const request = await friendService.sendFriendRequest(userId, email);
 
+      // Emit WebSocket event for real-time updates
+      const io = (global as any).io;
+      if (io) {
+        // Get recipient user info
+        const Account = (await import('../models/Account')).Account;
+        const toAccount = await Account.findByEmail(email);
+        if (toAccount) {
+          io.to(`user:${toAccount.id}`).emit('friend_request_received', {
+            request: request,
+          });
+        }
+      }
+
       return res.status(200).json({
         success: true,
         message: 'Đã gửi lời mời kết bạn',
@@ -64,6 +77,23 @@ export class FriendController {
 
       const friendship = await friendService.acceptFriendRequest(requestId, userId);
 
+      // Emit WebSocket event for real-time updates
+      const io = (global as any).io;
+      if (io) {
+        // Get request to find the sender
+        const FriendRequest = (await import('../models/FriendRequest')).FriendRequest;
+        const request = await FriendRequest.findById(requestId);
+        if (request && request.from) {
+          // Notify both users
+          io.to(`user:${request.from}`).emit('friend_request_accepted', {
+            friend: friendship,
+          });
+          io.to(`user:${userId}`).emit('friend_request_accepted', {
+            friend: friendship,
+          });
+        }
+      }
+
       return res.status(200).json({
         success: true,
         message: 'Đã chấp nhận lời mời kết bạn',
@@ -99,6 +129,18 @@ export class FriendController {
       }
 
       await friendService.rejectFriendRequest(requestId, userId);
+
+      // Emit WebSocket event for real-time updates
+      const io = (global as any).io;
+      if (io) {
+        const FriendRequest = (await import('../models/FriendRequest')).FriendRequest;
+        const request = await FriendRequest.findById(requestId);
+        if (request && request.from) {
+          io.to(`user:${request.from}`).emit('friend_request_rejected', {
+            userId: userId,
+          });
+        }
+      }
 
       return res.status(200).json({
         success: true,

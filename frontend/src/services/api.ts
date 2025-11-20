@@ -639,10 +639,15 @@ class ApiService {
 
   /**
    * Lấy messages của conversation
+   * @param conId Conversation ID
+   * @param limit Số lượng messages
+   * @param beforeTimestamp Load messages trước timestamp này (cho lazy loading)
    */
-  async getMessages(conId: string, limit?: number) {
+  async getMessages(conId: string, limit?: number, beforeTimestamp?: number) {
     try {
-      const params = limit ? { limit: limit.toString() } : {};
+      const params: any = {};
+      if (limit) params.limit = limit.toString();
+      if (beforeTimestamp) params.beforeTimestamp = beforeTimestamp.toString();
       const response = await this.axiosInstance.get(`/messages/${conId}`, { params });
       return response.data;
     } catch (error: any) {

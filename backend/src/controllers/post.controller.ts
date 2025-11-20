@@ -195,6 +195,14 @@ export class PostController {
         tags: tagsArray,
       });
 
+      // Emit WebSocket event for real-time updates
+      const io = (global as any).io;
+      if (io) {
+        io.emit('post_created', {
+          post: post,
+        });
+      }
+
       res.json({
         success: true,
         data: post,
@@ -235,7 +243,7 @@ export class PostController {
         });
       }
 
-      const { title, caption, visibility, tags } = req.body;
+      const { title, caption, visibility, tags, existingMedia } = req.body;
       const files = (req.files as Express.Multer.File[]) || [];
 
       const updateData: any = {};
@@ -272,8 +280,36 @@ export class PostController {
         updateData.tags = tagsArray;
       }
 
+      // Handle media: existingMedia + new files
+      let finalMedia: Array<{
+        type: "image" | "video";
+        sourceUrl: string;
+        width: number;
+        height: number;
+      }> = [];
+
+      // Parse existingMedia if provided
+      if (existingMedia) {
+        try {
+          const existingMediaArray = typeof existingMedia === "string" 
+            ? JSON.parse(existingMedia) 
+            : existingMedia;
+          if (Array.isArray(existingMediaArray)) {
+            finalMedia = [...existingMediaArray];
+          }
+        } catch (error) {
+          console.error("Error parsing existingMedia:", error);
+          // If parsing fails, keep existing media from post
+          finalMedia = [...(post.media || [])];
+        }
+      } else {
+        // If no existingMedia provided, keep existing media from post
+        finalMedia = [...(post.media || [])];
+      }
+
+      // Upload and add new files
       if (files && files.length > 0) {
-        const media = [];
+        const newMedia = [];
         for (const file of files) {
           try {
             const fileType = file.mimetype.startsWith("image/")
@@ -281,7 +317,7 @@ export class PostController {
               : "video";
             const uploadResult = await uploadFile(file, `posts/${userId}`);
 
-            media.push({
+            newMedia.push({
               type: fileType,
               sourceUrl: uploadResult.url,
               width: uploadResult.width,
@@ -291,12 +327,24 @@ export class PostController {
             console.error("Error uploading file:", uploadError);
           }
         }
-        if (media.length > 0) {
-          updateData.media = [...(post.media || []), ...media];
+        if (newMedia.length > 0) {
+          finalMedia = [...finalMedia, ...newMedia];
         }
       }
 
+      // Update media if changed
+      updateData.media = finalMedia;
+
       const updatedPost = await this.postService.updatePost(postId, updateData);
+
+      // Emit WebSocket event for real-time updates
+      const io = (global as any).io;
+      if (io && updatedPost) {
+        io.emit('post_updated', {
+          postId: postId,
+          post: updatedPost,
+        });
+      }
 
       res.json({
         success: true,
@@ -339,6 +387,14 @@ export class PostController {
       }
 
       await this.postService.deletePost(postId);
+
+      // Emit WebSocket event for real-time updates
+      const io = (global as any).io;
+      if (io) {
+        io.emit('post_deleted', {
+          postId: postId,
+        });
+      }
 
       res.json({
         success: true,
@@ -538,6 +594,17 @@ export class PostController {
 
       const userId = (req.user as any)?.uid || (req.user as any)?.userId || (req.user as any)?.id;
       const updated = await this.postService.incrementLike(postId, userId);
+      
+      // Emit WebSocket event for real-time updates
+      const io = (global as any).io;
+      if (io && updated) {
+        io.emit('post_liked', {
+          postId: postId,
+          likeCount: updated.likeCount || 0,
+          userId: userId,
+        });
+      }
+      
       res.json({ success: true, data: updated });
     } catch (error: any) {
       res.status(500).json({ success: false, message: error.message || 'Failed to like post' });
@@ -557,6 +624,17 @@ export class PostController {
 
       const userId = (req.user as any)?.uid || (req.user as any)?.userId || (req.user as any)?.id;
       const updated = await this.postService.decrementLike(postId, userId);
+      
+      // Emit WebSocket event for real-time updates
+      const io = (global as any).io;
+      if (io && updated) {
+        io.emit('post_unliked', {
+          postId: postId,
+          likeCount: updated.likeCount || 0,
+          userId: userId,
+        });
+      }
+      
       res.json({ success: true, data: updated });
     } catch (error: any) {
       res.status(500).json({ success: false, message: error.message || 'Failed to unlike post' });

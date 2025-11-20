@@ -34,6 +34,22 @@ export class MessageController {
         type || 'text'
       );
 
+      // Emit WebSocket event for real-time updates
+      const io = (global as any).io;
+      if (io) {
+        try {
+          const { emitMessageEvent } = await import('../socket/socket.handlers');
+          emitMessageEvent(io, conId, message, userId);
+        } catch (error) {
+          console.error('Error emitting WebSocket event:', error);
+          // Fallback: emit directly
+          io.to(`conversation:${conId}`).emit('message_received', {
+            conId: conId,
+            message: message,
+          });
+        }
+      }
+
       return res.status(200).json({
         success: true,
         message: 'Đã gửi tin nhắn',
@@ -63,6 +79,7 @@ export class MessageController {
       const { conId } = req.params;
       // Tối ưu: Default limit 50 để tránh load quá nhiều messages
       const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
+      const beforeTimestamp = req.query.beforeTimestamp ? parseInt(req.query.beforeTimestamp as string) : undefined;
 
       if (!conId) {
         return res.status(400).json({
@@ -71,7 +88,7 @@ export class MessageController {
         });
       }
 
-      const messages = await messageService.getConversationMessages(conId, limit);
+      const messages = await messageService.getConversationMessages(conId, limit, beforeTimestamp);
 
       // Tối ưu: Không tự động mark as seen ở đây, để frontend xử lý với debounce
       // Việc mark as seen sẽ được gọi riêng qua endpoint /seen để tránh chậm

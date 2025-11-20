@@ -3,6 +3,8 @@
 import express from "express";
 import cors from "cors";
 import multer from "multer";
+import { createServer } from "http";
+import { Server as SocketIOServer } from "socket.io";
 import { firestore } from "./config/firebase-admin";
 import authRoutes from "./routes/auth.routes";
 import profileRoutes from "./routes/profile.routes";
@@ -11,8 +13,10 @@ import commentRoutes from "./routes/comment.routes";
 import friendRoutes from "./routes/friend.routes";
 import conversationRoutes from "./routes/conversation.routes";
 import messageRoutes from "./routes/message.routes";
+import { setupSocketHandlers } from "./socket/socket.handlers";
 
 const app = express();
+const httpServer = createServer(app);
 
 // Configure multer for file uploads
 const upload = multer({
@@ -64,8 +68,24 @@ app.use("/api/conversations", conversationRoutes);
 // Message routes
 app.use("/api/messages", messageRoutes);
 
+// Setup Socket.IO
+const io = new SocketIOServer(httpServer, {
+  cors: {
+    origin: process.env.CORS_ORIGIN || "*",
+    methods: ["GET", "POST"],
+    credentials: true,
+  },
+});
+
+// Setup socket handlers
+setupSocketHandlers(io);
+
+// Make io available globally (for use in controllers)
+(global as any).io = io;
+
 // Start server
 const port = Number(process.env.PORT) || 4000;
-app.listen(port, () => {
-  console.log(`API listening on http://localhost:${port}`);
+httpServer.listen(port, () => {
+  console.log(`✅ API listening on http://localhost:${port}`);
+  console.log(`✅ WebSocket server ready on http://localhost:${port}`);
 });

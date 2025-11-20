@@ -51,17 +51,13 @@ export class MessageService {
   /**
    * Lấy messages của conversation
    * Tối ưu: Giảm limit mặc định và validate conversation nhanh hơn
+   * @param conId Conversation ID
+   * @param limit Số lượng messages
+   * @param beforeTimestamp Load messages trước timestamp này (cho lazy loading)
    */
-  async getConversationMessages(conId: string, limit: number = 50): Promise<IMessage[]> {
+  async getConversationMessages(conId: string, limit: number = 50, beforeTimestamp?: number): Promise<IMessage[]> {
     try {
-      // Tối ưu: Kiểm tra conversation có tồn tại không (có thể cache sau)
-      // Tạm thời bỏ qua để tăng tốc, nếu không có conversation thì query sẽ trống
-      // const conversation = await Conversation.findByConId(conId);
-      // if (!conversation) {
-      //   throw new Error('Không tìm thấy cuộc trò chuyện');
-      // }
-
-      return await Message.findByConversationId(conId, limit);
+      return await Message.findByConversationId(conId, limit, beforeTimestamp);
     } catch (error: any) {
       throw error;
     }

@@ -93,6 +93,30 @@ export class CommentController {
         media: media.length > 0 ? media : undefined
       });
 
+      // Emit WebSocket event for real-time updates
+      const io = (global as any).io;
+      if (io) {
+        // Use rootPostId from comment if available, otherwise use targetId
+        const rootPostId = comment.rootPostId || targetId;
+        
+        // Emit to post room for comment list updates
+        io.to(`post:${rootPostId}`).emit('comment_added', {
+          postId: rootPostId,
+          comment: comment,
+        });
+        
+        // Also emit comment count update for all users
+        try {
+          const comments = await CommentService.getCommentsByTargetId(rootPostId, 500);
+          io.emit('post_comment_count_updated', {
+            postId: rootPostId,
+            commentCount: comments.length,
+          });
+        } catch (err) {
+          console.error('Error getting comment count after creation:', err);
+        }
+      }
+
       res.status(201).json(comment);
     } catch (error: any) {
       console.error('Error creating comment:', error);
@@ -126,9 +150,24 @@ export class CommentController {
         return res.status(400).json({ error: 'Content is required' });
       }
 
+      // Get rootPostId before update (use targetId if rootPostId is not available)
+      const rootPostId = comment.rootPostId || comment.targetId;
+
       const updatedComment = await CommentService.updateComment(commentId, {
         content: content.trim()
       });
+
+      // Emit WebSocket event for real-time updates
+      const io = (global as any).io;
+      if (io && updatedComment && rootPostId) {
+        // Emit to post room for comment list updates
+        io.to(`post:${rootPostId}`).emit('comment_updated', {
+          postId: rootPostId,
+          commentId: commentId,
+          comment: updatedComment,
+        });
+        console.log(`📤 Emitted comment_updated event for comment ${commentId} in post ${rootPostId}`);
+      }
 
       res.json(updatedComment);
     } catch (error: any) {
@@ -158,7 +197,33 @@ export class CommentController {
         return res.status(403).json({ error: 'Forbidden: You can only delete your own comments' });
       }
 
+      // Get rootPostId before deletion (use targetId if rootPostId is not available)
+      const rootPostId = comment.rootPostId || comment.targetId;
+      
       await CommentService.deleteComment(commentId);
+      
+      // Emit WebSocket event for real-time updates
+      const io = (global as any).io;
+      if (io && rootPostId) {
+        // Emit to post room for comment list updates
+        io.to(`post:${rootPostId}`).emit('comment_deleted', {
+          postId: rootPostId,
+          commentId: commentId,
+        });
+        
+        // Also emit comment count update for all users
+        // Get updated comment count after deletion
+        try {
+          const comments = await CommentService.getCommentsByTargetId(rootPostId, 500);
+          io.emit('post_comment_count_updated', {
+            postId: rootPostId,
+            commentCount: comments.length,
+          });
+        } catch (err) {
+          console.error('Error getting comment count after deletion:', err);
+        }
+      }
+      
       res.json({ message: 'Comment deleted successfully' });
     } catch (error: any) {
       console.error('Error deleting comment:', error);
@@ -176,8 +241,31 @@ export class CommentController {
         return res.status(401).json({ error: 'Unauthorized' });
       }
 
+      // Get comment to find rootPostId before like
+      const comment = await CommentService.getCommentById(commentId);
+      if (!comment) {
+        return res.status(404).json({ error: 'Comment not found' });
+      }
+
       const updated = await CommentService.incrementLike(commentId);
       if (!updated) return res.status(404).json({ error: 'Comment not found' });
+
+      // Emit WebSocket event for real-time updates
+      const io = (global as any).io;
+      if (io && updated) {
+        // Get rootPostId from comment (use targetId if rootPostId is not available)
+        const rootPostId = comment.rootPostId || comment.targetId;
+        
+        // Emit to post room for comment list updates
+        io.to(`post:${rootPostId}`).emit('comment_liked', {
+          postId: rootPostId,
+          commentId: commentId,
+          likeCount: updated.likeCount || 0,
+          userId: req.user.userId,
+        });
+        console.log(`📤 Emitted comment_liked event for comment ${commentId} in post ${rootPostId}`);
+      }
+
       res.json(updated);
     } catch (error: any) {
       console.error('Error liking comment:', error);
@@ -195,8 +283,31 @@ export class CommentController {
         return res.status(401).json({ error: 'Unauthorized' });
       }
 
+      // Get comment to find rootPostId before unlike
+      const comment = await CommentService.getCommentById(commentId);
+      if (!comment) {
+        return res.status(404).json({ error: 'Comment not found' });
+      }
+
       const updated = await CommentService.decrementLike(commentId);
       if (!updated) return res.status(404).json({ error: 'Comment not found' });
+
+      // Emit WebSocket event for real-time updates
+      const io = (global as any).io;
+      if (io && updated) {
+        // Get rootPostId from comment (use targetId if rootPostId is not available)
+        const rootPostId = comment.rootPostId || comment.targetId;
+        
+        // Emit to post room for comment list updates
+        io.to(`post:${rootPostId}`).emit('comment_unliked', {
+          postId: rootPostId,
+          commentId: commentId,
+          likeCount: updated.likeCount || 0,
+          userId: req.user.userId,
+        });
+        console.log(`📤 Emitted comment_unliked event for comment ${commentId} in post ${rootPostId}`);
+      }
+
       res.json(updated);
     } catch (error: any) {
       console.error('Error unliking comment:', error);

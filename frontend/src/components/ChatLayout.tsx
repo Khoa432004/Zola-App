@@ -7,6 +7,7 @@ import { useAppSelector } from "@/store/hooks";
 import ChatPanel from "./ChatPanel";
 import CreateConversationModal from "./CreateConversationModal";
 import { apiService } from "@/services/api";
+import { socketService } from "@/services/socket";
 
 interface ConversationData {
   id: string;
@@ -149,6 +150,33 @@ export default function ChatLayout() {
       setSelectedConversation(formatted[0]);
     }
   };
+
+  // Connect WebSocket globally for conversation updates
+  useEffect(() => {
+    if (!mounted || !user) return;
+
+    // Connect WebSocket if not connected
+    if (!socketService.isConnected() && typeof window !== 'undefined') {
+      const token = localStorage.getItem('token');
+      if (token) {
+        socketService.connect(token);
+      }
+    }
+
+    // Listen for conversation updates
+    const handleConversationUpdate = (data: { conversationId: string; lastMessage: any }) => {
+      console.log('📢 Conversation updated via WebSocket:', data);
+      // Reload conversations to get updated last message
+      loadedRef.current = false;
+      loadConversations(true);
+    };
+
+    socketService.on('conversation_updated', handleConversationUpdate);
+
+    return () => {
+      socketService.off('conversation_updated', handleConversationUpdate);
+    };
+  }, [mounted, user, loadConversations]);
 
   return (
     <>

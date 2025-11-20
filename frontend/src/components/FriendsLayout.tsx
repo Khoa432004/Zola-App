@@ -3,6 +3,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import FriendsPanel from './FriendsPanel';
 import { apiService } from '@/services/api';
+import { socketService } from '@/services/socket';
+import { useAppSelector } from '@/store/hooks';
 
 interface Friend {
   id: string;
@@ -91,6 +93,57 @@ export default function FriendsLayout() {
       loadingRequestsRef.current = false;
     }
   }, []);
+
+  const user = useAppSelector((state) => state.auth.user);
+
+  // Connect WebSocket and setup listeners
+  useEffect(() => {
+    // Connect WebSocket if not connected
+    if (!socketService.isConnected() && typeof window !== 'undefined') {
+      const token = localStorage.getItem('token');
+      if (token) {
+        socketService.connect(token);
+      }
+    }
+
+    // Listen for friend request received
+    const handleFriendRequestReceived = (data: { request: any }) => {
+      setReceivedRequests(prev => [...prev, data.request]);
+      requestsLoadedRef.current = false; // Allow reload
+    };
+
+    // Listen for friend request accepted
+    const handleFriendRequestAccepted = (data: { friend: any }) => {
+      // Reload friends list
+      friendsLoadedRef.current = false;
+      loadFriends(true);
+      // Remove from requests if viewing invitations
+      if (activeView === 'invitations') {
+        requestsLoadedRef.current = false;
+        loadRequests(true);
+      }
+    };
+
+    // Listen for friend request rejected
+    const handleFriendRequestRejected = () => {
+      // Reload requests
+      requestsLoadedRef.current = false;
+      if (activeView === 'invitations') {
+        loadRequests(true);
+      }
+    };
+
+    socketService.on('friend_request_received', handleFriendRequestReceived);
+    socketService.on('friend_request_accepted', handleFriendRequestAccepted);
+    socketService.on('friend_request_rejected', handleFriendRequestRejected);
+
+    // Cleanup
+    return () => {
+      socketService.off('friend_request_received', handleFriendRequestReceived);
+      socketService.off('friend_request_accepted', handleFriendRequestAccepted);
+      socketService.off('friend_request_rejected', handleFriendRequestRejected);
+    };
+  }, [activeView, loadFriends, loadRequests]);
 
   // Load friends on mount
   useEffect(() => {
@@ -315,52 +368,52 @@ export default function FriendsLayout() {
               </div>
             ) : (
               filteredFriends.map((friend) => (
-                <div
-                  key={friend.id}
-                  style={{ 
-                    display: "flex", 
-                    alignItems: "center", 
-                    padding: "14px 16px", 
-                    gap: 12, 
-                    borderBottom: "1px solid #f3f4f6", 
-                    cursor: "pointer",
-                    transition: "background 0.2s"
-                  }}
-                  onMouseEnter={(e) => (e.currentTarget.style.background = "#f9fafb")}
-                  onMouseLeave={(e) => (e.currentTarget.style.background = "#ffffff")}
-                >
-                  <div style={{ 
-                    width: 48, 
-                    height: 48, 
-                    borderRadius: 24, 
-                    overflow: "hidden", 
-                    background: "linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)", 
-                    display: "flex", 
-                    alignItems: "center", 
-                    justifyContent: "center",
-                    flexShrink: 0
-                  }}>
-                    <span style={{ fontSize: 16, color: "#fff", fontWeight: 600 }}>
+            <div
+              key={friend.id}
+              style={{ 
+                display: "flex", 
+                alignItems: "center", 
+                padding: "14px 16px", 
+                gap: 12, 
+                borderBottom: "1px solid #f3f4f6", 
+                cursor: "pointer",
+                transition: "background 0.2s"
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = "#f9fafb")}
+              onMouseLeave={(e) => (e.currentTarget.style.background = "#ffffff")}
+            >
+              <div style={{ 
+                width: 48, 
+                height: 48, 
+                borderRadius: 24, 
+                overflow: "hidden", 
+                background: "linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)", 
+                display: "flex", 
+                alignItems: "center", 
+                justifyContent: "center",
+                flexShrink: 0
+              }}>
+                <span style={{ fontSize: 16, color: "#fff", fontWeight: 600 }}>
                       {friend.avatar || getAvatarInitials(friend.name)}
-                    </span>
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ 
-                      fontSize: 15, 
-                      color: "#111827", 
-                      fontWeight: 600,
-                      marginBottom: 4
-                    }}>
-                      {friend.name}
-                    </div>
-                    <div style={{ 
-                      fontSize: 13, 
-                      color: "#6b7280"
-                    }}>
-                      {friend.email}
-                    </div>
-                  </div>
+                </span>
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ 
+                  fontSize: 15, 
+                  color: "#111827", 
+                  fontWeight: 600,
+                  marginBottom: 4
+                }}>
+                  {friend.name}
                 </div>
+                <div style={{ 
+                  fontSize: 13, 
+                  color: "#6b7280"
+                }}>
+                  {friend.email}
+                </div>
+              </div>
+            </div>
               ))
             )
           ) : (

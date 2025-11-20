@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAppSelector } from '@/store/hooks';
 import { apiService } from '@/services/api';
+import { socketService } from '@/services/socket';
 
 interface Conversation {
   id: string;
@@ -42,28 +43,53 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
   const [message, setMessage] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [isSending, setIsSending] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
+  const [oldestTimestamp, setOldestTimestamp] = useState<number | null>(null);
   const user = useAppSelector((state) => state.auth.user);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const loadingRef = useRef(false);
+  const loadingMoreRef = useRef(false);
+  const userScrollingRef = useRef(false);
+  const scrollPositionRef = useRef(0);
 
   // Mark seen debounce ref
   const markSeenTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Load messages
+  // Load messages (initial load hoặc reload)
   const loadMessages = useCallback(async (limit: number = 50) => {
     if (loadingRef.current || !conversation?.con_id) return;
 
     try {
       loadingRef.current = true;
       setIsLoading(true);
-      // Tối ưu: Thêm limit để chỉ load 50 messages mặc định
       const response = await apiService.getMessages(conversation.con_id, limit);
       if (response.success && response.data) {
         const formattedMessages = formatMessages(response.data);
         setMessages(formattedMessages);
         
-        // Tối ưu: Debounce mark conversation as seen để tránh gọi quá nhiều lần
+        // Track oldest timestamp for lazy loading
+        const responseData = response.data as MessageData[];
+        if (responseData.length > 0) {
+          // Get timestamp from oldest message (first in sorted array)
+          const oldestMsg = responseData[0];
+          if (oldestMsg.timestamp) {
+            // Convert to number if it's a Date object or Timestamp
+            const timestamp = typeof oldestMsg.timestamp === 'number' 
+              ? oldestMsg.timestamp 
+              : new Date(oldestMsg.timestamp).getTime();
+            setOldestTimestamp(timestamp);
+          }
+          // Có thể còn messages cũ hơn nếu load đủ limit
+          setHasMore(responseData.length >= limit);
+        } else {
+          setHasMore(false);
+          setOldestTimestamp(null);
+        }
+        
+        // Debounce mark conversation as seen
         if (markSeenTimeoutRef.current) {
           clearTimeout(markSeenTimeoutRef.current);
         }
@@ -73,7 +99,7 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
           } catch (error) {
             console.warn('Failed to mark conversation as seen:', error);
           }
-        }, 1000); // Wait 1 second before marking as seen
+        }, 1000);
       }
     } catch (error: any) {
       console.error('Error loading messages:', error);
@@ -83,6 +109,68 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
       loadingRef.current = false;
     }
   }, [conversation?.con_id, user]);
+
+  // Load older messages (lazy loading)
+  const loadOlderMessages = useCallback(async () => {
+    if (loadingMoreRef.current || !conversation?.con_id || !hasMore || !oldestTimestamp) return;
+
+    try {
+      loadingMoreRef.current = true;
+      setIsLoadingMore(true);
+      
+      // Save scroll position before loading
+      const container = messagesContainerRef.current;
+      if (container) {
+        scrollPositionRef.current = container.scrollHeight - container.scrollTop;
+      }
+
+      // Load messages before oldest timestamp
+      const response = await apiService.getMessages(conversation.con_id, 20, oldestTimestamp);
+      if (response.success && response.data && response.data.length > 0) {
+        const formattedMessages = formatMessages(response.data);
+        const responseData = response.data as MessageData[];
+        
+        // Prepend older messages to the beginning
+        setMessages(prev => {
+          // Merge and deduplicate
+          const existingIds = new Set(prev.map(m => m.id));
+          const newMessages = formattedMessages.filter(m => !existingIds.has(m.id));
+          const merged = [...newMessages, ...prev];
+          
+          // Update oldest timestamp from new oldest message
+          if (responseData.length > 0) {
+            const oldestMsg = responseData[0];
+            if (oldestMsg.timestamp) {
+              const timestamp = typeof oldestMsg.timestamp === 'number' 
+                ? oldestMsg.timestamp 
+                : new Date(oldestMsg.timestamp).getTime();
+              setOldestTimestamp(timestamp);
+            }
+          }
+          
+          // Check if there are more messages (load đủ 20 thì có thể còn)
+          setHasMore(responseData.length >= 20);
+          
+          return merged;
+        });
+
+        // Restore scroll position after loading
+        if (container) {
+          setTimeout(() => {
+            const newScrollHeight = container.scrollHeight;
+            container.scrollTop = newScrollHeight - scrollPositionRef.current;
+          }, 0);
+        }
+      } else {
+        setHasMore(false); // Không còn messages cũ hơn
+      }
+    } catch (error: any) {
+      console.error('Error loading older messages:', error);
+    } finally {
+      setIsLoadingMore(false);
+      loadingMoreRef.current = false;
+    }
+  }, [conversation?.con_id, oldestTimestamp, hasMore, user]);
 
   // Format messages to display format
   const formatMessages = (data: MessageData[]): Message[] => {
@@ -105,53 +193,300 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
     });
   };
 
-  // Load messages when conversation changes
+  // Connect WebSocket and setup listeners
   useEffect(() => {
-    if (conversation?.con_id) {
-      loadMessages(50); // Load 50 messages mặc định
-    } else {
-      setMessages([]);
+    if (!conversation?.con_id || !user) return;
+
+    // Connect WebSocket if not connected
+    const connectAndJoinRoom = () => {
+      if (!socketService.isConnected() && typeof window !== 'undefined') {
+        const token = localStorage.getItem('token');
+        if (token) {
+          const socket = socketService.connect(token);
+          // Wait for connection before joining room
+          if (socket && !socket.connected) {
+            socket.once('connect', () => {
+              console.log('✅ Socket connected, joining conversation room:', conversation.con_id);
+              socketService.joinRoom(`conversation:${conversation.con_id}`);
+            });
+          } else if (socket?.connected) {
+            // Already connected, join room immediately
+            console.log('✅ Socket already connected, joining room:', conversation.con_id);
+            socketService.joinRoom(`conversation:${conversation.con_id}`);
+          }
+        }
+      } else if (socketService.isConnected()) {
+        // Already connected, join room immediately
+        console.log('✅ Socket connected, joining room:', conversation.con_id);
+        socketService.joinRoom(`conversation:${conversation.con_id}`);
+      }
+    };
+
+    connectAndJoinRoom();
+
+    // Also listen for connection events to join room
+    const socket = socketService.getSocket();
+    if (socket && !socket.connected) {
+      socket.once('connect', () => {
+        console.log('✅ Socket connected via listener, joining room:', conversation.con_id);
+        socketService.joinRoom(`conversation:${conversation.con_id}`);
+      });
     }
+
+    // Listen for new messages
+    const handleNewMessage = (data: { conId: string; message: any }) => {
+      console.log('📨 Received message via WebSocket:', data);
+      if (data.conId === conversation.con_id) {
+        setMessages(prev => {
+          const messageId = data.message.id;
+          const messageContent = data.message.content;
+          const senderId = data.message.sender_id;
+          const messageTimestamp = data.message.timestamp;
+          const isUserMessage = senderId === user.id;
+
+          // 1. Check if message already exists by ID (strongest check)
+          const existsById = prev.some(m => m.id === messageId);
+          if (existsById) {
+            console.log('⚠️ Message already exists by ID, skipping:', messageId);
+            return prev;
+          }
+
+          // 2. Check if duplicate by content + sender + recent timestamp (within 5 seconds)
+          // This prevents duplicate from same sender with same content sent at nearly same time
+          const msgTimestamp = messageTimestamp ? new Date(messageTimestamp).getTime() : Date.now();
+          const duplicateIndex = prev.findIndex(m => {
+            const isSameContent = m.text.trim() === messageContent.trim();
+            const isSameSender = m.sender === (isUserMessage ? 'user' : 'other');
+            
+            if (isSameContent && isSameSender) {
+              // Check if message is very recent (within last 10 messages or 5 seconds)
+              const messageIndex = prev.indexOf(m);
+              const isRecent = messageIndex >= prev.length - 10;
+              
+              if (isRecent) {
+                // Likely duplicate - same content, same sender, recent
+                console.log('⚠️ Potential duplicate found by content+sender+recent:', m.id);
+                return true;
+              }
+            }
+            return false;
+          });
+
+          if (duplicateIndex !== -1) {
+            const existingMessage = prev[duplicateIndex];
+            // Only replace if IDs are different (one might be temp or duplicate)
+            if (existingMessage.id !== messageId) {
+              console.log('⚠️ Found duplicate by content+sender+recent, replacing:', existingMessage.id, 'with', messageId);
+              // Replace duplicate with real message
+              const newMessage: Message = {
+                id: messageId,
+                text: messageContent,
+                sender: isUserMessage ? 'user' : 'other',
+                timestamp: new Date(messageTimestamp || Date.now()).toLocaleTimeString('vi-VN', {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                }),
+                type: data.message.type || 'text',
+              };
+              const updated = [...prev];
+              updated[duplicateIndex] = newMessage;
+              return updated;
+            } else {
+              // Same ID, already exists, skip
+              console.log('⚠️ Message with same ID already exists, skipping');
+              return prev;
+            }
+          }
+          
+          // 3. New message - add to list
+          const newMessage: Message = {
+            id: messageId || `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            text: messageContent,
+            sender: isUserMessage ? 'user' : 'other',
+            timestamp: new Date(messageTimestamp || Date.now()).toLocaleTimeString('vi-VN', {
+              hour: '2-digit',
+              minute: '2-digit',
+            }),
+            type: data.message.type || 'text',
+          };
+          console.log('✅ Adding new message to UI:', newMessage);
+          return [...prev, newMessage];
+        });
+      }
+    };
+
+    // Listen for conversation updates (last message)
+    const handleConversationUpdate = (data: { conversationId: string; lastMessage: any }) => {
+      // Handle conversation list update in ChatLayout
+      // This will be handled there
+      console.log('📢 Conversation updated:', data);
+    };
+
+    // Remove any existing listeners first to prevent duplicate
+    socketService.off('message_received');
+    socketService.off('conversation_updated');
     
-    // Cleanup: Clear mark seen timeout khi unmount hoặc conversation thay đổi
+    // Add new listeners
+    socketService.on('message_received', handleNewMessage);
+    socketService.on('conversation_updated', handleConversationUpdate);
+
+    // Cleanup
     return () => {
+      socketService.off('message_received', handleNewMessage);
+      socketService.off('conversation_updated', handleConversationUpdate);
+      
+      // Leave conversation room
+      if (conversation?.con_id && socketService.isConnected()) {
+        socketService.leaveRoom(`conversation:${conversation.con_id}`);
+      }
+
+      // Clear mark seen timeout
       if (markSeenTimeoutRef.current) {
         clearTimeout(markSeenTimeoutRef.current);
         markSeenTimeoutRef.current = null;
       }
     };
+  }, [conversation?.con_id, user?.id]);
+
+  // Load messages when conversation changes
+  useEffect(() => {
+    if (conversation?.con_id) {
+      // Reset state when conversation changes
+      setMessages([]);
+      setHasMore(true);
+      setOldestTimestamp(null);
+      userScrollingRef.current = false; // Reset scroll state
+      loadMessages(50); // Load 50 messages mặc định
+    } else {
+      setMessages([]);
+      setHasMore(true);
+      setOldestTimestamp(null);
+      userScrollingRef.current = false;
+    }
   }, [conversation?.con_id, loadMessages]);
 
-  // Auto scroll to bottom when messages change
+  // Scroll to bottom when initial messages loaded
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+    if (!isLoading && messages.length > 0 && messagesContainerRef.current) {
+      // Wait for DOM to update, then scroll to bottom
+      setTimeout(() => {
+        const container = messagesContainerRef.current;
+        if (container) {
+          container.scrollTop = container.scrollHeight;
+          userScrollingRef.current = false; // Reset after initial scroll
+        }
+      }, 100);
+    }
+  }, [isLoading, messages.length]);
+
+  // Auto scroll to bottom when new messages arrive (only if user is at bottom)
+  useEffect(() => {
+    if (messagesContainerRef.current && messages.length > 0) {
+      const container = messagesContainerRef.current;
+      const isAtBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100;
+      
+      // Auto scroll if:
+      // 1. User is at bottom (within 100px)
+      // 2. Not currently loading older messages
+      // 3. Not user-initiated scrolling
+      if (isAtBottom && !isLoadingMore && !userScrollingRef.current) {
+        setTimeout(() => {
+          messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+        }, 0);
+      }
+    }
+  }, [messages, isLoadingMore]);
+
+  // Lazy loading: Load older messages when scroll to top
+  useEffect(() => {
+    const container = messagesContainerRef.current;
+    if (!container || isLoading || isLoadingMore) return;
+
+    let scrollTimer: NodeJS.Timeout | null = null;
+
+    const handleScroll = () => {
+      const scrollTop = container.scrollTop;
+      const scrollHeight = container.scrollHeight;
+      const clientHeight = container.clientHeight;
+      
+      // Check if user scrolled to top (within 100px from top)
+      const isNearTop = scrollTop < 100;
+      
+      // Check if user is near bottom
+      const isNearBottom = scrollHeight - scrollTop - clientHeight < 100;
+      
+      // Update user scrolling state
+      if (isNearTop) {
+        userScrollingRef.current = true;
+      } else if (isNearBottom) {
+        // Reset scrolling state after a delay when user scrolls back to bottom
+        if (scrollTimer) clearTimeout(scrollTimer);
+        scrollTimer = setTimeout(() => {
+          userScrollingRef.current = false;
+        }, 500);
+      }
+
+      // Load older messages when scrolling near top
+      if (isNearTop && hasMore && !loadingMoreRef.current && oldestTimestamp) {
+        console.log('🔄 Loading older messages (scroll near top)');
+        loadOlderMessages();
+      }
+    };
+
+    container.addEventListener('scroll', handleScroll, { passive: true });
+    
+    return () => {
+      container.removeEventListener('scroll', handleScroll);
+      if (scrollTimer) clearTimeout(scrollTimer);
+    };
+  }, [hasMore, isLoading, isLoadingMore, oldestTimestamp, loadOlderMessages]);
 
   const handleSend = async () => {
     if (!message.trim() || isSending || !conversation?.con_id) return;
 
+    const messageText = message.trim();
+    setMessage(''); // Clear input immediately for better UX
+
     try {
       setIsSending(true);
-      const response = await apiService.sendMessage(conversation.con_id, message.trim(), 'text');
-      if (response.success && response.data) {
-        // Add message to list optimistically
-        const newMessage: Message = {
-          id: response.data.id || Date.now().toString(),
-          text: message.trim(),
-          sender: 'user',
-          timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
-          type: 'text',
-        };
-        setMessages([...messages, newMessage]);
-        setMessage('');
-        
-        // Reload to get updated data (chỉ reload 50 messages đầu)
-        setTimeout(() => {
-          loadMessages(50);
-        }, 300); // Giảm delay từ 500ms xuống 300ms
+      
+      // Send message to server - WebSocket will handle adding it to UI
+      // This prevents duplicate messages from optimistic update + WebSocket
+      const response = await apiService.sendMessage(conversation.con_id, messageText, 'text');
+      
+      if (!response.success || !response.data) {
+        throw new Error('Gửi tin nhắn thất bại');
       }
+      
+      // WebSocket event should arrive and handleNewMessage will add the message
+      // If WebSocket doesn't arrive in 2 seconds, add message from API response
+      setTimeout(() => {
+        setMessages(prev => {
+          const messageId = response.data.id;
+          const exists = prev.some(m => m.id === messageId || (m.text === messageText && m.sender === 'user' && Math.abs(Date.now() - new Date(m.timestamp || Date.now()).getTime()) < 2000));
+          
+          if (!exists) {
+            console.log('⚠️ WebSocket timeout, adding message from API response');
+            const newMessage: Message = {
+              id: messageId,
+              text: messageText,
+              sender: 'user',
+              timestamp: new Date(response.data.timestamp || Date.now()).toLocaleTimeString('vi-VN', {
+                hour: '2-digit',
+                minute: '2-digit',
+              }),
+              type: response.data.type || 'text',
+            };
+            return [...prev, newMessage];
+          }
+          return prev;
+        });
+      }, 2000);
+      
     } catch (error: any) {
       alert(error.message || 'Không thể gửi tin nhắn');
+      // Restore message text on error
+      setMessage(messageText);
     } finally {
       setIsSending(false);
     }
@@ -230,15 +565,18 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
       </div>
 
       {/* Messages Area */}
-      <div style={{
-        flex: 1,
-        overflowY: "auto",
-        padding: "16px",
-        display: "flex",
-        flexDirection: "column",
-        gap: 12,
-        background: "#ffffff"
-      }}>
+      <div 
+        ref={messagesContainerRef}
+        style={{
+          flex: 1,
+          overflowY: "auto",
+          padding: "16px",
+          display: "flex",
+          flexDirection: "column",
+          gap: 12,
+          background: "#ffffff"
+        }}
+      >
         {isLoading ? (
           <div style={{ textAlign: 'center', padding: '40px 0', color: '#6b7280' }}>
             Đang tải tin nhắn...
@@ -248,7 +586,15 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
             Chưa có tin nhắn nào. Hãy bắt đầu cuộc trò chuyện!
           </div>
         ) : (
-          messages.map((msg) => {
+          <>
+            {/* Loading indicator for older messages */}
+            {isLoadingMore && (
+              <div style={{ textAlign: 'center', padding: '20px 0', color: '#6b7280' }}>
+                Đang tải tin nhắn cũ hơn...
+              </div>
+            )}
+            
+            {messages.map((msg) => {
           if (msg.type === 'failed') {
             return (
               <div key={msg.id} style={{
@@ -318,8 +664,11 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
               </div>
             </div>
           );
-        }))}
+        })}
+        
         <div ref={messagesEndRef} />
+        </>
+        )}
       </div>
 
       {/* Input Area */}

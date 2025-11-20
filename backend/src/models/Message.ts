@@ -78,19 +78,34 @@ export class Message {
   /**
    * Lấy messages của một conversation
    * Tối ưu: Thêm limit mặc định và sử dụng index tốt hơn
+   * @param conId Conversation ID
+   * @param limit Số lượng messages cần load
+   * @param beforeTimestamp Load messages trước timestamp này (cho lazy loading)
    */
-  static async findByConversationId(conId: string, limit: number = 50): Promise<IMessage[]> {
+  static async findByConversationId(conId: string, limit: number = 50, beforeTimestamp?: number): Promise<IMessage[]> {
     if (!firestore) {
       throw new Error('Firestore not initialized');
     }
 
     try {
-      // Tối ưu: Limit mặc định 50 messages, order by timestamp desc
-      const query = firestore
-        .collection(this.collection)
-        .where('con_id', '==', conId)
-        .orderBy('timestamp', 'desc')
-        .limit(limit);
+      let query: any = firestore.collection(this.collection);
+
+      // Build query with filters
+      if (beforeTimestamp) {
+        // Compound query: con_id == conId AND timestamp < beforeTimestamp
+        // Requires composite index: con_id (Ascending), timestamp (Descending)
+        query = query
+          .where('con_id', '==', conId)
+          .where('timestamp', '<', beforeTimestamp)
+          .orderBy('timestamp', 'desc')
+          .limit(limit);
+      } else {
+        // Simple query: con_id == conId
+        query = query
+          .where('con_id', '==', conId)
+          .orderBy('timestamp', 'desc')
+          .limit(limit);
+      }
 
       const snapshot = await query.get();
 
@@ -106,13 +121,13 @@ export class Message {
       return messages.reverse();
     } catch (error: any) {
       if (error.code === 9 || error.message?.includes('index')) {
-        console.warn('Message query requires index. Firestore will create it automatically.');
+        console.warn('Message query requires index. Firestore will create it automatically. Using fallback query.');
         // Fallback: query limited và filter manually
         try {
           const snapshot = await firestore
             .collection(this.collection)
             .orderBy('timestamp', 'desc')
-            .limit(200) // Limit để không quá chậm
+            .limit(500) // Tăng limit để có đủ data
             .get();
           
           const messages = snapshot.docs
@@ -124,6 +139,7 @@ export class Message {
               seenAt: doc.data()?.seenAt?.toDate() || undefined,
             }))
             .filter((msg: IMessage) => msg.con_id === conId)
+            .filter((msg: IMessage) => !beforeTimestamp || msg.timestamp < beforeTimestamp)
             .slice(0, limit) as IMessage[];
           
           return messages.sort((a, b) => a.timestamp - b.timestamp);
