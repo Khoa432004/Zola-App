@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAppSelector } from '@/store/hooks';
 import { apiService } from '@/services/api';
 import { socketService } from '@/services/socket';
+import EmojiPicker from './EmojiPicker';
 
 interface Conversation {
   id: string;
@@ -47,15 +48,24 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
   const [isSending, setIsSending] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [oldestTimestamp, setOldestTimestamp] = useState<number | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showSearch, setShowSearch] = useState(false);
+  const [searchResults, setSearchResults] = useState<number[]>([]);
+  const [currentSearchIndex, setCurrentSearchIndex] = useState(-1);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [previewUrls, setPreviewUrls] = useState<string[]>([]);
   const user = useAppSelector((state) => state.auth.user);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const searchMessageRefs = useRef<Map<number, HTMLDivElement>>(new Map());
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const videoInputRef = useRef<HTMLInputElement>(null);
   const loadingRef = useRef(false);
   const loadingMoreRef = useRef(false);
   const userScrollingRef = useRef(false);
   const scrollPositionRef = useRef(0);
 
-  // Mark seen debounce ref
   const markSeenTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Load messages (initial load hoặc reload)
@@ -441,41 +451,59 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
     };
   }, [hasMore, isLoading, isLoadingMore, oldestTimestamp, loadOlderMessages]);
 
-  const handleSend = async () => {
-    if (!message.trim() || isSending || !conversation?.con_id) return;
+  const handleSend = async (file?: File, type: 'text' | 'image' | 'video' | 'sticker' = 'text') => {
+    if ((!message.trim() && !file) || isSending || !conversation?.con_id) return;
 
-    const messageText = message.trim();
-    setMessage(''); // Clear input immediately for better UX
+    const messageText = message.trim() || '';
+    const fileToSend = file || (selectedFiles.length > 0 ? selectedFiles[0] : undefined);
+    const messageType = type || (fileToSend ? (fileToSend.type.startsWith('image/') ? 'image' : 'video') : 'text');
+    
+    setMessage('');
+    setSelectedFiles([]);
+    setPreviewUrls([]);
+    setShowEmojiPicker(false);
 
     try {
       setIsSending(true);
       
-      // Send message to server - WebSocket will handle adding it to UI
-      // This prevents duplicate messages from optimistic update + WebSocket
-      const response = await apiService.sendMessage(conversation.con_id, messageText, 'text');
+      console.log('📤 Sending message:', { 
+        conId: conversation.con_id, 
+        content: messageText || (fileToSend ? 'file' : ''), 
+        type: messageType,
+        hasFile: !!fileToSend,
+        fileName: fileToSend?.name,
+        fileType: fileToSend?.type
+      });
+      
+      const response = await apiService.sendMessage(
+        conversation.con_id, 
+        messageText || (fileToSend ? '' : ''), 
+        messageType,
+        fileToSend
+      );
+      
+      console.log('✅ Message sent response:', response);
       
       if (!response.success || !response.data) {
-        throw new Error('Gửi tin nhắn thất bại');
+        throw new Error(response.message || 'Gửi tin nhắn thất bại');
       }
       
-      // WebSocket event should arrive and handleNewMessage will add the message
-      // If WebSocket doesn't arrive in 2 seconds, add message from API response
       setTimeout(() => {
         setMessages(prev => {
           const messageId = response.data.id;
-          const exists = prev.some(m => m.id === messageId || (m.text === messageText && m.sender === 'user' && Math.abs(Date.now() - new Date(m.timestamp || Date.now()).getTime()) < 2000));
+          const exists = prev.some(m => m.id === messageId);
           
           if (!exists) {
             console.log('⚠️ WebSocket timeout, adding message from API response');
             const newMessage: Message = {
               id: messageId,
-              text: messageText,
+              text: messageText || response.data.content || '', // For images/videos, content is the Cloudinary URL
               sender: 'user',
               timestamp: new Date(response.data.timestamp || Date.now()).toLocaleTimeString('vi-VN', {
                 hour: '2-digit',
                 minute: '2-digit',
               }),
-              type: response.data.type || 'text',
+              type: response.data.type || messageType, // Keep the type (image/video/sticker)
             };
             return [...prev, newMessage];
           }
@@ -485,11 +513,50 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
       
     } catch (error: any) {
       alert(error.message || 'Không thể gửi tin nhắn');
-      // Restore message text on error
-      setMessage(messageText);
+      if (!fileToSend) {
+        setMessage(messageText);
+      } else {
+        setSelectedFiles([fileToSend]);
+      }
     } finally {
       setIsSending(false);
     }
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>, type: 'image' | 'video') => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (type === 'image' && !file.type.startsWith('image/')) {
+      alert('Vui lòng chọn file ảnh');
+      return;
+    }
+
+    if (type === 'video' && !file.type.startsWith('video/')) {
+      alert('Vui lòng chọn file video');
+      return;
+    }
+
+    if (file.size > 10 * 1024 * 1024) {
+      alert('File không được vượt quá 10MB');
+      return;
+    }
+
+    setSelectedFiles([file]);
+    const url = URL.createObjectURL(file);
+    setPreviewUrls([url]);
+    
+    // Auto send after selection
+    handleSend(file, type === 'image' ? 'image' : 'video');
+    
+    // Reset input
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    if (videoInputRef.current) videoInputRef.current.value = '';
+  };
+
+  const handleEmojiSelect = (emoji: string) => {
+    setMessage(prev => prev + emoji);
+    setShowEmojiPicker(false);
   };
 
   const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -497,6 +564,91 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
       e.preventDefault();
       handleSend();
     }
+  };
+
+  // Search functionality
+  const scrollToSearchResult = useCallback((index: number) => {
+    const messageElement = searchMessageRefs.current.get(index);
+    
+    if (messageElement) {
+      messageElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      // Highlight the message briefly
+      messageElement.style.background = '#fef3c7';
+      setTimeout(() => {
+        if (messageElement.style.background === '#fef3c7') {
+          messageElement.style.background = '';
+        }
+      }, 2000);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!showSearch) {
+      setSearchQuery('');
+      setSearchResults([]);
+      setCurrentSearchIndex(-1);
+      return;
+    }
+
+    if (!searchQuery.trim()) {
+      setSearchResults([]);
+      setCurrentSearchIndex(-1);
+      return;
+    }
+
+    const query = searchQuery.trim().toLowerCase();
+    const results: number[] = [];
+    
+    messages.forEach((msg, index) => {
+      if (msg.text.toLowerCase().includes(query) && msg.type === 'text') {
+        results.push(index);
+      }
+    });
+
+    setSearchResults(results);
+    
+    if (results.length > 0) {
+      setCurrentSearchIndex(prevIndex => {
+        const newIndex = prevIndex >= 0 && prevIndex < results.length 
+          ? prevIndex 
+          : 0;
+        
+        setTimeout(() => {
+          scrollToSearchResult(results[newIndex]);
+        }, 100);
+        
+        return newIndex;
+      });
+    } else {
+      setCurrentSearchIndex(-1);
+    }
+  }, [showSearch, searchQuery, messages, scrollToSearchResult]);
+
+  const handleNextSearch = () => {
+    if (searchResults.length === 0) return;
+    const nextIndex = (currentSearchIndex + 1) % searchResults.length;
+    setCurrentSearchIndex(nextIndex);
+    scrollToSearchResult(searchResults[nextIndex]);
+  };
+
+  const handlePrevSearch = () => {
+    if (searchResults.length === 0) return;
+    const prevIndex = (currentSearchIndex - 1 + searchResults.length) % searchResults.length;
+    setCurrentSearchIndex(prevIndex);
+    scrollToSearchResult(searchResults[prevIndex]);
+  };
+
+  const highlightText = (text: string, query: string) => {
+    if (!query.trim()) return text;
+    
+    const parts = text.split(new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi'));
+    return parts.map((part, index) => 
+      part.toLowerCase() === query.toLowerCase() ? (
+        <mark key={index} style={{ background: '#fef3c7', padding: '2px 0' }}>{part}</mark>
+      ) : (
+        part
+      )
+    );
   };
 
   return (
@@ -510,58 +662,196 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
       {/* Chat Header */}
       <div style={{
         display: "flex",
-        alignItems: "center",
-        padding: "12px 16px",
+        flexDirection: "column",
         borderBottom: "1px solid #e5e7eb",
         background: "#ffffff"
       }}>
         <div style={{
-          width: 40,
-          height: 40,
-          borderRadius: 20,
-          background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
           display: "flex",
           alignItems: "center",
-          justifyContent: "center",
-          marginRight: 12
+          padding: "12px 16px"
         }}>
-          <span style={{ fontSize: 14, color: "#fff", fontWeight: 600 }}>{conversation.avatar}</span>
+          <div style={{
+            width: 40,
+            height: 40,
+            borderRadius: 20,
+            background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            marginRight: 12
+          }}>
+            <span style={{ fontSize: 14, color: "#fff", fontWeight: 600 }}>{conversation.avatar}</span>
+          </div>
+          <div style={{ flex: 1 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <strong style={{ fontSize: 15, color: "#111827", fontWeight: 600 }}>
+                {conversation.name}
+              </strong>
+              {conversation.isOnline && (
+                <>
+                  <span style={{ 
+                    width: 8, 
+                    height: 8, 
+                    borderRadius: 4, 
+                    background: "#10b981",
+                    display: "inline-block"
+                  }} />
+                  <span style={{ fontSize: 13, color: "#10b981", fontWeight: 500 }}>Online</span>
+                </>
+              )}
+            </div>
+          </div>
+          <button 
+            onClick={() => setShowSearch(!showSearch)}
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: 8,
+              border: "none",
+              background: showSearch ? "#e0e7ff" : "transparent",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              cursor: "pointer",
+              transition: "background 0.2s"
+            }}
+            title="Tìm kiếm tin nhắn"
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={showSearch ? "#6366f1" : "#6b7280"} strokeWidth="2">
+              <circle cx="11" cy="11" r="8" />
+              <path d="m21 21-4.35-4.35" />
+            </svg>
+          </button>
         </div>
-        <div style={{ flex: 1 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <strong style={{ fontSize: 15, color: "#111827", fontWeight: 600 }}>
-              {conversation.name}
-            </strong>
-            {conversation.isOnline && (
+        
+        {/* Search Bar */}
+        {showSearch && (
+          <div style={{
+            padding: "8px 16px 12px 16px",
+            borderTop: "1px solid #f3f4f6",
+            display: "flex",
+            alignItems: "center",
+            gap: 8
+          }}>
+            <div style={{
+              flex: 1,
+              background: "#f9fafb",
+              borderRadius: 8,
+              padding: "8px 12px",
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              border: "1px solid #e5e7eb"
+            }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2">
+                <circle cx="11" cy="11" r="8" />
+                <path d="m21 21-4.35-4.35" />
+              </svg>
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Tìm kiếm tin nhắn..."
+                style={{
+                  flex: 1,
+                  border: "none",
+                  background: "transparent",
+                  outline: "none",
+                  fontSize: 14,
+                  color: "#111827"
+                }}
+                autoFocus
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery('')}
+                  style={{
+                    width: 20,
+                    height: 20,
+                    borderRadius: 4,
+                    border: "none",
+                    background: "transparent",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    cursor: "pointer",
+                    padding: 0
+                  }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2">
+                    <line x1="18" y1="6" x2="6" y2="18" />
+                    <line x1="6" y1="6" x2="18" y2="18" />
+                  </svg>
+                </button>
+              )}
+            </div>
+            
+            {searchResults.length > 0 && (
               <>
-                <span style={{ 
-                  width: 8, 
-                  height: 8, 
-                  borderRadius: 4, 
-                  background: "#10b981",
-                  display: "inline-block"
-                }} />
-                <span style={{ fontSize: 13, color: "#10b981", fontWeight: 500 }}>Online</span>
+                <div style={{
+                  fontSize: 12,
+                  color: "#6b7280",
+                  whiteSpace: "nowrap"
+                }}>
+                  {currentSearchIndex + 1} / {searchResults.length}
+                </div>
+                <button
+                  onClick={handlePrevSearch}
+                  disabled={searchResults.length === 0}
+                  style={{
+                    width: 28,
+                    height: 28,
+                    borderRadius: 6,
+                    border: "1px solid #e5e7eb",
+                    background: "#ffffff",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    cursor: searchResults.length === 0 ? "not-allowed" : "pointer",
+                    opacity: searchResults.length === 0 ? 0.5 : 1
+                  }}
+                  title="Tin nhắn trước"
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2">
+                    <path d="M15 18l-6-6 6-6" />
+                  </svg>
+                </button>
+                <button
+                  onClick={handleNextSearch}
+                  disabled={searchResults.length === 0}
+                  style={{
+                    width: 28,
+                    height: 28,
+                    borderRadius: 6,
+                    border: "1px solid #e5e7eb",
+                    background: "#ffffff",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    cursor: searchResults.length === 0 ? "not-allowed" : "pointer",
+                    opacity: searchResults.length === 0 ? 0.5 : 1
+                  }}
+                  title="Tin nhắn sau"
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2">
+                    <path d="M9 18l6-6-6-6" />
+                  </svg>
+                </button>
               </>
             )}
+            
+            {searchQuery && searchResults.length === 0 && (
+              <div style={{
+                fontSize: 12,
+                color: "#9ca3af",
+                whiteSpace: "nowrap"
+              }}>
+                Không tìm thấy
+              </div>
+            )}
           </div>
-        </div>
-        <button style={{
-          width: 32,
-          height: 32,
-          borderRadius: 8,
-          border: "none",
-          background: "transparent",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          cursor: "pointer"
-        }}>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2">
-            <circle cx="11" cy="11" r="8" />
-            <path d="m21 21-4.35-4.35" />
-          </svg>
-        </button>
+        )}
       </div>
 
       {/* Messages Area */}
@@ -625,12 +915,141 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
           }
 
           const isUser = msg.sender === 'user';
+          const messageIndex = messages.indexOf(msg);
+          const isSearchMatch = searchQuery.trim() && msg.text.toLowerCase().includes(searchQuery.trim().toLowerCase()) && msg.type === 'text';
+          const isCurrentSearchResult = searchResults[currentSearchIndex] === messageIndex;
+          
+          // Render image/video/sticker messages
+          if (msg.type === 'image' || msg.type === 'video' || msg.type === 'sticker') {
+            const isVideo = msg.type === 'video';
+            const isSticker = msg.type === 'sticker';
+            const mediaUrl = msg.text; // For media messages, content is the URL from Cloudinary
+            
+            return (
+              <div 
+                key={msg.id} 
+                ref={(el) => {
+                  if (el && isSearchMatch) {
+                    searchMessageRefs.current.set(messageIndex, el);
+                  } else {
+                    searchMessageRefs.current.delete(messageIndex);
+                  }
+                }}
+                style={{
+                  display: "flex",
+                  justifyContent: isUser ? "flex-end" : "flex-start",
+                  marginBottom: 4,
+                  transition: "background 0.2s",
+                  background: isCurrentSearchResult ? "#fef3c7" : "transparent",
+                  borderRadius: 8,
+                  padding: isCurrentSearchResult ? "4px" : "0"
+                }}
+              >
+                <div style={{
+                  maxWidth: isSticker ? "200px" : "60%",
+                  borderRadius: 12,
+                  overflow: "hidden",
+                  boxShadow: isUser ? "0 2px 4px rgba(99, 102, 241, 0.2)" : "0 1px 2px rgba(0, 0, 0, 0.05)",
+                  border: isCurrentSearchResult ? "2px solid #f59e0b" : (isUser ? "none" : "1px solid #e5e7eb"),
+                  position: "relative",
+                  background: isVideo ? "#000" : "transparent"
+                }}>
+                  {isVideo ? (
+                    <video
+                      src={mediaUrl}
+                      controls
+                      style={{
+                        maxWidth: "100%",
+                        maxHeight: "400px",
+                        display: "block",
+                        background: "#000"
+                      }}
+                      onError={(e) => {
+                        console.error('Error loading video:', mediaUrl);
+                        const parent = e.currentTarget.parentElement;
+                        if (parent) {
+                          parent.innerHTML = '<div style="padding: 40px; text-align: center; color: #9ca3af; min-height: 200px; display: flex; align-items: center; justify-content: center;">Không thể tải video</div>';
+                        }
+                      }}
+                    />
+                  ) : isSticker ? (
+                    <img
+                      src={mediaUrl}
+                      alt="Sticker"
+                      style={{
+                        maxWidth: "200px",
+                        maxHeight: "200px",
+                        width: "100%",
+                        height: "auto",
+                        display: "block"
+                      }}
+                      onError={(e) => {
+                        console.error('Error loading sticker:', mediaUrl);
+                        const parent = e.currentTarget.parentElement;
+                        if (parent) {
+                          parent.innerHTML = '<div style="padding: 40px; text-align: center; color: #9ca3af;">Không thể tải sticker</div>';
+                        }
+                      }}
+                    />
+                  ) : (
+                    <img
+                      src={mediaUrl}
+                      alt="Image"
+                      style={{
+                        maxWidth: "100%",
+                        maxHeight: "400px",
+                        width: "auto",
+                        height: "auto",
+                        display: "block"
+                      }}
+                      onError={(e) => {
+                        console.error('Error loading image:', mediaUrl);
+                        const parent = e.currentTarget.parentElement;
+                        if (parent) {
+                          parent.innerHTML = '<div style="padding: 40px; text-align: center; color: #9ca3af; min-height: 200px; display: flex; align-items: center; justify-content: center;">Không thể tải ảnh</div>';
+                        }
+                      }}
+                    />
+                  )}
+                  <div style={{
+                    position: "absolute",
+                    bottom: 8,
+                    right: 8,
+                    fontSize: 11,
+                    color: "#ffffff",
+                    background: "rgba(0, 0, 0, 0.6)",
+                    padding: "4px 8px",
+                    borderRadius: 6,
+                    pointerEvents: "none"
+                  }}>
+                    {msg.timestamp}
+                  </div>
+                </div>
+              </div>
+            );
+          }
+          
+          // Render text messages
           return (
-            <div key={msg.id} style={{
-              display: "flex",
-              justifyContent: isUser ? "flex-end" : "flex-start",
-              marginBottom: 4
-            }}>
+            <div 
+              key={msg.id} 
+              ref={(el) => {
+                if (el && isSearchMatch) {
+                  searchMessageRefs.current.set(messageIndex, el);
+                } else {
+                  searchMessageRefs.current.delete(messageIndex);
+                }
+              }}
+              style={{
+                display: "flex",
+                justifyContent: isUser ? "flex-end" : "flex-start",
+                marginBottom: 4,
+                transition: "background 0.2s",
+                background: isCurrentSearchResult ? "#fef3c7" : "transparent",
+                borderRadius: 8,
+                padding: isCurrentSearchResult ? "4px" : "0"
+              }}
+            >
               <div style={{
                 maxWidth: "60%",
                 background: isUser ? "linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)" : "#ffffff",
@@ -638,10 +1057,15 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
                 borderRadius: 12,
                 padding: "10px 14px",
                 boxShadow: isUser ? "0 2px 4px rgba(99, 102, 241, 0.2)" : "0 1px 2px rgba(0, 0, 0, 0.05)",
-                border: isUser ? "none" : "1px solid #e5e7eb"
+                border: isUser ? "none" : "1px solid #e5e7eb",
+                borderColor: isCurrentSearchResult ? "#f59e0b" : (isUser ? "transparent" : "#e5e7eb"),
+                borderWidth: isCurrentSearchResult ? 2 : (isUser ? 0 : 1)
               }}>
                 <div style={{ fontSize: 14, lineHeight: 1.5, marginBottom: 4 }}>
-                  {msg.text}
+                  {searchQuery.trim() && msg.type === 'text' 
+                    ? highlightText(msg.text, searchQuery.trim())
+                    : msg.text
+                  }
                 </div>
                 <div style={{
                   fontSize: 11,
@@ -660,6 +1084,80 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
         )}
       </div>
 
+      {/* Preview Area */}
+      {previewUrls.length > 0 && selectedFiles.length > 0 && (
+        <div style={{
+          padding: "8px 16px",
+          borderTop: "1px solid #e5e7eb",
+          background: "#f9fafb",
+          display: "flex",
+          gap: 8,
+          overflowX: "auto"
+        }}>
+          {previewUrls.map((url, index) => {
+            const file = selectedFiles[index];
+            const isVideo = file.type.startsWith('video/');
+            
+            return (
+              <div key={index} style={{ position: "relative", flexShrink: 0 }}>
+                {isVideo ? (
+                  <video
+                    src={url}
+                    style={{
+                      width: "120px",
+                      height: "120px",
+                      objectFit: "cover",
+                      borderRadius: 8,
+                      border: "1px solid #e5e7eb"
+                    }}
+                    controls={false}
+                  />
+                ) : (
+                  <img
+                    src={url}
+                    alt="Preview"
+                    style={{
+                      width: "120px",
+                      height: "120px",
+                      objectFit: "cover",
+                      borderRadius: 8,
+                      border: "1px solid #e5e7eb"
+                    }}
+                  />
+                )}
+                <button
+                  onClick={() => {
+                    setSelectedFiles(selectedFiles.filter((_, i) => i !== index));
+                    setPreviewUrls(previewUrls.filter((_, i) => i !== index));
+                    URL.revokeObjectURL(url);
+                  }}
+                  style={{
+                    position: "absolute",
+                    top: 4,
+                    right: 4,
+                    width: 24,
+                    height: 24,
+                    borderRadius: 12,
+                    border: "none",
+                    background: "rgba(0, 0, 0, 0.6)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    cursor: "pointer",
+                    color: "#ffffff"
+                  }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <line x1="18" y1="6" x2="6" y2="18" />
+                    <line x1="6" y1="6" x2="18" y2="18" />
+                  </svg>
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       {/* Input Area */}
       <div style={{
         padding: "12px 16px",
@@ -667,49 +1165,133 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
         background: "#ffffff",
         display: "flex",
         alignItems: "center",
-        gap: 8
+        gap: 8,
+        position: "relative"
       }}>
-        <button style={{
-          width: 36,
-          height: 36,
-          borderRadius: 8,
-          border: "none",
-          background: "transparent",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          cursor: "pointer",
-          color: "#6b7280"
-        }}>
+        {/* Sticker/Emoji Button */}
+        <div style={{ position: "relative" }}>
+          <button
+            onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: 8,
+              border: "none",
+              background: showEmojiPicker ? "#e0e7ff" : "transparent",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              cursor: "pointer",
+              color: "#6b7280",
+              transition: "background 0.2s"
+            }}
+            title="Gửi sticker"
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="12" cy="12" r="10" />
+              <path d="M8 14s1.5 2 4 2 4-2 4-2" />
+              <line x1="9" y1="9" x2="9.01" y2="9" />
+              <line x1="15" y1="9" x2="15.01" y2="9" />
+            </svg>
+          </button>
+          
+          {/* Emoji Picker - positioned above the button */}
+          {showEmojiPicker && (
+            <div style={{ 
+              position: "absolute", 
+              bottom: "100%",
+              left: 0,
+              marginBottom: 8,
+              zIndex: 1000
+            }}>
+              <EmojiPicker
+                onSelect={handleEmojiSelect}
+                onClose={() => setShowEmojiPicker(false)}
+              />
+            </div>
+          )}
+        </div>
+
+        {/* Image/Attachment Button */}
+        <button
+          onClick={() => fileInputRef.current?.click()}
+          style={{
+            width: 36,
+            height: 36,
+            borderRadius: 8,
+            border: "none",
+            background: "transparent",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            cursor: "pointer",
+            color: "#6b7280",
+            transition: "background 0.2s"
+          }}
+          title="Gửi ảnh"
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = "#f3f4f6";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = "transparent";
+          }}
+        >
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
           </svg>
         </button>
-        <button style={{
-          width: 36,
-          height: 36,
-          borderRadius: 8,
-          border: "none",
-          background: "transparent",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          cursor: "pointer",
-          color: "#6b7280"
-        }}>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          style={{ display: "none" }}
+          onChange={(e) => handleFileSelect(e, 'image')}
+        />
+
+        {/* Video Button */}
+        <button
+          onClick={() => videoInputRef.current?.click()}
+          style={{
+            width: 36,
+            height: 36,
+            borderRadius: 8,
+            border: "none",
+            background: "transparent",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            cursor: "pointer",
+            color: "#6b7280",
+            transition: "background 0.2s"
+          }}
+          title="Gửi video"
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = "#f3f4f6";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = "transparent";
+          }}
+        >
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <circle cx="12" cy="12" r="10" />
-            <path d="M8 14s1.5 2 4 2 4-2 4-2" />
-            <line x1="9" y1="9" x2="9.01" y2="9" />
-            <line x1="15" y1="9" x2="15.01" y2="9" />
+            <polygon points="23 7 16 12 23 17 23 7" />
+            <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
           </svg>
         </button>
+        <input
+          ref={videoInputRef}
+          type="file"
+          accept="video/*"
+          style={{ display: "none" }}
+          onChange={(e) => handleFileSelect(e, 'video')}
+        />
+
         <input
           type="text"
           value={message}
           onChange={(e) => setMessage(e.target.value)}
           onKeyPress={handleKeyPress}
-          placeholder={`Nhập @, tin nhắn tới ${conversation.name}`}
+          onClick={() => setShowEmojiPicker(false)}
+          placeholder={`Nhập tin nhắn tới ${conversation.name}`}
           style={{
             flex: 1,
             padding: "10px 16px",
@@ -721,19 +1303,22 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
           }}
         />
         <button
-          onClick={handleSend}
-          disabled={!message.trim() || isSending}
+          onClick={(e) => {
+            e.preventDefault();
+            handleSend();
+          }}
+          disabled={(!message.trim() && selectedFiles.length === 0) || isSending}
           style={{
             width: 36,
             height: 36,
             borderRadius: 8,
             border: "none",
-            background: (message.trim() && !isSending) ? "linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)" : "#e5e7eb",
+            background: ((message.trim() || selectedFiles.length > 0) && !isSending) ? "linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)" : "#e5e7eb",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            cursor: (message.trim() && !isSending) ? "pointer" : "not-allowed",
-            color: (message.trim() && !isSending) ? "#ffffff" : "#9ca3af",
+            cursor: ((message.trim() || selectedFiles.length > 0) && !isSending) ? "pointer" : "not-allowed",
+            color: ((message.trim() || selectedFiles.length > 0) && !isSending) ? "#ffffff" : "#9ca3af",
             transition: "all 0.2s"
           }}
         >

@@ -1,12 +1,13 @@
 import { Response } from 'express';
 import { AuthRequest } from '../middlewares/auth.middleware';
 import { MessageService } from '../services/message.service';
+import { uploadFile } from '../utils/storage';
 
 const messageService = new MessageService();
 
 export class MessageController {
   /**
-   * Gửi message
+   * Gửi message (có thể có file upload)
    */
   sendMessage = async (req: AuthRequest, res: Response) => {
     try {
@@ -19,19 +20,57 @@ export class MessageController {
       }
 
       const { conId, content, type } = req.body;
+      const file = req.file; // Using upload.single('file'), so it's req.file not req.files
 
-      if (!conId || !content) {
+      if (!conId) {
         return res.status(400).json({
           success: false,
-          message: 'Vui lòng cung cấp đầy đủ thông tin',
+          message: 'Vui lòng cung cấp ID cuộc trò chuyện',
+        });
+      }
+
+      // Xác định message type và content dựa trên file hoặc type được gửi
+      let messageType: 'text' | 'image' | 'video' | 'sticker' = (type || 'text') as any;
+      let messageContent = content || '';
+
+      // Nếu có file upload, xử lý file
+      if (file) {
+        try {
+          console.log('📤 Uploading file to Cloudinary:', file.originalname, file.mimetype);
+          const uploadResult = await uploadFile(file, `messages/${userId}`);
+          console.log('✅ File uploaded successfully:', uploadResult.url);
+          
+          // Xác định type dựa trên file
+          if (file.mimetype.startsWith('image/')) {
+            messageType = type === 'sticker' ? 'sticker' : 'image';
+          } else if (file.mimetype.startsWith('video/')) {
+            messageType = 'video';
+          }
+          
+          // Content là URL của file đã upload từ Cloudinary
+          messageContent = uploadResult.url;
+        } catch (uploadError: any) {
+          console.error('❌ Error uploading file:', uploadError);
+          return res.status(400).json({
+            success: false,
+            message: uploadError.message || 'Upload file thất bại',
+          });
+        }
+      }
+
+      // Kiểm tra nếu không có content và không có file
+      if (!messageContent || messageContent.trim().length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Nội dung tin nhắn không được để trống',
         });
       }
 
       const message = await messageService.sendMessage(
         conId,
         userId,
-        content,
-        type || 'text'
+        messageContent,
+        messageType
       );
 
       // Emit WebSocket event for real-time updates

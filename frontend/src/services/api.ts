@@ -622,14 +622,23 @@ class ApiService {
   // ========== MESSAGE METHODS ==========
 
   /**
-   * Gửi message
+   * Gửi message (có thể có file)
    */
-  async sendMessage(conId: string, content: string, type: 'text' | 'image' | 'video' | 'sticker' = 'text') {
+  async sendMessage(conId: string, content: string, type: 'text' | 'image' | 'video' | 'sticker' = 'text', file?: File) {
     try {
-      const response = await this.axiosInstance.post("/messages/send", {
-        conId,
-        content,
-        type,
+      const formData = new FormData();
+      formData.append('conId', conId);
+      formData.append('content', content);
+      formData.append('type', type);
+      
+      if (file) {
+        formData.append('file', file);
+      }
+
+      const response = await this.axiosInstance.post("/messages/send", formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
       });
       return response.data;
     } catch (error: any) {
