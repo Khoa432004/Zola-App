@@ -490,6 +490,83 @@ class ApiService {
       throw new Error(error.response?.data?.message || "Không thể bỏ thích bài viết");
     }
   }
+
+  // Friends
+  async sendFriendRequest(email: string) {
+    try {
+      const response = await this.axiosInstance.post("/friends/requests", { email });
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.message || "Gửi lời mời kết bạn thất bại");
+    }
+  }
+
+  async getReceivedRequests() {
+    try {
+      const response = await this.axiosInstance.get("/friends/requests/received");
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.message || "Lấy danh sách lời mời thất bại");
+    }
+  }
+
+  async getSentRequests() {
+    try {
+      const response = await this.axiosInstance.get("/friends/requests/sent");
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.message || "Lấy danh sách lời mời thất bại");
+    }
+  }
+
+  async acceptFriendRequest(requestId: string) {
+    try {
+      const response = await this.axiosInstance.post(`/friends/requests/${requestId}/accept`);
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.message || "Chấp nhận lời mời kết bạn thất bại");
+    }
+  }
+
+  async rejectFriendRequest(requestId: string) {
+    try {
+      const response = await this.axiosInstance.post(`/friends/requests/${requestId}/reject`);
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.message || "Từ chối lời mời kết bạn thất bại");
+    }
+  }
+
+  async cancelFriendRequest(requestId: string) {
+    try {
+      const response = await this.axiosInstance.delete(`/friends/requests/${requestId}`);
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.message || "Hủy lời mời kết bạn thất bại");
+    }
+  }
+
+  async getFriends() {
+    try {
+      const response = await this.axiosInstance.get("/friends");
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.message || "Lấy danh sách bạn bè thất bại");
+    }
+  }
+
+  async unfriend(friendId: string) {
+    try {
+      const response = await this.axiosInstance.delete(`/friends/${friendId}`);
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.message || "Hủy kết bạn thất bại");
+    }
+  }
 }
 
+// Export the class
+export { ApiService };
+
+// Export singleton instance directly (must be exported at module level for Turbopack)
 export const apiService = new ApiService();

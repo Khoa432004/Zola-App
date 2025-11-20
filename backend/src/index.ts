@@ -8,6 +8,7 @@ import authRoutes from "./routes/auth.routes";
 import profileRoutes from "./routes/profile.routes";
 import postRoutes from "./routes/post.routes";
 import commentRoutes from "./routes/comment.routes";
+import friendRoutes from "./routes/friend.routes";
 
 const app = express();
 
@@ -54,6 +55,8 @@ app.use("/api/profile", profileRoutes);
 app.use("/api/posts", postRoutes);
 // Comment routes
 app.use("/api/comments", commentRoutes);
+// Friend routes
+app.use("/api/friends", friendRoutes);
 
 // Start server
 const port = Number(process.env.PORT) || 4000;
