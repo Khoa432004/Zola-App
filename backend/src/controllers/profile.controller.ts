@@ -23,6 +23,7 @@ export class ProfileController {
           phone: acc.phone,
           address: acc.address,
           bio: acc.bio,
+          createdAt: acc.createdAt,
         },
       });
     } catch (e: any) {
@@ -53,6 +54,7 @@ export class ProfileController {
           phone: updated.phone,
           address: updated.address,
           bio: updated.bio,
+          createdAt: updated.createdAt,
         },
       });
     } catch (e: any) {

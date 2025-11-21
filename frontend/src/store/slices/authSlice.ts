@@ -11,6 +11,7 @@ export interface AuthState {
     phone?: string;
     address?: string;
     bio?: string;
+    createdAt?: string | Date;
   } | null;
   token: string | null;
   isLoading: boolean;
