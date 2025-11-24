@@ -33,39 +33,39 @@ router.post("/send", upload.single("file"), (req, res) =>
   messageController.sendMessage(req as any, res)
 );
 
-// Lấy messages của conversation
-router.get("/:conId", (req, res) =>
-  messageController.getConversationMessages(req as any, res)
+// Tìm kiếm messages theo keyword (phải đặt trước route generic)
+router.get("/search/all", (req, res) =>
+  messageController.searchMessages(req as any, res)
 );
 
-// Đánh dấu message đã xem
-router.post("/:messageId/seen", (req, res) =>
-  messageController.markMessageAsSeen(req as any, res)
-);
-
-// Đánh dấu conversation đã xem
+// Đánh dấu conversation đã xem (phải đặt trước route generic)
 router.post("/conversation/:conId/seen", (req, res) =>
   messageController.markConversationAsSeen(req as any, res)
 );
 
-// Xóa message
-router.delete("/:messageId", (req, res) =>
-  messageController.deleteMessage(req as any, res)
-);
-
-// Toggle reaction cho message
-router.post("/:messageId/reaction", (req, res) =>
-  messageController.toggleReaction(req as any, res)
-);
-
-// Lấy reactions của message
+// Lấy reactions của message (phải đặt trước route generic)
 router.get("/:messageId/reactions", (req, res) =>
   messageController.getMessageReactions(req as any, res)
 );
 
-// Tìm kiếm messages theo keyword
-router.get("/search/all", (req, res) =>
-  messageController.searchMessages(req as any, res)
+// Toggle reaction cho message (phải đặt trước route generic)
+router.post("/:messageId/reaction", (req, res) =>
+  messageController.toggleReaction(req as any, res)
+);
+
+// Đánh dấu message đã xem (phải đặt trước route generic)
+router.post("/:messageId/seen", (req, res) =>
+  messageController.markMessageAsSeen(req as any, res)
+);
+
+// Xóa message (phải đặt trước route generic)
+router.delete("/:messageId", (req, res) =>
+  messageController.deleteMessage(req as any, res)
+);
+
+// Lấy messages của conversation (route generic - đặt cuối cùng)
+router.get("/:conId", (req, res) =>
+  messageController.getConversationMessages(req as any, res)
 );
 
 export default router;

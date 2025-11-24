@@ -27,6 +27,10 @@ export class MessageReaction {
       throw new Error("Firestore not initialized");
     }
 
+    console.log(
+      `💾 Adding reaction to Firebase: messageId=${messageId}, userId=${userId}, emoji=${emoji}`
+    );
+
     const messageRef = firestore.collection(this.collection).doc(messageId);
     const reactionsRef = messageRef.collection("reactions").doc(userId);
 
@@ -38,14 +42,19 @@ export class MessageReaction {
       createdAt: now,
     });
 
+    console.log(`✅ Reaction saved to Firebase successfully`);
+
     const doc = await reactionsRef.get();
-    return {
+    const reactionData = {
       id: doc.id,
       message_id: messageId,
       user_id: userId,
       emoji,
       createdAt: doc.data()?.createdAt?.toDate() || new Date(),
     };
+
+    console.log(`📤 Returning reaction data:`, reactionData);
+    return reactionData;
   }
 
   /**
@@ -128,20 +137,28 @@ export class MessageReaction {
       throw new Error("Firestore not initialized");
     }
 
+    console.log(
+      `🔄 Toggling reaction: messageId=${messageId}, userId=${userId}, emoji=${emoji}`
+    );
+
     const existingReaction = await this.getUserReaction(messageId, userId);
+    console.log(`📋 Existing reaction:`, existingReaction);
 
     if (existingReaction) {
       // Nếu cùng emoji thì xóa, nếu khác emoji thì update
       if (existingReaction.emoji === emoji) {
+        console.log(`🗑️ Removing reaction (same emoji)`);
         await this.removeReaction(messageId, userId);
         return { added: false };
       } else {
         // Update emoji mới
+        console.log(`🔄 Updating reaction (different emoji)`);
         const reaction = await this.addReaction(messageId, userId, emoji);
         return { added: true, reaction };
       }
     } else {
       // Thêm reaction mới
+      console.log(`➕ Adding new reaction`);
       const reaction = await this.addReaction(messageId, userId, emoji);
       return { added: true, reaction };
     }

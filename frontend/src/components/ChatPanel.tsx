@@ -237,6 +237,11 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
   const [messageReactions, setMessageReactions] = useState<
     Map<string, MessageReaction[]>
   >(new Map());
+  const [recentReaction, setRecentReaction] = useState<{
+    messageId: string;
+    emoji: string;
+    key: string;
+  } | null>(null);
   const [showReactionPicker, setShowReactionPicker] = useState<string | null>(
     null
   );
@@ -248,6 +253,7 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
   const searchMessageRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const fileInputRef = useRef<HTMLInputElement>(null);
   const videoInputRef = useRef<HTMLInputElement>(null);
+  const messageInputRef = useRef<HTMLInputElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -260,14 +266,15 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
 
   // Load reactions cho messages
   const loadReactions = useCallback(async (messageIds: string[]) => {
+    if (!messageIds || messageIds.length === 0) return;
+
     try {
-      const reactionsMap = new Map<string, MessageReaction[]>();
-      await Promise.all(
+      const reactionsEntries = await Promise.all(
         messageIds.map(async (messageId) => {
           try {
             const response = await apiService.getMessageReactions(messageId);
             if (response.success && response.data) {
-              reactionsMap.set(messageId, response.data);
+              return { messageId, reactions: response.data };
             }
           } catch (error) {
             console.warn(
@@ -275,13 +282,29 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
               error
             );
           }
+          return null;
         })
       );
-      setMessageReactions(reactionsMap);
+
+      setMessageReactions((prev) => {
+        const newMap = new Map(prev);
+        reactionsEntries.forEach((entry) => {
+          if (entry) {
+            newMap.set(entry.messageId, entry.reactions);
+          }
+        });
+        return newMap;
+      });
     } catch (error) {
       console.error("Error loading reactions:", error);
     }
   }, []);
+
+  useEffect(() => {
+    if (!recentReaction) return;
+    const timeout = setTimeout(() => setRecentReaction(null), 800);
+    return () => clearTimeout(timeout);
+  }, [recentReaction]);
 
   // Load messages (initial load hoặc reload)
   const loadMessages = useCallback(
@@ -723,6 +746,13 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
         }
 
         newMap.set(data.messageId, reactions);
+        if (data.added && data.emoji) {
+          setRecentReaction({
+            messageId: data.messageId,
+            emoji: data.emoji,
+            key: `${data.messageId}-${data.emoji}-${Date.now()}`,
+          });
+        }
         return newMap;
       });
     };
@@ -1265,6 +1295,11 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
     });
 
     setShowReactionPicker(null);
+    setRecentReaction({
+      messageId,
+      emoji,
+      key: `${messageId}-${emoji}-${Date.now()}`,
+    });
 
     // 2. Call API in background
     try {
@@ -1295,6 +1330,13 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
 
           return newMap;
         });
+        if (response.data.added && response.data.reaction?.emoji) {
+          setRecentReaction({
+            messageId,
+            emoji: response.data.reaction.emoji,
+            key: `${messageId}-${response.data.reaction.emoji}-${Date.now()}`,
+          });
+        }
       }
     } catch (error: any) {
       console.error("Error reacting to message:", error);
@@ -1332,6 +1374,25 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
   const popularEmojis = ["❤️", "😂", "😮", "😢", "😡", "👍", "👎", "🔥"];
 
   // Retry failed message
+  const focusMessageInput = useCallback(() => {
+    if (messageInputRef.current) {
+      messageInputRef.current.focus();
+      messageInputRef.current.setSelectionRange(
+        messageInputRef.current.value.length,
+        messageInputRef.current.value.length
+      );
+    }
+  }, []);
+
+  const startReplyingToMessage = useCallback(
+    (msg: Message) => {
+      setReplyingTo(msg);
+      setShowEmojiPicker(false);
+      focusMessageInput();
+    },
+    [focusMessageInput]
+  );
+
   const retryMessage = async (failedMsg: Message) => {
     // Remove the failed message
     setMessages((prev) => prev.filter((m) => m.id !== failedMsg.id));
@@ -1342,6 +1403,7 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
       if (failedMsg.replyTo) {
         setReplyingTo(failedMsg);
       }
+      focusMessageInput();
       // Don't auto-send, let user click send button
     } else {
       // For media messages, show alert
@@ -1350,492 +1412,964 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
   };
 
   return (
-    <main
-      style={{
-        flex: 1,
-        background: "#ffffff",
-        height: "100%",
-        display: "flex",
-        flexDirection: "column",
-      }}
-    >
-      {/* Chat Header */}
-      <div
+    <>
+      <main
         style={{
+          flex: 1,
+          background: "#ffffff",
+          height: "100%",
           display: "flex",
           flexDirection: "column",
-          borderBottom: "1px solid #e5e7eb",
-          background: "#ffffff",
         }}
       >
+        {/* Chat Header */}
         <div
           style={{
             display: "flex",
-            alignItems: "center",
-            padding: "12px 16px",
+            flexDirection: "column",
+            borderBottom: "1px solid #e5e7eb",
+            background: "#ffffff",
           }}
         >
           <div
             style={{
-              width: 40,
-              height: 40,
-              borderRadius: 20,
-              background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
               display: "flex",
               alignItems: "center",
-              justifyContent: "center",
-              marginRight: 12,
-            }}
-          >
-            <span style={{ fontSize: 14, color: "#fff", fontWeight: 600 }}>
-              {conversation.avatar}
-            </span>
-          </div>
-          <div style={{ flex: 1 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <strong
-                style={{ fontSize: 15, color: "#111827", fontWeight: 600 }}
-              >
-                {conversation.name}
-              </strong>
-              {conversation.isOnline && (
-                <>
-                  <span
-                    style={{
-                      width: 8,
-                      height: 8,
-                      borderRadius: 4,
-                      background: "#10b981",
-                      display: "inline-block",
-                    }}
-                  />
-                  <span
-                    style={{ fontSize: 13, color: "#10b981", fontWeight: 500 }}
-                  >
-                    Online
-                  </span>
-                </>
-              )}
-            </div>
-          </div>
-          <button
-            onClick={() => setShowSearch(!showSearch)}
-            style={{
-              width: 32,
-              height: 32,
-              borderRadius: 8,
-              border: "none",
-              background: showSearch ? "#e0e7ff" : "transparent",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              cursor: "pointer",
-              transition: "background 0.2s",
-            }}
-            title="Tìm kiếm tin nhắn"
-          >
-            <svg
-              width="20"
-              height="20"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke={showSearch ? "#6366f1" : "#6b7280"}
-              strokeWidth="2"
-            >
-              <circle cx="11" cy="11" r="8" />
-              <path d="m21 21-4.35-4.35" />
-            </svg>
-          </button>
-        </div>
-
-        {/* Search Bar */}
-        {showSearch && (
-          <div
-            style={{
-              padding: "8px 16px 12px 16px",
-              borderTop: "1px solid #f3f4f6",
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
+              padding: "12px 16px",
             }}
           >
             <div
               style={{
-                flex: 1,
-                background: "#f9fafb",
-                borderRadius: 8,
-                padding: "8px 12px",
+                width: 40,
+                height: 40,
+                borderRadius: 20,
+                background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
                 display: "flex",
                 alignItems: "center",
-                gap: 8,
-                border: "1px solid #e5e7eb",
+                justifyContent: "center",
+                marginRight: 12,
               }}
             >
+              <span style={{ fontSize: 14, color: "#fff", fontWeight: 600 }}>
+                {conversation.avatar}
+              </span>
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <strong
+                  style={{ fontSize: 15, color: "#111827", fontWeight: 600 }}
+                >
+                  {conversation.name}
+                </strong>
+                {conversation.isOnline && (
+                  <>
+                    <span
+                      style={{
+                        width: 8,
+                        height: 8,
+                        borderRadius: 4,
+                        background: "#10b981",
+                        display: "inline-block",
+                      }}
+                    />
+                    <span
+                      style={{
+                        fontSize: 13,
+                        color: "#10b981",
+                        fontWeight: 500,
+                      }}
+                    >
+                      Online
+                    </span>
+                  </>
+                )}
+              </div>
+            </div>
+            <button
+              onClick={() => setShowSearch(!showSearch)}
+              style={{
+                width: 32,
+                height: 32,
+                borderRadius: 8,
+                border: "none",
+                background: showSearch ? "#e0e7ff" : "transparent",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                cursor: "pointer",
+                transition: "background 0.2s",
+              }}
+              title="Tìm kiếm tin nhắn"
+            >
               <svg
-                width="16"
-                height="16"
+                width="20"
+                height="20"
                 viewBox="0 0 24 24"
                 fill="none"
-                stroke="#9ca3af"
+                stroke={showSearch ? "#6366f1" : "#6b7280"}
                 strokeWidth="2"
               >
                 <circle cx="11" cy="11" r="8" />
                 <path d="m21 21-4.35-4.35" />
               </svg>
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Tìm kiếm tin nhắn..."
+            </button>
+          </div>
+
+          {/* Search Bar */}
+          {showSearch && (
+            <div
+              style={{
+                padding: "8px 16px 12px 16px",
+                borderTop: "1px solid #f3f4f6",
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+              }}
+            >
+              <div
                 style={{
                   flex: 1,
-                  border: "none",
-                  background: "transparent",
-                  outline: "none",
-                  fontSize: 14,
-                  color: "#111827",
+                  background: "#f9fafb",
+                  borderRadius: 8,
+                  padding: "8px 12px",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  border: "1px solid #e5e7eb",
                 }}
-                autoFocus
-              />
-              {searchQuery && (
-                <button
-                  onClick={() => setSearchQuery("")}
+              >
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="#9ca3af"
+                  strokeWidth="2"
+                >
+                  <circle cx="11" cy="11" r="8" />
+                  <path d="m21 21-4.35-4.35" />
+                </svg>
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Tìm kiếm tin nhắn..."
                   style={{
-                    width: 20,
-                    height: 20,
-                    borderRadius: 4,
+                    flex: 1,
                     border: "none",
                     background: "transparent",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    cursor: "pointer",
-                    padding: 0,
+                    outline: "none",
+                    fontSize: 14,
+                    color: "#111827",
                   }}
-                >
-                  <svg
-                    width="14"
-                    height="14"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="#9ca3af"
-                    strokeWidth="2"
+                  autoFocus
+                />
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery("")}
+                    style={{
+                      width: 20,
+                      height: 20,
+                      borderRadius: 4,
+                      border: "none",
+                      background: "transparent",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      cursor: "pointer",
+                      padding: 0,
+                    }}
                   >
-                    <line x1="18" y1="6" x2="6" y2="18" />
-                    <line x1="6" y1="6" x2="18" y2="18" />
-                  </svg>
-                </button>
-              )}
-            </div>
+                    <svg
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="#9ca3af"
+                      strokeWidth="2"
+                    >
+                      <line x1="18" y1="6" x2="6" y2="18" />
+                      <line x1="6" y1="6" x2="18" y2="18" />
+                    </svg>
+                  </button>
+                )}
+              </div>
 
-            {searchResults.length > 0 && (
-              <>
+              {searchResults.length > 0 && (
+                <>
+                  <div
+                    style={{
+                      fontSize: 12,
+                      color: "#6b7280",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {currentSearchIndex + 1} / {searchResults.length}
+                  </div>
+                  <button
+                    onClick={handlePrevSearch}
+                    disabled={searchResults.length === 0}
+                    style={{
+                      width: 28,
+                      height: 28,
+                      borderRadius: 6,
+                      border: "1px solid #e5e7eb",
+                      background: "#ffffff",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      cursor:
+                        searchResults.length === 0 ? "not-allowed" : "pointer",
+                      opacity: searchResults.length === 0 ? 0.5 : 1,
+                    }}
+                    title="Tin nhắn trước"
+                  >
+                    <svg
+                      width="16"
+                      height="16"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="#6b7280"
+                      strokeWidth="2"
+                    >
+                      <path d="M15 18l-6-6 6-6" />
+                    </svg>
+                  </button>
+                  <button
+                    onClick={handleNextSearch}
+                    disabled={searchResults.length === 0}
+                    style={{
+                      width: 28,
+                      height: 28,
+                      borderRadius: 6,
+                      border: "1px solid #e5e7eb",
+                      background: "#ffffff",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      cursor:
+                        searchResults.length === 0 ? "not-allowed" : "pointer",
+                      opacity: searchResults.length === 0 ? 0.5 : 1,
+                    }}
+                    title="Tin nhắn sau"
+                  >
+                    <svg
+                      width="16"
+                      height="16"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="#6b7280"
+                      strokeWidth="2"
+                    >
+                      <path d="M9 18l6-6-6-6" />
+                    </svg>
+                  </button>
+                </>
+              )}
+
+              {searchQuery && searchResults.length === 0 && (
                 <div
                   style={{
                     fontSize: 12,
-                    color: "#6b7280",
+                    color: "#9ca3af",
                     whiteSpace: "nowrap",
                   }}
                 >
-                  {currentSearchIndex + 1} / {searchResults.length}
+                  Không tìm thấy
                 </div>
-                <button
-                  onClick={handlePrevSearch}
-                  disabled={searchResults.length === 0}
-                  style={{
-                    width: 28,
-                    height: 28,
-                    borderRadius: 6,
-                    border: "1px solid #e5e7eb",
-                    background: "#ffffff",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    cursor:
-                      searchResults.length === 0 ? "not-allowed" : "pointer",
-                    opacity: searchResults.length === 0 ? 0.5 : 1,
-                  }}
-                  title="Tin nhắn trước"
-                >
-                  <svg
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="#6b7280"
-                    strokeWidth="2"
-                  >
-                    <path d="M15 18l-6-6 6-6" />
-                  </svg>
-                </button>
-                <button
-                  onClick={handleNextSearch}
-                  disabled={searchResults.length === 0}
-                  style={{
-                    width: 28,
-                    height: 28,
-                    borderRadius: 6,
-                    border: "1px solid #e5e7eb",
-                    background: "#ffffff",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    cursor:
-                      searchResults.length === 0 ? "not-allowed" : "pointer",
-                    opacity: searchResults.length === 0 ? 0.5 : 1,
-                  }}
-                  title="Tin nhắn sau"
-                >
-                  <svg
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="#6b7280"
-                    strokeWidth="2"
-                  >
-                    <path d="M9 18l6-6-6-6" />
-                  </svg>
-                </button>
-              </>
-            )}
+              )}
+            </div>
+          )}
+        </div>
 
-            {searchQuery && searchResults.length === 0 && (
-              <div
-                style={{
-                  fontSize: 12,
-                  color: "#9ca3af",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                Không tìm thấy
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* Messages Area */}
-      <div
-        ref={messagesContainerRef}
-        style={{
-          flex: 1,
-          overflowY: "auto",
-          padding: "16px",
-          display: "flex",
-          flexDirection: "column",
-          gap: 12,
-          background: "#ffffff",
-        }}
-      >
-        {isLoading ? (
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: 16,
-              padding: "20px 0",
-            }}
-          >
-            {/* Loading skeleton messages */}
-            {[1, 2, 3, 4, 5].map((i) => (
-              <div
-                key={i}
-                style={{
-                  display: "flex",
-                  justifyContent: i % 2 === 0 ? "flex-end" : "flex-start",
-                  gap: 8,
-                }}
-              >
-                {i % 2 !== 0 && (
+        {/* Messages Area */}
+        <div
+          ref={messagesContainerRef}
+          style={{
+            flex: 1,
+            overflowY: "auto",
+            padding: "16px",
+            display: "flex",
+            flexDirection: "column",
+            gap: 12,
+            background: "#ffffff",
+          }}
+        >
+          {isLoading ? (
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: 16,
+                padding: "20px 0",
+              }}
+            >
+              {/* Loading skeleton messages */}
+              {[1, 2, 3, 4, 5].map((i) => (
+                <div
+                  key={i}
+                  style={{
+                    display: "flex",
+                    justifyContent: i % 2 === 0 ? "flex-end" : "flex-start",
+                    gap: 8,
+                  }}
+                >
+                  {i % 2 !== 0 && (
+                    <div
+                      style={{
+                        width: 32,
+                        height: 32,
+                        borderRadius: 16,
+                        background:
+                          "linear-gradient(90deg, #e0e7ff 0%, #c7d2fe 50%, #e0e7ff 100%)",
+                        backgroundSize: "200% 100%",
+                        animation: "shimmer 1.5s infinite",
+                        flexShrink: 0,
+                      }}
+                    />
+                  )}
                   <div
                     style={{
-                      width: 32,
-                      height: 32,
-                      borderRadius: 16,
+                      maxWidth: "60%",
                       background:
-                        "linear-gradient(90deg, #e0e7ff 0%, #c7d2fe 50%, #e0e7ff 100%)",
+                        i % 2 === 0
+                          ? "linear-gradient(90deg, #ddd6fe 0%, #c4b5fd 50%, #ddd6fe 100%)"
+                          : "linear-gradient(90deg, #f3f4f6 0%, #e5e7eb 50%, #f3f4f6 100%)",
                       backgroundSize: "200% 100%",
                       animation: "shimmer 1.5s infinite",
-                      flexShrink: 0,
+                      borderRadius: 12,
+                      padding: "10px 14px",
                     }}
-                  />
-                )}
-                <div
-                  style={{
-                    maxWidth: "60%",
-                    background:
-                      i % 2 === 0
-                        ? "linear-gradient(90deg, #ddd6fe 0%, #c4b5fd 50%, #ddd6fe 100%)"
-                        : "linear-gradient(90deg, #f3f4f6 0%, #e5e7eb 50%, #f3f4f6 100%)",
-                    backgroundSize: "200% 100%",
-                    animation: "shimmer 1.5s infinite",
-                    borderRadius: 12,
-                    padding: "10px 14px",
-                  }}
-                >
-                  <div
-                    style={{
-                      height: 14,
-                      width:
-                        i % 3 === 0 ? "200px" : i % 2 === 0 ? "150px" : "180px",
-                      marginBottom: 6,
-                    }}
-                  />
-                  <div
-                    style={{
-                      height: 11,
-                      width: "60px",
-                    }}
-                  />
+                  >
+                    <div
+                      style={{
+                        height: 14,
+                        width:
+                          i % 3 === 0
+                            ? "200px"
+                            : i % 2 === 0
+                            ? "150px"
+                            : "180px",
+                        marginBottom: 6,
+                      }}
+                    />
+                    <div
+                      style={{
+                        height: 11,
+                        width: "60px",
+                      }}
+                    />
+                  </div>
                 </div>
-              </div>
-            ))}
-            <style>{`
+              ))}
+              <style>{`
               @keyframes shimmer {
                 0% { background-position: 200% 0; }
                 100% { background-position: -200% 0; }
               }
             `}</style>
-            <div
-              style={{
-                textAlign: "center",
-                marginTop: 20,
-                color: "#6b7280",
-                fontSize: 14,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: 8,
-              }}
-            >
-              <svg
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                style={{ animation: "spin 1s linear infinite" }}
+              <div
+                style={{
+                  textAlign: "center",
+                  marginTop: 20,
+                  color: "#6b7280",
+                  fontSize: 14,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 8,
+                }}
               >
-                <path d="M21 12a9 9 0 1 1-6.219-8.56" />
-              </svg>
-              <span>Đang tải tin nhắn...</span>
-            </div>
-            <style>{`
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  style={{ animation: "spin 1s linear infinite" }}
+                >
+                  <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+                </svg>
+                <span>Đang tải tin nhắn...</span>
+              </div>
+              <style>{`
               @keyframes spin {
                 from { transform: rotate(0deg); }
                 to { transform: rotate(360deg); }
               }
             `}</style>
-          </div>
-        ) : messages.length === 0 ? (
-          <div
-            style={{ textAlign: "center", padding: "40px 0", color: "#6b7280" }}
-          >
-            Chưa có tin nhắn nào. Hãy bắt đầu cuộc trò chuyện!
-          </div>
-        ) : (
-          <>
-            {messages.map((msg) => {
-              if (msg.type === "failed") {
-                return (
-                  <div
-                    key={msg.id}
-                    style={{
-                      display: "flex",
-                      justifyContent: "flex-start",
-                      marginBottom: 4,
-                    }}
-                  >
+            </div>
+          ) : messages.length === 0 ? (
+            <div
+              style={{
+                textAlign: "center",
+                padding: "40px 0",
+                color: "#6b7280",
+              }}
+            >
+              Chưa có tin nhắn nào. Hãy bắt đầu cuộc trò chuyện!
+            </div>
+          ) : (
+            <>
+              {messages.map((msg) => {
+                if (msg.type === "failed") {
+                  return (
                     <div
+                      key={msg.id}
                       style={{
-                        maxWidth: "300px",
-                        minHeight: "200px",
-                        background: "#f3f4f6",
-                        border: "1px solid #e5e7eb",
-                        borderRadius: 12,
-                        padding: "16px",
                         display: "flex",
-                        flexDirection: "column",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        gap: 8,
-                        position: "relative",
+                        justifyContent: "flex-start",
+                        marginBottom: 4,
                       }}
                     >
-                      <svg
-                        width="64"
-                        height="64"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        style={{ marginBottom: 8 }}
-                      >
-                        <rect
-                          x="3"
-                          y="3"
-                          width="18"
-                          height="18"
-                          rx="2"
-                          stroke="#ef4444"
-                          strokeWidth="2"
-                          fill="#fee2e2"
-                        />
-                        <path
-                          d="M9 9l6 6M15 9l-6 6"
-                          stroke="#ef4444"
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                        />
-                      </svg>
-                      <span
+                      <div
                         style={{
-                          fontSize: 14,
-                          color: "#6b7280",
-                          fontWeight: 500,
+                          maxWidth: "300px",
+                          minHeight: "200px",
+                          background: "#f3f4f6",
+                          border: "1px solid #e5e7eb",
+                          borderRadius: 12,
+                          padding: "16px",
+                          display: "flex",
+                          flexDirection: "column",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          gap: 8,
+                          position: "relative",
                         }}
                       >
-                        Không thể tải ảnh
-                      </span>
-                      <span
-                        style={{
-                          fontSize: 11,
-                          color: "#9ca3af",
-                          position: "absolute",
-                          bottom: 8,
-                          right: 12,
-                        }}
-                      >
-                        {msg.timestamp}
-                      </span>
+                        <svg
+                          width="64"
+                          height="64"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          style={{ marginBottom: 8 }}
+                        >
+                          <rect
+                            x="3"
+                            y="3"
+                            width="18"
+                            height="18"
+                            rx="2"
+                            stroke="#ef4444"
+                            strokeWidth="2"
+                            fill="#fee2e2"
+                          />
+                          <path
+                            d="M9 9l6 6M15 9l-6 6"
+                            stroke="#ef4444"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                          />
+                        </svg>
+                        <span
+                          style={{
+                            fontSize: 14,
+                            color: "#6b7280",
+                            fontWeight: 500,
+                          }}
+                        >
+                          Không thể tải ảnh
+                        </span>
+                        <span
+                          style={{
+                            fontSize: 11,
+                            color: "#9ca3af",
+                            position: "absolute",
+                            bottom: 8,
+                            right: 12,
+                          }}
+                        >
+                          {msg.timestamp}
+                        </span>
+                      </div>
                     </div>
-                  </div>
-                );
-              }
+                  );
+                }
 
-              const isUser = msg.sender === "user";
-              const messageIndex = messages.indexOf(msg);
-              const isSearchMatch =
-                searchQuery.trim() &&
-                msg.text
-                  .toLowerCase()
-                  .includes(searchQuery.trim().toLowerCase()) &&
-                msg.type === "text";
-              const isCurrentSearchResult =
-                searchResults[currentSearchIndex] === messageIndex;
+                const isUser = msg.sender === "user";
+                const messageIndex = messages.indexOf(msg);
+                const isSearchMatch =
+                  searchQuery.trim() &&
+                  msg.text
+                    .toLowerCase()
+                    .includes(searchQuery.trim().toLowerCase()) &&
+                  msg.type === "text";
+                const isCurrentSearchResult =
+                  searchResults[currentSearchIndex] === messageIndex;
 
-              // Render image/video/sticker/audio messages
-              if (
-                msg.type === "image" ||
-                msg.type === "video" ||
-                msg.type === "sticker" ||
-                msg.type === "audio"
-              ) {
-                const isVideo = msg.type === "video";
-                const isSticker = msg.type === "sticker";
-                const isAudio = msg.type === "audio";
-                const mediaUrl = msg.text; // For media messages, content is the URL from Cloudinary
-                const showAvatar = !isUser && conversation.is_group;
+                // Render image/video/sticker/audio messages
+                if (
+                  msg.type === "image" ||
+                  msg.type === "video" ||
+                  msg.type === "sticker" ||
+                  msg.type === "audio"
+                ) {
+                  const isVideo = msg.type === "video";
+                  const isSticker = msg.type === "sticker";
+                  const isAudio = msg.type === "audio";
+                  const mediaUrl = msg.text; // For media messages, content is the URL from Cloudinary
+                  const showAvatar = !isUser && conversation.is_group;
+
+                  return (
+                    <div
+                      key={msg.id}
+                      ref={(el) => {
+                        if (el && isSearchMatch) {
+                          searchMessageRefs.current.set(messageIndex, el);
+                        } else {
+                          searchMessageRefs.current.delete(messageIndex);
+                        }
+                      }}
+                      style={{
+                        display: "flex",
+                        justifyContent: isUser ? "flex-end" : "flex-start",
+                        alignItems: showAvatar ? "flex-start" : "flex-end",
+                        marginBottom: 4,
+                        transition: "background 0.2s",
+                        background: isCurrentSearchResult
+                          ? "#fef3c7"
+                          : "transparent",
+                        borderRadius: 8,
+                        padding: isCurrentSearchResult ? "4px" : "0",
+                        gap: 8,
+                      }}
+                    >
+                      {/* Avatar - only show for group chat, other messages */}
+                      {showAvatar && (
+                        <div
+                          style={{
+                            width: 32,
+                            height: 32,
+                            borderRadius: 16,
+                            background:
+                              msg.senderAvatar && msg.senderAvatar.length === 1
+                                ? "linear-gradient(135deg, #667eea 0%, #764ba2 100%)"
+                                : "transparent",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            flexShrink: 0,
+                            overflow: "hidden",
+                          }}
+                        >
+                          {msg.senderAvatar && msg.senderAvatar.length === 1 ? (
+                            <span
+                              style={{
+                                fontSize: 14,
+                                color: "#fff",
+                                fontWeight: 600,
+                              }}
+                            >
+                              {msg.senderAvatar}
+                            </span>
+                          ) : msg.senderAvatar ? (
+                            <img
+                              src={msg.senderAvatar}
+                              alt={msg.senderName || ""}
+                              style={{
+                                width: "100%",
+                                height: "100%",
+                                objectFit: "cover",
+                              }}
+                              onError={(e) => {
+                                const target = e.target as HTMLImageElement;
+                                target.style.display = "none";
+                                if (target.parentElement) {
+                                  target.parentElement.innerHTML = `<span style="font-size: 14px; color: #fff; font-weight: 600;">${
+                                    msg.senderName?.charAt(0)?.toUpperCase() ||
+                                    "?"
+                                  }</span>`;
+                                }
+                              }}
+                            />
+                          ) : null}
+                        </div>
+                      )}
+                      <div
+                        style={{
+                          display: "flex",
+                          flexDirection: "column",
+                          maxWidth: showAvatar
+                            ? "60%"
+                            : isSticker
+                            ? "200px"
+                            : isAudio
+                            ? "320px"
+                            : "60%",
+                          gap: 4,
+                          position: "relative",
+                        }}
+                        onMouseEnter={() => setHoveredMessage(msg.id)}
+                        onMouseLeave={() => setHoveredMessage(null)}
+                      >
+                        {/* Sender name - always show */}
+                        {msg.senderName && (
+                          <div
+                            style={{
+                              fontSize: 12,
+                              color: isUser ? "#8b5cf6" : "#6b7280",
+                              fontWeight: 600,
+                              paddingLeft: 4,
+                              textAlign: isUser ? "right" : "left",
+                            }}
+                          >
+                            {msg.senderName}
+                          </div>
+                        )}
+                        <div style={{ position: "relative" }}>
+                          {isAudio ? (
+                            <VoiceMessagePlayer
+                              src={mediaUrl}
+                              isUser={isUser}
+                            />
+                          ) : (
+                            <div
+                              style={{
+                                maxWidth: "100%",
+                                borderRadius: 12,
+                                overflow: "hidden",
+                                boxShadow: isUser
+                                  ? "0 2px 4px rgba(99, 102, 241, 0.2)"
+                                  : "0 1px 2px rgba(0, 0, 0, 0.05)",
+                                border: isCurrentSearchResult
+                                  ? "2px solid #f59e0b"
+                                  : isUser
+                                  ? "none"
+                                  : "1px solid #e5e7eb",
+                                position: "relative",
+                                background: isVideo ? "#000" : "transparent",
+                                padding: 0,
+                              }}
+                            >
+                              {isVideo ? (
+                                <video
+                                  src={mediaUrl}
+                                  controls
+                                  style={{
+                                    maxWidth: "100%",
+                                    maxHeight: "400px",
+                                    display: "block",
+                                    background: "#000",
+                                  }}
+                                  onError={(e) => {
+                                    console.error(
+                                      "Error loading video:",
+                                      mediaUrl
+                                    );
+                                    const parent =
+                                      e.currentTarget.parentElement;
+                                    if (parent) {
+                                      parent.innerHTML =
+                                        '<div style="padding: 40px; text-align: center; color: #9ca3af; min-height: 200px; display: flex; align-items: center; justify-content: center;">Không thể tải video</div>';
+                                    }
+                                  }}
+                                />
+                              ) : isSticker ? (
+                                <img
+                                  src={mediaUrl}
+                                  alt="Sticker"
+                                  style={{
+                                    maxWidth: "200px",
+                                    maxHeight: "200px",
+                                    width: "100%",
+                                    height: "auto",
+                                    display: "block",
+                                  }}
+                                  onError={(e) => {
+                                    console.error(
+                                      "Error loading sticker:",
+                                      mediaUrl
+                                    );
+                                    const parent =
+                                      e.currentTarget.parentElement;
+                                    if (parent) {
+                                      parent.innerHTML =
+                                        '<div style="padding: 40px; text-align: center; color: #9ca3af;">Không thể tải sticker</div>';
+                                    }
+                                  }}
+                                />
+                              ) : (
+                                <img
+                                  src={mediaUrl}
+                                  alt="Image"
+                                  style={{
+                                    maxWidth: "100%",
+                                    maxHeight: "400px",
+                                    width: "auto",
+                                    height: "auto",
+                                    display: "block",
+                                  }}
+                                  onError={(e) => {
+                                    console.error(
+                                      "Error loading image:",
+                                      mediaUrl
+                                    );
+                                    const parent =
+                                      e.currentTarget.parentElement;
+                                    if (parent) {
+                                      parent.innerHTML =
+                                        '<div style="padding: 40px; text-align: center; color: #9ca3af; min-height: 200px; display: flex; align-items: center; justify-content: center;">Không thể tải ảnh</div>';
+                                    }
+                                  }}
+                                />
+                              )}
+                              {!isAudio && (
+                                <div
+                                  style={{
+                                    position: "absolute",
+                                    bottom: 8,
+                                    right: 8,
+                                    fontSize: 11,
+                                    color: "#ffffff",
+                                    background: "rgba(0, 0, 0, 0.6)",
+                                    padding: "4px 8px",
+                                    borderRadius: 6,
+                                    pointerEvents: "none",
+                                  }}
+                                >
+                                  {msg.timestamp}
+                                </div>
+                              )}
+                              {isAudio && (
+                                <div
+                                  style={{
+                                    fontSize: 11,
+                                    color: isUser
+                                      ? "rgba(255, 255, 255, 0.7)"
+                                      : "#9ca3af",
+                                    textAlign: "right",
+                                    marginTop: 4,
+                                  }}
+                                >
+                                  {msg.timestamp}
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Reaction & Reply Picker - only show for other people's messages */}
+                          {!isUser && hoveredMessage === msg.id && (
+                            <div
+                              style={{
+                                position: "absolute",
+                                top: -40,
+                                left: showAvatar ? 40 : 0,
+                                background: "#ffffff",
+                                borderRadius: 20,
+                                boxShadow: "0 4px 12px rgba(0, 0, 0, 0.2)",
+                                padding: "6px 8px",
+                                display: "flex",
+                                gap: 4,
+                                zIndex: 100,
+                                border: "1px solid #e5e7eb",
+                              }}
+                            >
+                              {/* Reply Button */}
+                              <button
+                                onClick={() => startReplyingToMessage(msg)}
+                                style={{
+                                  width: 32,
+                                  height: 32,
+                                  borderRadius: 16,
+                                  border: "none",
+                                  background: "transparent",
+                                  cursor: "pointer",
+                                  fontSize: 16,
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  transition: "background 0.2s, transform 0.1s",
+                                }}
+                                onMouseEnter={(e) => {
+                                  e.currentTarget.style.background = "#f3f4f6";
+                                  e.currentTarget.style.transform =
+                                    "scale(1.2)";
+                                }}
+                                onMouseLeave={(e) => {
+                                  e.currentTarget.style.background =
+                                    "transparent";
+                                  e.currentTarget.style.transform = "scale(1)";
+                                }}
+                                title="Trả lời"
+                              >
+                                <svg
+                                  width="18"
+                                  height="18"
+                                  viewBox="0 0 24 24"
+                                  fill="none"
+                                  stroke="#6b7280"
+                                  strokeWidth="2"
+                                >
+                                  <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
+                                </svg>
+                              </button>
+
+                              {/* Divider */}
+                              <div
+                                style={{
+                                  width: 1,
+                                  background: "#e5e7eb",
+                                  margin: "4px 0",
+                                }}
+                              />
+
+                              {/* Reaction Emojis */}
+                              {popularEmojis.map((emoji) => (
+                                <button
+                                  key={emoji}
+                                  onClick={() => handleReaction(msg.id, emoji)}
+                                  style={{
+                                    width: 32,
+                                    height: 32,
+                                    borderRadius: 16,
+                                    border: "none",
+                                    background: "transparent",
+                                    cursor: "pointer",
+                                    fontSize: 18,
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    transition:
+                                      "background 0.2s, transform 0.1s",
+                                  }}
+                                  onMouseEnter={(e) => {
+                                    e.currentTarget.style.background =
+                                      "#f3f4f6";
+                                    e.currentTarget.style.transform =
+                                      "scale(1.3)";
+                                  }}
+                                  onMouseLeave={(e) => {
+                                    e.currentTarget.style.background =
+                                      "transparent";
+                                    e.currentTarget.style.transform =
+                                      "scale(1)";
+                                  }}
+                                  title={emoji}
+                                >
+                                  {emoji}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Reactions Display */}
+                        {messageReactions.get(msg.id) &&
+                          messageReactions.get(msg.id)!.length > 0 && (
+                            <div
+                              style={{
+                                display: "flex",
+                                gap: 4,
+                                flexWrap: "wrap",
+                                marginTop: 4,
+                                paddingLeft: 4,
+                              }}
+                            >
+                              {(() => {
+                                const reactions =
+                                  messageReactions.get(msg.id) || [];
+                                const grouped = reactions.reduce((acc, r) => {
+                                  if (!acc[r.emoji]) {
+                                    acc[r.emoji] = [];
+                                  }
+                                  acc[r.emoji].push(r);
+                                  return acc;
+                                }, {} as Record<string, MessageReaction[]>);
+
+                                return Object.entries(grouped).map(
+                                  ([emoji, reactionsList]) => {
+                                    const hasUserReaction = reactionsList.some(
+                                      (r) => r.user_id === user?.id
+                                    );
+                                    const isRecentlyUpdated =
+                                      recentReaction &&
+                                      recentReaction.messageId === msg.id &&
+                                      recentReaction.emoji === emoji;
+                                    return (
+                                      <div
+                                        key={`${emoji}-${reactionsList.length}`}
+                                        style={{ position: "relative" }}
+                                      >
+                                        <div
+                                          onClick={() =>
+                                            handleReaction(msg.id, emoji)
+                                          }
+                                          style={{
+                                            display: "flex",
+                                            alignItems: "center",
+                                            gap: 4,
+                                            padding: "2px 8px",
+                                            borderRadius: 12,
+                                            background: hasUserReaction
+                                              ? "#e0e7ff"
+                                              : "#f3f4f6",
+                                            border: hasUserReaction
+                                              ? "1px solid #6366f1"
+                                              : "1px solid #e5e7eb",
+                                            cursor: "pointer",
+                                            fontSize: 14,
+                                            transition: "all 0.2s",
+                                            animation: isRecentlyUpdated
+                                              ? "reactionPop 0.6s ease"
+                                              : undefined,
+                                            boxShadow: isRecentlyUpdated
+                                              ? "0 8px 16px rgba(99, 102, 241, 0.25)"
+                                              : undefined,
+                                          }}
+                                          onMouseEnter={(e) => {
+                                            e.currentTarget.style.transform =
+                                              "scale(1.1)";
+                                          }}
+                                          onMouseLeave={(e) => {
+                                            e.currentTarget.style.transform =
+                                              "scale(1)";
+                                          }}
+                                        >
+                                          <span>{emoji}</span>
+                                          <span
+                                            style={{
+                                              fontSize: 11,
+                                              color: hasUserReaction
+                                                ? "#6366f1"
+                                                : "#6b7280",
+                                              fontWeight: 600,
+                                            }}
+                                          >
+                                            {reactionsList.length}
+                                          </span>
+                                        </div>
+                                        {isRecentlyUpdated && (
+                                          <span
+                                            style={{
+                                              position: "absolute",
+                                              top: -18,
+                                              right: -4,
+                                              fontSize: 18,
+                                              animation:
+                                                "emojiFloat 0.9s ease forwards",
+                                              pointerEvents: "none",
+                                            }}
+                                          >
+                                            {emoji}
+                                          </span>
+                                        )}
+                                      </div>
+                                    );
+                                  }
+                                );
+                              })()}
+                            </div>
+                          )}
+                      </div>
+                    </div>
+                  );
+                }
+
+                // Render text messages
+                const showAvatarAndName =
+                  !isUser && conversation.is_group && msg.senderName;
 
                 return (
                   <div
@@ -1850,7 +2384,7 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
                     style={{
                       display: "flex",
                       justifyContent: isUser ? "flex-end" : "flex-start",
-                      alignItems: showAvatar ? "flex-start" : "flex-end",
+                      alignItems: showAvatarAndName ? "flex-start" : "flex-end",
                       marginBottom: 4,
                       transition: "background 0.2s",
                       background: isCurrentSearchResult
@@ -1862,7 +2396,7 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
                     }}
                   >
                     {/* Avatar - only show for group chat, other messages */}
-                    {showAvatar && (
+                    {showAvatarAndName && (
                       <div
                         style={{
                           width: 32,
@@ -1916,13 +2450,7 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
                       style={{
                         display: "flex",
                         flexDirection: "column",
-                        maxWidth: showAvatar
-                          ? "60%"
-                          : isSticker
-                          ? "200px"
-                          : isAudio
-                          ? "320px"
-                          : "60%",
+                        maxWidth: "60%",
                         gap: 4,
                         position: "relative",
                       }}
@@ -1944,129 +2472,173 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
                         </div>
                       )}
                       <div style={{ position: "relative" }}>
-                        {isAudio ? (
-                          <VoiceMessagePlayer src={mediaUrl} isUser={isUser} />
-                        ) : (
-                          <div
-                            style={{
-                              maxWidth: "100%",
-                              borderRadius: 12,
-                              overflow: "hidden",
-                              boxShadow: isUser
-                                ? "0 2px 4px rgba(99, 102, 241, 0.2)"
-                                : "0 1px 2px rgba(0, 0, 0, 0.05)",
-                              border: isCurrentSearchResult
-                                ? "2px solid #f59e0b"
-                                : isUser
-                                ? "none"
-                                : "1px solid #e5e7eb",
-                              position: "relative",
-                              background: isVideo ? "#000" : "transparent",
-                              padding: 0,
-                            }}
-                          >
-                            {isVideo ? (
-                              <video
-                                src={mediaUrl}
-                                controls
-                                style={{
-                                  maxWidth: "100%",
-                                  maxHeight: "400px",
-                                  display: "block",
-                                  background: "#000",
-                                }}
-                                onError={(e) => {
-                                  console.error(
-                                    "Error loading video:",
-                                    mediaUrl
-                                  );
-                                  const parent = e.currentTarget.parentElement;
-                                  if (parent) {
-                                    parent.innerHTML =
-                                      '<div style="padding: 40px; text-align: center; color: #9ca3af; min-height: 200px; display: flex; align-items: center; justify-content: center;">Không thể tải video</div>';
-                                  }
-                                }}
-                              />
-                            ) : isSticker ? (
-                              <img
-                                src={mediaUrl}
-                                alt="Sticker"
-                                style={{
-                                  maxWidth: "200px",
-                                  maxHeight: "200px",
-                                  width: "100%",
-                                  height: "auto",
-                                  display: "block",
-                                }}
-                                onError={(e) => {
-                                  console.error(
-                                    "Error loading sticker:",
-                                    mediaUrl
-                                  );
-                                  const parent = e.currentTarget.parentElement;
-                                  if (parent) {
-                                    parent.innerHTML =
-                                      '<div style="padding: 40px; text-align: center; color: #9ca3af;">Không thể tải sticker</div>';
-                                  }
-                                }}
-                              />
-                            ) : (
-                              <img
-                                src={mediaUrl}
-                                alt="Image"
-                                style={{
-                                  maxWidth: "100%",
-                                  maxHeight: "400px",
-                                  width: "auto",
-                                  height: "auto",
-                                  display: "block",
-                                }}
-                                onError={(e) => {
-                                  console.error(
-                                    "Error loading image:",
-                                    mediaUrl
-                                  );
-                                  const parent = e.currentTarget.parentElement;
-                                  if (parent) {
-                                    parent.innerHTML =
-                                      '<div style="padding: 40px; text-align: center; color: #9ca3af; min-height: 200px; display: flex; align-items: center; justify-content: center;">Không thể tải ảnh</div>';
-                                  }
-                                }}
-                              />
-                            )}
-                            {!isAudio && (
-                              <div
-                                style={{
-                                  position: "absolute",
-                                  bottom: 8,
-                                  right: 8,
-                                  fontSize: 11,
-                                  color: "#ffffff",
-                                  background: "rgba(0, 0, 0, 0.6)",
-                                  padding: "4px 8px",
-                                  borderRadius: 6,
-                                  pointerEvents: "none",
-                                }}
-                              >
-                                {msg.timestamp}
-                              </div>
-                            )}
-                            {isAudio && (
+                        <div
+                          style={{
+                            maxWidth: "100%",
+                            background: isUser
+                              ? "linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)"
+                              : "#ffffff",
+                            color: isUser ? "#ffffff" : "#111827",
+                            borderRadius: 12,
+                            padding: "10px 14px",
+                            boxShadow: isUser
+                              ? "0 2px 4px rgba(99, 102, 241, 0.2)"
+                              : "0 1px 2px rgba(0, 0, 0, 0.05)",
+                            border: isUser ? "none" : "1px solid #e5e7eb",
+                            borderColor: isCurrentSearchResult
+                              ? "#f59e0b"
+                              : isUser
+                              ? "transparent"
+                              : "#e5e7eb",
+                            borderWidth: isCurrentSearchResult
+                              ? 2
+                              : isUser
+                              ? 0
+                              : 1,
+                          }}
+                        >
+                          {/* Replied Message Preview */}
+                          {msg.replyTo && (
+                            <div
+                              style={{
+                                background: isUser
+                                  ? "rgba(255, 255, 255, 0.15)"
+                                  : "#f9fafb",
+                                borderLeft: `3px solid ${
+                                  isUser
+                                    ? "rgba(255, 255, 255, 0.5)"
+                                    : "#6366f1"
+                                }`,
+                                borderRadius: 6,
+                                padding: "6px 10px",
+                                marginBottom: 8,
+                              }}
+                            >
                               <div
                                 style={{
                                   fontSize: 11,
                                   color: isUser
-                                    ? "rgba(255, 255, 255, 0.7)"
-                                    : "#9ca3af",
-                                  textAlign: "right",
-                                  marginTop: 4,
+                                    ? "rgba(255, 255, 255, 0.9)"
+                                    : "#6366f1",
+                                  fontWeight: 600,
+                                  marginBottom: 2,
                                 }}
                               >
-                                {msg.timestamp}
+                                @{msg.replyTo.senderName}
+                              </div>
+                              <div
+                                style={{
+                                  fontSize: 12,
+                                  color: isUser
+                                    ? "rgba(255, 255, 255, 0.8)"
+                                    : "#6b7280",
+                                  whiteSpace: "nowrap",
+                                  overflow: "hidden",
+                                  textOverflow: "ellipsis",
+                                }}
+                              >
+                                {msg.replyTo.content.substring(0, 100)}
+                                {msg.replyTo.content.length > 100 && "..."}
+                              </div>
+                            </div>
+                          )}
+
+                          <div
+                            style={{
+                              fontSize: 14,
+                              lineHeight: 1.5,
+                              marginBottom: 4,
+                            }}
+                          >
+                            {searchQuery.trim() && msg.type === "text"
+                              ? highlightText(msg.text, searchQuery.trim())
+                              : msg.text}
+                          </div>
+                          <div
+                            style={{
+                              fontSize: 11,
+                              color: isUser
+                                ? "rgba(255, 255, 255, 0.7)"
+                                : "#9ca3af",
+                              textAlign: "right",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "flex-end",
+                              gap: 4,
+                            }}
+                          >
+                            <span>{msg.timestamp}</span>
+                            {isUser && msg.status === "pending" && (
+                              <div title="Đang gửi...">
+                                <svg
+                                  width="12"
+                                  height="12"
+                                  viewBox="0 0 24 24"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth="2"
+                                  style={{
+                                    animation: "spin 1s linear infinite",
+                                    opacity: 0.7,
+                                  }}
+                                >
+                                  <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+                                </svg>
                               </div>
                             )}
+                            {isUser && msg.status === "sent" && (
+                              <div title="Đã gửi">
+                                <svg
+                                  width="14"
+                                  height="14"
+                                  viewBox="0 0 24 24"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth="2.5"
+                                >
+                                  <polyline points="20 6 9 17 4 12" />
+                                </svg>
+                              </div>
+                            )}
+                            {isUser && msg.status === "failed" && (
+                              <button
+                                onClick={() => retryMessage(msg)}
+                                style={{
+                                  background: "none",
+                                  border: "none",
+                                  padding: 0,
+                                  cursor: "pointer",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: 4,
+                                }}
+                                title="Gửi lại"
+                              >
+                                <svg
+                                  width="14"
+                                  height="14"
+                                  viewBox="0 0 24 24"
+                                  fill="none"
+                                  stroke="#ef4444"
+                                  strokeWidth="2"
+                                >
+                                  <circle cx="12" cy="12" r="10" />
+                                  <line x1="12" y1="8" x2="12" y2="12" />
+                                  <line x1="12" y1="16" x2="12.01" y2="16" />
+                                </svg>
+                                <span
+                                  style={{
+                                    fontSize: 10,
+                                    color: "#ef4444",
+                                    textDecoration: "underline",
+                                  }}
+                                >
+                                  Gửi lại
+                                </span>
+                              </button>
+                            )}
                           </div>
-                        )}
+                        </div>
 
                         {/* Reaction & Reply Picker - only show for other people's messages */}
                         {!isUser && hoveredMessage === msg.id && (
@@ -2074,7 +2646,7 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
                             style={{
                               position: "absolute",
                               top: -40,
-                              left: showAvatar ? 40 : 0,
+                              left: 0,
                               background: "#ffffff",
                               borderRadius: 20,
                               boxShadow: "0 4px 12px rgba(0, 0, 0, 0.2)",
@@ -2087,7 +2659,7 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
                           >
                             {/* Reply Button */}
                             <button
-                              onClick={() => setReplyingTo(msg)}
+                              onClick={() => startReplyingToMessage(msg)}
                               style={{
                                 width: 32,
                                 height: 32,
@@ -2198,49 +2770,78 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
                                   const hasUserReaction = reactionsList.some(
                                     (r) => r.user_id === user?.id
                                   );
+                                  const isRecentlyUpdated =
+                                    recentReaction &&
+                                    recentReaction.messageId === msg.id &&
+                                    recentReaction.emoji === emoji;
                                   return (
                                     <div
-                                      key={emoji}
-                                      onClick={() =>
-                                        handleReaction(msg.id, emoji)
-                                      }
-                                      style={{
-                                        display: "flex",
-                                        alignItems: "center",
-                                        gap: 4,
-                                        padding: "2px 8px",
-                                        borderRadius: 12,
-                                        background: hasUserReaction
-                                          ? "#e0e7ff"
-                                          : "#f3f4f6",
-                                        border: hasUserReaction
-                                          ? "1px solid #6366f1"
-                                          : "1px solid #e5e7eb",
-                                        cursor: "pointer",
-                                        fontSize: 14,
-                                        transition: "all 0.2s",
-                                      }}
-                                      onMouseEnter={(e) => {
-                                        e.currentTarget.style.transform =
-                                          "scale(1.1)";
-                                      }}
-                                      onMouseLeave={(e) => {
-                                        e.currentTarget.style.transform =
-                                          "scale(1)";
-                                      }}
+                                      key={`${emoji}-${reactionsList.length}`}
+                                      style={{ position: "relative" }}
                                     >
-                                      <span>{emoji}</span>
-                                      <span
+                                      <div
+                                        onClick={() =>
+                                          handleReaction(msg.id, emoji)
+                                        }
                                         style={{
-                                          fontSize: 11,
-                                          color: hasUserReaction
-                                            ? "#6366f1"
-                                            : "#6b7280",
-                                          fontWeight: 600,
+                                          display: "flex",
+                                          alignItems: "center",
+                                          gap: 4,
+                                          padding: "2px 8px",
+                                          borderRadius: 12,
+                                          background: hasUserReaction
+                                            ? "#e0e7ff"
+                                            : "#f3f4f6",
+                                          border: hasUserReaction
+                                            ? "1px solid #6366f1"
+                                            : "1px solid #e5e7eb",
+                                          cursor: "pointer",
+                                          fontSize: 14,
+                                          transition: "all 0.2s",
+                                          animation: isRecentlyUpdated
+                                            ? "reactionPop 0.6s ease"
+                                            : undefined,
+                                          boxShadow: isRecentlyUpdated
+                                            ? "0 8px 16px rgba(99, 102, 241, 0.25)"
+                                            : undefined,
+                                        }}
+                                        onMouseEnter={(e) => {
+                                          e.currentTarget.style.transform =
+                                            "scale(1.1)";
+                                        }}
+                                        onMouseLeave={(e) => {
+                                          e.currentTarget.style.transform =
+                                            "scale(1)";
                                         }}
                                       >
-                                        {reactionsList.length}
-                                      </span>
+                                        <span>{emoji}</span>
+                                        <span
+                                          style={{
+                                            fontSize: 11,
+                                            color: hasUserReaction
+                                              ? "#6366f1"
+                                              : "#6b7280",
+                                            fontWeight: 600,
+                                          }}
+                                        >
+                                          {reactionsList.length}
+                                        </span>
+                                      </div>
+                                      {isRecentlyUpdated && (
+                                        <span
+                                          style={{
+                                            position: "absolute",
+                                            top: -18,
+                                            right: -4,
+                                            fontSize: 18,
+                                            animation:
+                                              "emojiFloat 0.9s ease forwards",
+                                            pointerEvents: "none",
+                                          }}
+                                        >
+                                          {emoji}
+                                        </span>
+                                      )}
                                     </div>
                                   );
                                 }
@@ -2251,655 +2852,333 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
                     </div>
                   </div>
                 );
-              }
+              })}
 
-              // Render text messages
-              const showAvatarAndName =
-                !isUser && conversation.is_group && msg.senderName;
+              <div ref={messagesEndRef} />
+            </>
+          )}
+        </div>
+
+        {/* Reply Preview Area */}
+        {replyingTo && (
+          <div
+            style={{
+              padding: "12px 16px",
+              borderTop: "1px solid #e5e7eb",
+              background: "#f9fafb",
+              display: "flex",
+              alignItems: "center",
+              gap: 12,
+            }}
+          >
+            <div
+              style={{
+                flex: 1,
+                background: "#ffffff",
+                borderLeft: "3px solid #6366f1",
+                borderRadius: 6,
+                padding: "8px 12px",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 12,
+                  color: "#6366f1",
+                  fontWeight: 600,
+                  marginBottom: 4,
+                }}
+              >
+                Trả lời @{replyingTo.senderName || "Người dùng"}
+              </div>
+              <div
+                style={{
+                  fontSize: 13,
+                  color: "#6b7280",
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                }}
+              >
+                {replyingTo.type === "text"
+                  ? replyingTo.text
+                  : replyingTo.type === "image"
+                  ? "📷 Ảnh"
+                  : replyingTo.type === "video"
+                  ? "📹 Video"
+                  : replyingTo.type === "audio"
+                  ? "🎵 Tin nhắn thoại"
+                  : "Sticker"}
+              </div>
+            </div>
+            <button
+              onClick={() => setReplyingTo(null)}
+              style={{
+                width: 32,
+                height: 32,
+                borderRadius: 16,
+                border: "none",
+                background: "#e5e7eb",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                cursor: "pointer",
+                flexShrink: 0,
+              }}
+              title="Hủy trả lời"
+            >
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="#6b7280"
+                strokeWidth="2"
+              >
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          </div>
+        )}
+
+        {/* Preview Area */}
+        {previewUrls.length > 0 && selectedFiles.length > 0 && (
+          <div
+            style={{
+              padding: "8px 16px",
+              borderTop: "1px solid #e5e7eb",
+              background: "#f9fafb",
+              display: "flex",
+              gap: 8,
+              overflowX: "auto",
+            }}
+          >
+            {previewUrls.map((url, index) => {
+              const file = selectedFiles[index];
+              const isVideo = file.type.startsWith("video/");
 
               return (
                 <div
-                  key={msg.id}
-                  ref={(el) => {
-                    if (el && isSearchMatch) {
-                      searchMessageRefs.current.set(messageIndex, el);
-                    } else {
-                      searchMessageRefs.current.delete(messageIndex);
-                    }
-                  }}
-                  style={{
-                    display: "flex",
-                    justifyContent: isUser ? "flex-end" : "flex-start",
-                    alignItems: showAvatarAndName ? "flex-start" : "flex-end",
-                    marginBottom: 4,
-                    transition: "background 0.2s",
-                    background: isCurrentSearchResult
-                      ? "#fef3c7"
-                      : "transparent",
-                    borderRadius: 8,
-                    padding: isCurrentSearchResult ? "4px" : "0",
-                    gap: 8,
-                  }}
+                  key={index}
+                  style={{ position: "relative", flexShrink: 0 }}
                 >
-                  {/* Avatar - only show for group chat, other messages */}
-                  {showAvatarAndName && (
-                    <div
+                  {isVideo ? (
+                    <video
+                      src={url}
                       style={{
-                        width: 32,
-                        height: 32,
-                        borderRadius: 16,
-                        background:
-                          msg.senderAvatar && msg.senderAvatar.length === 1
-                            ? "linear-gradient(135deg, #667eea 0%, #764ba2 100%)"
-                            : "transparent",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        flexShrink: 0,
-                        overflow: "hidden",
+                        width: "120px",
+                        height: "120px",
+                        objectFit: "cover",
+                        borderRadius: 8,
+                        border: "1px solid #e5e7eb",
                       }}
-                    >
-                      {msg.senderAvatar && msg.senderAvatar.length === 1 ? (
-                        <span
-                          style={{
-                            fontSize: 14,
-                            color: "#fff",
-                            fontWeight: 600,
-                          }}
-                        >
-                          {msg.senderAvatar}
-                        </span>
-                      ) : msg.senderAvatar ? (
-                        <img
-                          src={msg.senderAvatar}
-                          alt={msg.senderName || ""}
-                          style={{
-                            width: "100%",
-                            height: "100%",
-                            objectFit: "cover",
-                          }}
-                          onError={(e) => {
-                            const target = e.target as HTMLImageElement;
-                            target.style.display = "none";
-                            if (target.parentElement) {
-                              target.parentElement.innerHTML = `<span style="font-size: 14px; color: #fff; font-weight: 600;">${
-                                msg.senderName?.charAt(0)?.toUpperCase() || "?"
-                              }</span>`;
-                            }
-                          }}
-                        />
-                      ) : null}
-                    </div>
+                      controls={false}
+                    />
+                  ) : (
+                    <img
+                      src={url}
+                      alt="Preview"
+                      style={{
+                        width: "120px",
+                        height: "120px",
+                        objectFit: "cover",
+                        borderRadius: 8,
+                        border: "1px solid #e5e7eb",
+                      }}
+                    />
                   )}
-                  <div
-                    style={{
-                      display: "flex",
-                      flexDirection: "column",
-                      maxWidth: "60%",
-                      gap: 4,
-                      position: "relative",
+                  <button
+                    onClick={() => {
+                      setSelectedFiles(
+                        selectedFiles.filter((_, i) => i !== index)
+                      );
+                      setPreviewUrls(previewUrls.filter((_, i) => i !== index));
+                      URL.revokeObjectURL(url);
                     }}
-                    onMouseEnter={() => setHoveredMessage(msg.id)}
-                    onMouseLeave={() => setHoveredMessage(null)}
+                    style={{
+                      position: "absolute",
+                      top: 4,
+                      right: 4,
+                      width: 24,
+                      height: 24,
+                      borderRadius: 12,
+                      border: "none",
+                      background: "rgba(0, 0, 0, 0.6)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      cursor: "pointer",
+                      color: "#ffffff",
+                    }}
                   >
-                    {/* Sender name - always show */}
-                    {msg.senderName && (
-                      <div
-                        style={{
-                          fontSize: 12,
-                          color: isUser ? "#8b5cf6" : "#6b7280",
-                          fontWeight: 600,
-                          paddingLeft: 4,
-                          textAlign: isUser ? "right" : "left",
-                        }}
-                      >
-                        {msg.senderName}
-                      </div>
-                    )}
-                    <div style={{ position: "relative" }}>
-                      <div
-                        style={{
-                          maxWidth: "100%",
-                          background: isUser
-                            ? "linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)"
-                            : "#ffffff",
-                          color: isUser ? "#ffffff" : "#111827",
-                          borderRadius: 12,
-                          padding: "10px 14px",
-                          boxShadow: isUser
-                            ? "0 2px 4px rgba(99, 102, 241, 0.2)"
-                            : "0 1px 2px rgba(0, 0, 0, 0.05)",
-                          border: isUser ? "none" : "1px solid #e5e7eb",
-                          borderColor: isCurrentSearchResult
-                            ? "#f59e0b"
-                            : isUser
-                            ? "transparent"
-                            : "#e5e7eb",
-                          borderWidth: isCurrentSearchResult
-                            ? 2
-                            : isUser
-                            ? 0
-                            : 1,
-                        }}
-                      >
-                        {/* Replied Message Preview */}
-                        {msg.replyTo && (
-                          <div
-                            style={{
-                              background: isUser
-                                ? "rgba(255, 255, 255, 0.15)"
-                                : "#f9fafb",
-                              borderLeft: `3px solid ${
-                                isUser ? "rgba(255, 255, 255, 0.5)" : "#6366f1"
-                              }`,
-                              borderRadius: 6,
-                              padding: "6px 10px",
-                              marginBottom: 8,
-                            }}
-                          >
-                            <div
-                              style={{
-                                fontSize: 11,
-                                color: isUser
-                                  ? "rgba(255, 255, 255, 0.9)"
-                                  : "#6366f1",
-                                fontWeight: 600,
-                                marginBottom: 2,
-                              }}
-                            >
-                              @{msg.replyTo.senderName}
-                            </div>
-                            <div
-                              style={{
-                                fontSize: 12,
-                                color: isUser
-                                  ? "rgba(255, 255, 255, 0.8)"
-                                  : "#6b7280",
-                                whiteSpace: "nowrap",
-                                overflow: "hidden",
-                                textOverflow: "ellipsis",
-                              }}
-                            >
-                              {msg.replyTo.content.substring(0, 100)}
-                              {msg.replyTo.content.length > 100 && "..."}
-                            </div>
-                          </div>
-                        )}
-
-                        <div
-                          style={{
-                            fontSize: 14,
-                            lineHeight: 1.5,
-                            marginBottom: 4,
-                          }}
-                        >
-                          {searchQuery.trim() && msg.type === "text"
-                            ? highlightText(msg.text, searchQuery.trim())
-                            : msg.text}
-                        </div>
-                        <div
-                          style={{
-                            fontSize: 11,
-                            color: isUser
-                              ? "rgba(255, 255, 255, 0.7)"
-                              : "#9ca3af",
-                            textAlign: "right",
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "flex-end",
-                            gap: 4,
-                          }}
-                        >
-                          <span>{msg.timestamp}</span>
-                          {isUser && msg.status === "pending" && (
-                            <div title="Đang gửi...">
-                              <svg
-                                width="12"
-                                height="12"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                strokeWidth="2"
-                                style={{
-                                  animation: "spin 1s linear infinite",
-                                  opacity: 0.7,
-                                }}
-                              >
-                                <path d="M21 12a9 9 0 1 1-6.219-8.56" />
-                              </svg>
-                            </div>
-                          )}
-                          {isUser && msg.status === "sent" && (
-                            <div title="Đã gửi">
-                              <svg
-                                width="14"
-                                height="14"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                strokeWidth="2.5"
-                              >
-                                <polyline points="20 6 9 17 4 12" />
-                              </svg>
-                            </div>
-                          )}
-                          {isUser && msg.status === "failed" && (
-                            <button
-                              onClick={() => retryMessage(msg)}
-                              style={{
-                                background: "none",
-                                border: "none",
-                                padding: 0,
-                                cursor: "pointer",
-                                display: "flex",
-                                alignItems: "center",
-                                gap: 4,
-                              }}
-                              title="Gửi lại"
-                            >
-                              <svg
-                                width="14"
-                                height="14"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="#ef4444"
-                                strokeWidth="2"
-                              >
-                                <circle cx="12" cy="12" r="10" />
-                                <line x1="12" y1="8" x2="12" y2="12" />
-                                <line x1="12" y1="16" x2="12.01" y2="16" />
-                              </svg>
-                              <span
-                                style={{
-                                  fontSize: 10,
-                                  color: "#ef4444",
-                                  textDecoration: "underline",
-                                }}
-                              >
-                                Gửi lại
-                              </span>
-                            </button>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Reaction & Reply Picker - only show for other people's messages */}
-                      {!isUser && hoveredMessage === msg.id && (
-                        <div
-                          style={{
-                            position: "absolute",
-                            top: -40,
-                            left: 0,
-                            background: "#ffffff",
-                            borderRadius: 20,
-                            boxShadow: "0 4px 12px rgba(0, 0, 0, 0.2)",
-                            padding: "6px 8px",
-                            display: "flex",
-                            gap: 4,
-                            zIndex: 100,
-                            border: "1px solid #e5e7eb",
-                          }}
-                        >
-                          {/* Reply Button */}
-                          <button
-                            onClick={() => setReplyingTo(msg)}
-                            style={{
-                              width: 32,
-                              height: 32,
-                              borderRadius: 16,
-                              border: "none",
-                              background: "transparent",
-                              cursor: "pointer",
-                              fontSize: 16,
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "center",
-                              transition: "background 0.2s, transform 0.1s",
-                            }}
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.background = "#f3f4f6";
-                              e.currentTarget.style.transform = "scale(1.2)";
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.background = "transparent";
-                              e.currentTarget.style.transform = "scale(1)";
-                            }}
-                            title="Trả lời"
-                          >
-                            <svg
-                              width="18"
-                              height="18"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              stroke="#6b7280"
-                              strokeWidth="2"
-                            >
-                              <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
-                            </svg>
-                          </button>
-
-                          {/* Divider */}
-                          <div
-                            style={{
-                              width: 1,
-                              background: "#e5e7eb",
-                              margin: "4px 0",
-                            }}
-                          />
-
-                          {/* Reaction Emojis */}
-                          {popularEmojis.map((emoji) => (
-                            <button
-                              key={emoji}
-                              onClick={() => handleReaction(msg.id, emoji)}
-                              style={{
-                                width: 32,
-                                height: 32,
-                                borderRadius: 16,
-                                border: "none",
-                                background: "transparent",
-                                cursor: "pointer",
-                                fontSize: 18,
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                transition: "background 0.2s, transform 0.1s",
-                              }}
-                              onMouseEnter={(e) => {
-                                e.currentTarget.style.background = "#f3f4f6";
-                                e.currentTarget.style.transform = "scale(1.3)";
-                              }}
-                              onMouseLeave={(e) => {
-                                e.currentTarget.style.background =
-                                  "transparent";
-                                e.currentTarget.style.transform = "scale(1)";
-                              }}
-                              title={emoji}
-                            >
-                              {emoji}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Reactions Display */}
-                    {messageReactions.get(msg.id) &&
-                      messageReactions.get(msg.id)!.length > 0 && (
-                        <div
-                          style={{
-                            display: "flex",
-                            gap: 4,
-                            flexWrap: "wrap",
-                            marginTop: 4,
-                            paddingLeft: 4,
-                          }}
-                        >
-                          {(() => {
-                            const reactions =
-                              messageReactions.get(msg.id) || [];
-                            const grouped = reactions.reduce((acc, r) => {
-                              if (!acc[r.emoji]) {
-                                acc[r.emoji] = [];
-                              }
-                              acc[r.emoji].push(r);
-                              return acc;
-                            }, {} as Record<string, MessageReaction[]>);
-
-                            return Object.entries(grouped).map(
-                              ([emoji, reactionsList]) => {
-                                const hasUserReaction = reactionsList.some(
-                                  (r) => r.user_id === user?.id
-                                );
-                                return (
-                                  <div
-                                    key={emoji}
-                                    onClick={() =>
-                                      handleReaction(msg.id, emoji)
-                                    }
-                                    style={{
-                                      display: "flex",
-                                      alignItems: "center",
-                                      gap: 4,
-                                      padding: "2px 8px",
-                                      borderRadius: 12,
-                                      background: hasUserReaction
-                                        ? "#e0e7ff"
-                                        : "#f3f4f6",
-                                      border: hasUserReaction
-                                        ? "1px solid #6366f1"
-                                        : "1px solid #e5e7eb",
-                                      cursor: "pointer",
-                                      fontSize: 14,
-                                      transition: "all 0.2s",
-                                    }}
-                                    onMouseEnter={(e) => {
-                                      e.currentTarget.style.transform =
-                                        "scale(1.1)";
-                                    }}
-                                    onMouseLeave={(e) => {
-                                      e.currentTarget.style.transform =
-                                        "scale(1)";
-                                    }}
-                                  >
-                                    <span>{emoji}</span>
-                                    <span
-                                      style={{
-                                        fontSize: 11,
-                                        color: hasUserReaction
-                                          ? "#6366f1"
-                                          : "#6b7280",
-                                        fontWeight: 600,
-                                      }}
-                                    >
-                                      {reactionsList.length}
-                                    </span>
-                                  </div>
-                                );
-                              }
-                            );
-                          })()}
-                        </div>
-                      )}
-                  </div>
+                    <svg
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                    >
+                      <line x1="18" y1="6" x2="6" y2="18" />
+                      <line x1="6" y1="6" x2="18" y2="18" />
+                    </svg>
+                  </button>
                 </div>
               );
             })}
-
-            <div ref={messagesEndRef} />
-          </>
+          </div>
         )}
-      </div>
 
-      {/* Reply Preview Area */}
-      {replyingTo && (
+        {/* Input Area */}
         <div
           style={{
             padding: "12px 16px",
             borderTop: "1px solid #e5e7eb",
-            background: "#f9fafb",
+            background: "#ffffff",
             display: "flex",
             alignItems: "center",
-            gap: 12,
-          }}
-        >
-          <div
-            style={{
-              flex: 1,
-              background: "#ffffff",
-              borderLeft: "3px solid #6366f1",
-              borderRadius: 6,
-              padding: "8px 12px",
-            }}
-          >
-            <div
-              style={{
-                fontSize: 12,
-                color: "#6366f1",
-                fontWeight: 600,
-                marginBottom: 4,
-              }}
-            >
-              Trả lời @{replyingTo.senderName || "Người dùng"}
-            </div>
-            <div
-              style={{
-                fontSize: 13,
-                color: "#6b7280",
-                whiteSpace: "nowrap",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-              }}
-            >
-              {replyingTo.type === "text"
-                ? replyingTo.text
-                : replyingTo.type === "image"
-                ? "📷 Ảnh"
-                : replyingTo.type === "video"
-                ? "📹 Video"
-                : replyingTo.type === "audio"
-                ? "🎵 Tin nhắn thoại"
-                : "Sticker"}
-            </div>
-          </div>
-          <button
-            onClick={() => setReplyingTo(null)}
-            style={{
-              width: 32,
-              height: 32,
-              borderRadius: 16,
-              border: "none",
-              background: "#e5e7eb",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              cursor: "pointer",
-              flexShrink: 0,
-            }}
-            title="Hủy trả lời"
-          >
-            <svg
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="#6b7280"
-              strokeWidth="2"
-            >
-              <line x1="18" y1="6" x2="6" y2="18" />
-              <line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
-          </button>
-        </div>
-      )}
-
-      {/* Preview Area */}
-      {previewUrls.length > 0 && selectedFiles.length > 0 && (
-        <div
-          style={{
-            padding: "8px 16px",
-            borderTop: "1px solid #e5e7eb",
-            background: "#f9fafb",
-            display: "flex",
             gap: 8,
-            overflowX: "auto",
+            position: "relative",
           }}
         >
-          {previewUrls.map((url, index) => {
-            const file = selectedFiles[index];
-            const isVideo = file.type.startsWith("video/");
+          {/* Sticker/Emoji Button */}
+          <div style={{ position: "relative" }}>
+            <button
+              onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: 8,
+                border: "none",
+                background: showEmojiPicker ? "#e0e7ff" : "transparent",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                cursor: "pointer",
+                color: "#6b7280",
+                transition: "background 0.2s",
+              }}
+              title="Gửi sticker"
+            >
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
+                <circle cx="12" cy="12" r="10" />
+                <path d="M8 14s1.5 2 4 2 4-2 4-2" />
+                <line x1="9" y1="9" x2="9.01" y2="9" />
+                <line x1="15" y1="9" x2="15.01" y2="9" />
+              </svg>
+            </button>
 
-            return (
-              <div key={index} style={{ position: "relative", flexShrink: 0 }}>
-                {isVideo ? (
-                  <video
-                    src={url}
-                    style={{
-                      width: "120px",
-                      height: "120px",
-                      objectFit: "cover",
-                      borderRadius: 8,
-                      border: "1px solid #e5e7eb",
-                    }}
-                    controls={false}
-                  />
-                ) : (
-                  <img
-                    src={url}
-                    alt="Preview"
-                    style={{
-                      width: "120px",
-                      height: "120px",
-                      objectFit: "cover",
-                      borderRadius: 8,
-                      border: "1px solid #e5e7eb",
-                    }}
-                  />
-                )}
-                <button
-                  onClick={() => {
-                    setSelectedFiles(
-                      selectedFiles.filter((_, i) => i !== index)
-                    );
-                    setPreviewUrls(previewUrls.filter((_, i) => i !== index));
-                    URL.revokeObjectURL(url);
-                  }}
-                  style={{
-                    position: "absolute",
-                    top: 4,
-                    right: 4,
-                    width: 24,
-                    height: 24,
-                    borderRadius: 12,
-                    border: "none",
-                    background: "rgba(0, 0, 0, 0.6)",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    cursor: "pointer",
-                    color: "#ffffff",
-                  }}
-                >
-                  <svg
-                    width="14"
-                    height="14"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                  >
-                    <line x1="18" y1="6" x2="6" y2="18" />
-                    <line x1="6" y1="6" x2="18" y2="18" />
-                  </svg>
-                </button>
+            {/* Emoji Picker - positioned above the button */}
+            {showEmojiPicker && (
+              <div
+                style={{
+                  position: "absolute",
+                  bottom: "100%",
+                  left: 0,
+                  marginBottom: 8,
+                  zIndex: 1000,
+                }}
+              >
+                <EmojiPicker
+                  onSelect={handleEmojiSelect}
+                  onClose={() => setShowEmojiPicker(false)}
+                />
               </div>
-            );
-          })}
-        </div>
-      )}
+            )}
+          </div>
 
-      {/* Input Area */}
-      <div
-        style={{
-          padding: "12px 16px",
-          borderTop: "1px solid #e5e7eb",
-          background: "#ffffff",
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-          position: "relative",
-        }}
-      >
-        {/* Sticker/Emoji Button */}
-        <div style={{ position: "relative" }}>
+          {/* Voice Recording Button */}
           <button
-            onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+            onMouseDown={startRecording}
+            onMouseUp={stopRecording}
+            onTouchStart={startRecording}
+            onTouchEnd={stopRecording}
             style={{
               width: 36,
               height: 36,
               borderRadius: 8,
               border: "none",
-              background: showEmojiPicker ? "#e0e7ff" : "transparent",
+              background: isRecording ? "#ef4444" : "transparent",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              cursor: "pointer",
+              color: isRecording ? "#ffffff" : "#6b7280",
+              transition: "background 0.2s, color 0.2s",
+              position: "relative",
+            }}
+            title={
+              isRecording
+                ? `Đang ghi âm... ${Math.floor(recordingTime / 60)}:${(
+                    recordingTime % 60
+                  )
+                    .toString()
+                    .padStart(2, "0")}`
+                : "Ghi âm"
+            }
+            onMouseEnter={(e) => {
+              if (!isRecording) {
+                e.currentTarget.style.background = "#f3f4f6";
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (!isRecording) {
+                e.currentTarget.style.background = "transparent";
+              }
+              stopRecording(); // Stop recording if mouse leaves button
+            }}
+          >
+            {isRecording ? (
+              <>
+                <div
+                  style={{
+                    width: 20,
+                    height: 20,
+                    borderRadius: 4,
+                    background: "#ffffff",
+                    animation: "pulse 1s ease-in-out infinite",
+                  }}
+                />
+                <style>{`
+                @keyframes pulse {
+                  0%, 100% { opacity: 1; }
+                  50% { opacity: 0.5; }
+                }
+              `}</style>
+              </>
+            ) : (
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
+                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                <line x1="12" y1="19" x2="12" y2="23" />
+                <line x1="8" y1="23" x2="16" y2="23" />
+              </svg>
+            )}
+          </button>
+
+          {/* Image/Attachment Button */}
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: 8,
+              border: "none",
+              background: "transparent",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
@@ -2907,7 +3186,13 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
               color: "#6b7280",
               transition: "background 0.2s",
             }}
-            title="Gửi sticker"
+            title="Gửi ảnh"
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = "#f3f4f6";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = "transparent";
+            }}
           >
             <svg
               width="20"
@@ -2917,92 +3202,41 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
               stroke="currentColor"
               strokeWidth="2"
             >
-              <circle cx="12" cy="12" r="10" />
-              <path d="M8 14s1.5 2 4 2 4-2 4-2" />
-              <line x1="9" y1="9" x2="9.01" y2="9" />
-              <line x1="15" y1="9" x2="15.01" y2="9" />
+              <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
             </svg>
           </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            style={{ display: "none" }}
+            onChange={(e) => handleFileSelect(e, "image")}
+          />
 
-          {/* Emoji Picker - positioned above the button */}
-          {showEmojiPicker && (
-            <div
-              style={{
-                position: "absolute",
-                bottom: "100%",
-                left: 0,
-                marginBottom: 8,
-                zIndex: 1000,
-              }}
-            >
-              <EmojiPicker
-                onSelect={handleEmojiSelect}
-                onClose={() => setShowEmojiPicker(false)}
-              />
-            </div>
-          )}
-        </div>
-
-        {/* Voice Recording Button */}
-        <button
-          onMouseDown={startRecording}
-          onMouseUp={stopRecording}
-          onTouchStart={startRecording}
-          onTouchEnd={stopRecording}
-          style={{
-            width: 36,
-            height: 36,
-            borderRadius: 8,
-            border: "none",
-            background: isRecording ? "#ef4444" : "transparent",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            cursor: "pointer",
-            color: isRecording ? "#ffffff" : "#6b7280",
-            transition: "background 0.2s, color 0.2s",
-            position: "relative",
-          }}
-          title={
-            isRecording
-              ? `Đang ghi âm... ${Math.floor(recordingTime / 60)}:${(
-                  recordingTime % 60
-                )
-                  .toString()
-                  .padStart(2, "0")}`
-              : "Ghi âm"
-          }
-          onMouseEnter={(e) => {
-            if (!isRecording) {
+          {/* Video Button */}
+          <button
+            onClick={() => videoInputRef.current?.click()}
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: 8,
+              border: "none",
+              background: "transparent",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              cursor: "pointer",
+              color: "#6b7280",
+              transition: "background 0.2s",
+            }}
+            title="Gửi video"
+            onMouseEnter={(e) => {
               e.currentTarget.style.background = "#f3f4f6";
-            }
-          }}
-          onMouseLeave={(e) => {
-            if (!isRecording) {
+            }}
+            onMouseLeave={(e) => {
               e.currentTarget.style.background = "transparent";
-            }
-            stopRecording(); // Stop recording if mouse leaves button
-          }}
-        >
-          {isRecording ? (
-            <>
-              <div
-                style={{
-                  width: 20,
-                  height: 20,
-                  borderRadius: 4,
-                  background: "#ffffff",
-                  animation: "pulse 1s ease-in-out infinite",
-                }}
-              />
-              <style>{`
-                @keyframes pulse {
-                  0%, 100% { opacity: 1; }
-                  50% { opacity: 0.5; }
-                }
-              `}</style>
-            </>
-          ) : (
+            }}
+          >
             <svg
               width="20"
               height="20"
@@ -3011,162 +3245,93 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
               stroke="currentColor"
               strokeWidth="2"
             >
-              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
-              <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-              <line x1="12" y1="19" x2="12" y2="23" />
-              <line x1="8" y1="23" x2="16" y2="23" />
+              <polygon points="23 7 16 12 23 17 23 7" />
+              <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
             </svg>
-          )}
-        </button>
+          </button>
+          <input
+            ref={videoInputRef}
+            type="file"
+            accept="video/*"
+            style={{ display: "none" }}
+            onChange={(e) => handleFileSelect(e, "video")}
+          />
 
-        {/* Image/Attachment Button */}
-        <button
-          onClick={() => fileInputRef.current?.click()}
-          style={{
-            width: 36,
-            height: 36,
-            borderRadius: 8,
-            border: "none",
-            background: "transparent",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            cursor: "pointer",
-            color: "#6b7280",
-            transition: "background 0.2s",
-          }}
-          title="Gửi ảnh"
-          onMouseEnter={(e) => {
-            e.currentTarget.style.background = "#f3f4f6";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background = "transparent";
-          }}
-        >
-          <svg
-            width="20"
-            height="20"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
+          <input
+            type="text"
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+            onKeyPress={handleKeyPress}
+            onClick={() => setShowEmojiPicker(false)}
+            ref={messageInputRef}
+            placeholder={`Nhập tin nhắn tới ${conversation.name}`}
+            style={{
+              flex: 1,
+              padding: "10px 16px",
+              borderRadius: 24,
+              border: "1px solid #e5e7eb",
+              fontSize: 14,
+              outline: "none",
+              background: "#ffffff",
+            }}
+          />
+          <button
+            onClick={(e) => {
+              e.preventDefault();
+              handleSend();
+            }}
+            disabled={
+              (!message.trim() && selectedFiles.length === 0) || isSending
+            }
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: 8,
+              border: "none",
+              background:
+                (message.trim() || selectedFiles.length > 0) && !isSending
+                  ? "linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)"
+                  : "#e5e7eb",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              cursor:
+                (message.trim() || selectedFiles.length > 0) && !isSending
+                  ? "pointer"
+                  : "not-allowed",
+              color:
+                (message.trim() || selectedFiles.length > 0) && !isSending
+                  ? "#ffffff"
+                  : "#9ca3af",
+              transition: "all 0.2s",
+            }}
           >
-            <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
-          </svg>
-        </button>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/*"
-          style={{ display: "none" }}
-          onChange={(e) => handleFileSelect(e, "image")}
-        />
-
-        {/* Video Button */}
-        <button
-          onClick={() => videoInputRef.current?.click()}
-          style={{
-            width: 36,
-            height: 36,
-            borderRadius: 8,
-            border: "none",
-            background: "transparent",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            cursor: "pointer",
-            color: "#6b7280",
-            transition: "background 0.2s",
-          }}
-          title="Gửi video"
-          onMouseEnter={(e) => {
-            e.currentTarget.style.background = "#f3f4f6";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background = "transparent";
-          }}
-        >
-          <svg
-            width="20"
-            height="20"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-          >
-            <polygon points="23 7 16 12 23 17 23 7" />
-            <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
-          </svg>
-        </button>
-        <input
-          ref={videoInputRef}
-          type="file"
-          accept="video/*"
-          style={{ display: "none" }}
-          onChange={(e) => handleFileSelect(e, "video")}
-        />
-
-        <input
-          type="text"
-          value={message}
-          onChange={(e) => setMessage(e.target.value)}
-          onKeyPress={handleKeyPress}
-          onClick={() => setShowEmojiPicker(false)}
-          placeholder={`Nhập tin nhắn tới ${conversation.name}`}
-          style={{
-            flex: 1,
-            padding: "10px 16px",
-            borderRadius: 24,
-            border: "1px solid #e5e7eb",
-            fontSize: 14,
-            outline: "none",
-            background: "#ffffff",
-          }}
-        />
-        <button
-          onClick={(e) => {
-            e.preventDefault();
-            handleSend();
-          }}
-          disabled={
-            (!message.trim() && selectedFiles.length === 0) || isSending
-          }
-          style={{
-            width: 36,
-            height: 36,
-            borderRadius: 8,
-            border: "none",
-            background:
-              (message.trim() || selectedFiles.length > 0) && !isSending
-                ? "linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)"
-                : "#e5e7eb",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            cursor:
-              (message.trim() || selectedFiles.length > 0) && !isSending
-                ? "pointer"
-                : "not-allowed",
-            color:
-              (message.trim() || selectedFiles.length > 0) && !isSending
-                ? "#ffffff"
-                : "#9ca3af",
-            transition: "all 0.2s",
-          }}
-        >
-          <svg
-            width="18"
-            height="18"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2.5"
-          >
-            <line x1="22" y1="2" x2="11" y2="13" />
-            <polygon points="22 2 15 22 11 13 2 9 22 2" />
-          </svg>
-        </button>
-      </div>
-    </main>
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+            >
+              <line x1="22" y1="2" x2="11" y2="13" />
+              <polygon points="22 2 15 22 11 13 2 9 22 2" />
+            </svg>
+          </button>
+        </div>
+      </main>
+      <style>{`
+        @keyframes reactionPop {
+          0% { transform: scale(0.6); opacity: 0; }
+          60% { transform: scale(1.15); opacity: 1; }
+          100% { transform: scale(1); opacity: 1; }
+        }
+        @keyframes emojiFloat {
+          0% { transform: translateY(8px) scale(0.8); opacity: 0; }
+          40% { opacity: 1; }
+          100% { transform: translateY(-18px) scale(1.2); opacity: 0; }
+        }
+      `}</style>
+    </>
   );
 }
