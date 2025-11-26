@@ -5,7 +5,8 @@ import { apiService } from '@/services/api';
 import { useAuth } from '@/hooks/useAuth';
 import { socketService } from '@/services/socket';
 import CreatePostModal from './CreatePostModal';
-import PostDetailModal from './PostDetailModal'; 
+import PostDetailModal from './PostDetailModal';
+import SharePostModal from './SharePostModal'; 
 
 interface Post {
   postId: string;
@@ -30,6 +31,11 @@ interface Post {
   isDeleted: boolean;
   // UI state
   isLiked?: boolean;
+  // Shared post fields
+  isShared?: boolean;
+  sharedPostId?: string;
+  sharedPost?: Post;
+  shareCount?: number;
 }
 
 interface DisplayPost {
@@ -50,6 +56,21 @@ interface DisplayPost {
   likes: number;
   commentCount: number;
   isLiked: boolean;
+  // Shared post fields
+  isShared?: boolean;
+  sharedPost?: {
+    id: string;
+    author: string;
+    title: string;
+    description: string;
+    media?: Array<{
+      type: "image" | "video";
+      sourceUrl: string;
+      width: number;
+      height: number;
+    }>;
+  };
+  shareCount?: number;
 }
 
 interface Comment {
@@ -79,6 +100,8 @@ export default function SocialPanel() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [selectedPost, setSelectedPost] = useState<DisplayPost | null>(null); // State for the post to display in modal
   const [showPostDetailModal, setShowPostDetailModal] = useState(false); // State to control the post detail modal visibility
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [sharingPost, setSharingPost] = useState<DisplayPost | null>(null);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [editingPost, setEditingPost] = useState<DisplayPost | null>(null);
   const [activeFilter, setActiveFilter] = useState<FilterType>("newest");
@@ -166,7 +189,7 @@ export default function SocialPanel() {
       console.error("Post missing postId:", post);
     }
 
-    return {
+    const displayPost: DisplayPost = {
       id: post.postId,
       authorId: post.authorId,
       author: post.authorName || "Người dùng",
@@ -179,11 +202,25 @@ export default function SocialPanel() {
       description: post.caption,
       image: post.media?.length > 0 ? post.media[0].sourceUrl : undefined,
       media: post.media || [],
-
       likes: post.likeCount || 0,
       commentCount: post.commentCount || 0,
-      isLiked: liked
+      isLiked: liked,
+      shareCount: post.shareCount || 0,
     };
+
+    // If this is a shared post, populate shared post data
+    if (post.isShared && post.sharedPost) {
+      displayPost.isShared = true;
+      displayPost.sharedPost = {
+        id: post.sharedPost.postId,
+        author: post.sharedPost.authorName || "Người dùng",
+        title: post.sharedPost.caption.split("\n")[0] || post.sharedPost.caption.substring(0, 50) || "Không có tiêu đề",
+        description: post.sharedPost.caption,
+        media: post.sharedPost.media || [],
+      };
+    }
+
+    return displayPost;
   };
 
   const loadPosts = async (append: boolean = false) => {
@@ -1419,8 +1456,80 @@ export default function SocialPanel() {
                 {post.description}
               </p>
 
-              {/* Post Media */}
-              {post.media && post.media.length > 0 && (
+              {/* Shared Post Preview */}
+              {post.isShared && post.sharedPost && (
+                <div style={{
+                  border: "2px solid #e5e7eb",
+                  borderRadius: 12,
+                  padding: 16,
+                  marginBottom: 16,
+                  background: "#f9fafb",
+                  cursor: "pointer",
+                  transition: "all 0.2s"
+                }}
+                onClick={() => {
+                  // Optionally open the original post
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = "#f3f4f6";
+                  e.currentTarget.style.borderColor = "#d1d5db";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "#f9fafb";
+                  e.currentTarget.style.borderColor = "#e5e7eb";
+                }}
+                >
+                  <div style={{ fontSize: 13, color: "#6b7280", marginBottom: 8 }}>
+                    Bài viết của {post.sharedPost.author}
+                  </div>
+                  <div style={{ fontSize: 16, fontWeight: 600, color: "#111827", marginBottom: 8 }}>
+                    {post.sharedPost.title}
+                  </div>
+                  <div style={{ fontSize: 14, color: "#374151", lineHeight: 1.5, marginBottom: 12 }}>
+                    {post.sharedPost.description.length > 200 
+                      ? post.sharedPost.description.substring(0, 200) + '...' 
+                      : post.sharedPost.description}
+                  </div>
+                  {post.sharedPost.media && post.sharedPost.media.length > 0 && (
+                    <div style={{
+                      width: "100%",
+                      borderRadius: 8,
+                      overflow: "hidden",
+                      border: "1px solid #e5e7eb"
+                    }}>
+                      {post.sharedPost.media[0].type === 'image' ? (
+                        <img 
+                          src={post.sharedPost.media[0].sourceUrl || "/placeholder.svg"} 
+                          alt={post.sharedPost.title}
+                          style={{
+                            width: "100%",
+                            maxHeight: 300,
+                            objectFit: "cover",
+                            display: "block"
+                          }}
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).style.display = 'none';
+                          }}
+                        />
+                      ) : (
+                        <video 
+                          src={post.sharedPost.media[0].sourceUrl}
+                          controls
+                          style={{
+                            width: "100%",
+                            maxHeight: 300,
+                            objectFit: "cover",
+                            display: "block"
+                          }}
+                        />
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Post Media (only show if not a shared post) */}
+              {!post.isShared && post.media && post.media.length > 0 && (
                 <div style={{
                   width: "100%",
                   marginBottom: 16,
@@ -1615,6 +1724,53 @@ export default function SocialPanel() {
                 <span style={{ fontSize: 13, color: "#9ca3af" }}>
                   {post.commentCount} bình luận
                 </span>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setSharingPost(post);
+                    setShowShareModal(true);
+                  }}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    background: "transparent",
+                    border: "none",
+                    cursor: "pointer",
+                    padding: "6px 12px",
+                    borderRadius: 6,
+                    transition: "background 0.2s"
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = "#f9fafb")}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                >
+                  <svg
+                    width="20"
+                    height="20"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="#6b7280"
+                    strokeWidth="2"
+                  >
+                    <circle cx="18" cy="5" r="3" />
+                    <circle cx="6" cy="12" r="3" />
+                    <circle cx="18" cy="19" r="3" />
+                    <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
+                    <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
+                  </svg>
+                  <span style={{
+                    fontSize: 14,
+                    color: "#6b7280",
+                    fontWeight: 500
+                  }}>
+                    Chia sẻ
+                  </span>
+                </button>
+                {post.shareCount !== undefined && post.shareCount > 0 && (
+                  <span style={{ fontSize: 13, color: "#9ca3af" }}>
+                    {post.shareCount} lượt chia sẻ
+                  </span>
+                )}
               </div>
 
               {/* Comments Section */}
@@ -1795,6 +1951,24 @@ export default function SocialPanel() {
               }
             : null
         }
+      />
+      {/* Share Post Modal */}
+      <SharePostModal
+        isOpen={showShareModal}
+        postId={sharingPost?.id || ''}
+        postTitle={sharingPost?.title || ''}
+        postAuthor={sharingPost?.author || 'Người dùng'}
+        postContent={sharingPost?.description || ''}
+        onClose={() => {
+          setShowShareModal(false);
+          setSharingPost(null);
+        }}
+        onShared={() => {
+          setShowShareModal(false);
+          setSharingPost(null);
+          // Reload posts to show the new shared post
+          loadPosts(false);
+        }}
       />
     </div>
   );

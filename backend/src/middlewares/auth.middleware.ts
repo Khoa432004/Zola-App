@@ -53,4 +53,48 @@ export const authenticate = (
   }
 };
 
+/**
+ * Optional authentication middleware - tries to verify token but doesn't block if missing/invalid
+ */
+export const optionalAuthenticate = (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const authHeader = req.headers.authorization;
+
+    // If no header, just continue without user
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      console.log('Optional Auth - No token provided, continuing as guest');
+      req.user = undefined;
+      return next();
+    }
+
+    // Try to verify token
+    const token = authHeader.substring(7);
+    try {
+      const decoded = verifyToken(token);
+      const normalizedUser: any = {
+        ...(decoded as any),
+        uid: (decoded as any).uid || (decoded as any).userId || (decoded as any).id,
+      };
+      req.user = normalizedUser;
+      console.log('Optional Auth - Token verified, userId:', normalizedUser.userId || normalizedUser.uid);
+    } catch (error) {
+      // Token invalid, continue as guest
+      console.log('Optional Auth - Invalid token, continuing as guest');
+      req.user = undefined;
+    }
+    
+    next();
+  } catch (error: any) {
+    // Any error, continue as guest
+    console.log('Optional Auth - Error:', error.message, ', continuing as guest');
+    req.user = undefined;
+    next();
+  }
+};
+
+
 

@@ -26,6 +26,22 @@ interface Post {
   commentCount: number;
   isLiked: boolean;
   createdAt?: string | Date;
+  // Shared post fields
+  isShared?: boolean;
+  sharedPostId?: string;
+  sharedPost?: {
+    id: string;
+    author: string;
+    title: string;
+    description: string;
+    media?: Array<{
+      type: 'image' | 'video';
+      sourceUrl: string;
+      width: number;
+      height: number;
+    }>;
+  };
+  shareCount?: number;
 }
 
 interface MediaItem {
@@ -78,19 +94,37 @@ export default function ProfilePanel() {
 
         // Process posts
         if (postsResponse.success && postsResponse.data) {
-            const displayPosts = postsResponse.data.map((post: any) => ({
-                id: post.postId,
-                author: post.authorName || user.name || 'User',
-                email: user.email || '',
-                timestamp: new Date(post.createdAt).toLocaleDateString('vi-VN'),
-                title: post.caption?.split('\n')[0] || '',
-                description: post.caption || '',
-                media: post.media || [],
-                likes: post.likeCount || 0,
-                commentCount: post.commentCount || 0,
-                isLiked: false,
-                createdAt: post.createdAt
-            }));
+            const displayPosts = postsResponse.data.map((post: any) => {
+                const displayPost: Post = {
+                    id: post.postId,
+                    author: post.authorName || user.name || 'User',
+                    email: user.email || '',
+                    timestamp: new Date(post.createdAt).toLocaleDateString('vi-VN'),
+                    title: post.caption?.split('\n')[0] || '',
+                    description: post.caption || '',
+                    media: post.media || [],
+                    likes: post.likeCount || 0,
+                    commentCount: post.commentCount || 0,
+                    isLiked: false,
+                    createdAt: post.createdAt,
+                    shareCount: post.shareCount || 0,
+                };
+
+                // If this is a shared post, populate shared post data
+                if (post.isShared && post.sharedPost) {
+                    displayPost.isShared = true;
+                    displayPost.sharedPostId = post.sharedPostId;
+                    displayPost.sharedPost = {
+                        id: post.sharedPost.postId,
+                        author: post.sharedPost.authorName || 'Người dùng',
+                        title: post.sharedPost.caption?.split('\n')[0] || post.sharedPost.caption?.substring(0, 50) || 'Không có tiêu đề',
+                        description: post.sharedPost.caption || '',
+                        media: post.sharedPost.media || [],
+                    };
+                }
+
+                return displayPost;
+            });
             setPosts(displayPosts);
             setPostsCount(displayPosts.length);
 
@@ -608,8 +642,80 @@ export default function ProfilePanel() {
                               {post.description}
                           </p>
 
-                          {/* Post Media */}
-                          {post.media && post.media.length > 0 && (
+                          {/* Shared Post Preview */}
+                          {post.isShared && post.sharedPost && (
+                              <div style={{
+                                  border: '2px solid #e5e7eb',
+                                  borderRadius: 12,
+                                  padding: 16,
+                                  marginBottom: 16,
+                                  background: '#f9fafb',
+                                  cursor: 'pointer',
+                                  transition: 'all 0.2s'
+                              }}
+                              onClick={() => {
+                                  // Optionally open the original post
+                              }}
+                              onMouseEnter={(e) => {
+                                  e.currentTarget.style.background = '#f3f4f6';
+                                  e.currentTarget.style.borderColor = '#d1d5db';
+                              }}
+                              onMouseLeave={(e) => {
+                                  e.currentTarget.style.background = '#f9fafb';
+                                  e.currentTarget.style.borderColor = '#e5e7eb';
+                              }}
+                              >
+                                  <div style={{ fontSize: 13, color: '#6b7280', marginBottom: 8 }}>
+                                      Bài viết của {post.sharedPost.author}
+                                  </div>
+                                  <div style={{ fontSize: 16, fontWeight: 600, color: '#111827', marginBottom: 8 }}>
+                                      {post.sharedPost.title}
+                                  </div>
+                                  <div style={{ fontSize: 14, color: '#374151', lineHeight: 1.5, marginBottom: 12 }}>
+                                      {post.sharedPost.description.length > 200 
+                                          ? post.sharedPost.description.substring(0, 200) + '...' 
+                                          : post.sharedPost.description}
+                                  </div>
+                                  {post.sharedPost.media && post.sharedPost.media.length > 0 && (
+                                      <div style={{
+                                          width: '100%',
+                                          borderRadius: 8,
+                                          overflow: 'hidden',
+                                          border: '1px solid #e5e7eb'
+                                      }}>
+                                          {post.sharedPost.media[0].type === 'image' ? (
+                                              <img 
+                                                  src={post.sharedPost.media[0].sourceUrl || '/placeholder.svg'} 
+                                                  alt={post.sharedPost.title}
+                                                  style={{
+                                                      width: '100%',
+                                                      maxHeight: 300,
+                                                      objectFit: 'cover',
+                                                      display: 'block'
+                                                  }}
+                                                  onError={(e) => {
+                                                      (e.target as HTMLImageElement).style.display = 'none';
+                                                  }}
+                                              />
+                                          ) : (
+                                              <video 
+                                                  src={post.sharedPost.media[0].sourceUrl}
+                                                  controls
+                                                  style={{
+                                                      width: '100%',
+                                                      maxHeight: 300,
+                                                      objectFit: 'cover',
+                                                      display: 'block'
+                                                  }}
+                                              />
+                                          )}
+                                      </div>
+                                  )}
+                              </div>
+                          )}
+
+                          {/* Post Media (only show if not a shared post) */}
+                          {!post.isShared && post.media && post.media.length > 0 && (
                               <div style={{
                                   width: '100%',
                                   marginBottom: 16,

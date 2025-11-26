@@ -17,7 +17,13 @@ export class PostController {
     const limit = parseInt(req.query.limit as string) || 10;
     
     // Get userId if authenticated (public route, authentication is optional)
-    const userId = req.user?.userId || undefined;
+    const userId = req.user?.userId || (req.user as any)?.uid || (req.user as any)?.id || undefined;
+    
+    console.log('📋 getAllPosts - User info:', {
+      hasUser: !!req.user,
+      userId,
+      userObject: req.user
+    });
     
     const posts = await this.postService.getPublicPosts(page, limit, userId);
 
@@ -35,6 +41,16 @@ export class PostController {
           };
         })
       );
+
+      console.log('✅ getAllPosts - Returning posts:', {
+        count: postsWithLikedStatus.length,
+        postIds: postsWithLikedStatus.map(p => p.postId),
+        specificPosts: postsWithLikedStatus.filter(p => p.visibility === 'specific').map(p => ({
+          postId: p.postId,
+          visibility: p.visibility,
+          sharedWith: p.sharedWith
+        }))
+      });
 
       return res.json({
         success: true,
@@ -67,12 +83,12 @@ export class PostController {
   getFeaturedPosts = async (req: Request, res: Response) => {
     try {
       const limit = req.query.limit ? parseInt(req.query.limit as string) : 10;
-      const userId = (req as any).user?.uid || undefined;
+      const userId = (req as any).user?.userId || (req as any).user?.uid || undefined;
       const posts = await this.postService.getFeaturedPosts(limit);
       // featured helper currently doesn't accept userId; try to annotate if we have a user by using service getPublicPosts
       if (userId) {
-        const annotated = await this.postService.getPublicPosts(limit, userId);
-        res.json({ success: true, data: annotated });
+        const annotated = await this.postService.getPublicPosts(1, limit, userId);
+        res.json({ success: true, data: annotated.items });
       } else {
         res.json({ success: true, data: posts });
       }
@@ -309,10 +325,15 @@ export class PostController {
 
       // Upload and add new files
       if (files && files.length > 0) {
-        const newMedia = [];
+        const newMedia: Array<{
+          type: "image" | "video";
+          sourceUrl: string;
+          width: number;
+          height: number;
+        }> = [];
         for (const file of files) {
           try {
-            const fileType = file.mimetype.startsWith("image/")
+            const fileType: "image" | "video" = file.mimetype.startsWith("image/")
               ? "image"
               : "video";
             const uploadResult = await uploadFile(file, `posts/${userId}`);
@@ -638,6 +659,59 @@ export class PostController {
       res.json({ success: true, data: updated });
     } catch (error: any) {
       res.status(500).json({ success: false, message: error.message || 'Failed to unlike post' });
+    }
+  };
+
+  sharePost = async (req: AuthRequest, res: Response) => {
+    try {
+      const { id } = req.params;
+      const userId = req.user?.userId;
+      
+      if (!userId) {
+        return res.status(401).json({
+          success: false,
+          message: "Chưa đăng nhập",
+        });
+      }
+
+      const account = await Account.findById(userId);
+      if (!account) {
+        return res.status(404).json({
+          success: false,
+          message: "Không tìm thấy tài khoản",
+        });
+      }
+
+      const { caption, visibility, sharedWith } = req.body;
+
+      console.log('📤 Share post request:', {
+        postId: id,
+        userId,
+        visibility: visibility || "public",
+        sharedWith: sharedWith || 'none'
+      });
+
+      const sharedPost = await this.postService.sharePost(
+        id,
+        userId,
+        account.name || account.email,
+        account.avatar || "",
+        caption || "",
+        visibility || "public",
+        sharedWith || undefined
+      );
+
+      res.status(201).json({
+        success: true,
+        message: "Đã chia sẻ bài viết",
+        data: sharedPost,
+      });
+    } catch (error: any) {
+      console.error("Error sharing post:", error);
+      res.status(500).json({
+        success: false,
+        message: error.message || "Không thể chia sẻ bài viết",
+      });
     }
   };
 }

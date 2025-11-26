@@ -491,6 +491,24 @@ class ApiService {
     }
   }
 
+  async sharePost(
+    postId: string, 
+    caption?: string, 
+    visibility?: "public" | "friends" | "private" | "specific",
+    sharedWith?: string[]
+  ) {
+    try {
+      const response = await this.axiosInstance.post(`/posts/${postId}/share`, {
+        caption: caption || "",
+        visibility: visibility || "public",
+        sharedWith: sharedWith || undefined,
+      });
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.message || "Không thể chia sẻ bài viết");
+    }
+  }
+
   // Friends
   async sendFriendRequest(email: string) {
     try {
