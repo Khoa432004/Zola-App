@@ -2068,8 +2068,8 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
                           </div>
                         )}
 
-                        {/* Reaction & Reply Picker - only show for other people's messages */}
-                        {!isUser && hoveredMessage === msg.id && (
+            {/* Reaction & Reply Picker */}
+            {hoveredMessage === msg.id && (
                           <div
                             style={{
                               position: "absolute",
@@ -2084,54 +2084,58 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
                               zIndex: 100,
                               border: "1px solid #e5e7eb",
                             }}
-                          >
-                            {/* Reply Button */}
-                            <button
-                              onClick={() => setReplyingTo(msg)}
-                              style={{
-                                width: 32,
-                                height: 32,
-                                borderRadius: 16,
-                                border: "none",
-                                background: "transparent",
-                                cursor: "pointer",
-                                fontSize: 16,
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                transition: "background 0.2s, transform 0.1s",
-                              }}
-                              onMouseEnter={(e) => {
-                                e.currentTarget.style.background = "#f3f4f6";
-                                e.currentTarget.style.transform = "scale(1.2)";
-                              }}
-                              onMouseLeave={(e) => {
-                                e.currentTarget.style.background =
-                                  "transparent";
-                                e.currentTarget.style.transform = "scale(1)";
-                              }}
-                              title="Trả lời"
-                            >
-                              <svg
-                                width="18"
-                                height="18"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="#6b7280"
-                                strokeWidth="2"
-                              >
-                                <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
-                              </svg>
-                            </button>
+                >
+                  {/* Reply Button - only for other people's messages */}
+                  {!isUser && (
+                    <>
+                      <button
+                        onClick={() => setReplyingTo(msg)}
+                        style={{
+                          width: 32,
+                          height: 32,
+                          borderRadius: 16,
+                          border: "none",
+                          background: "transparent",
+                          cursor: "pointer",
+                          fontSize: 16,
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          transition: "background 0.2s, transform 0.1s",
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = "#f3f4f6";
+                          e.currentTarget.style.transform = "scale(1.2)";
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background =
+                            "transparent";
+                          e.currentTarget.style.transform = "scale(1)";
+                        }}
+                        title="Trả lời"
+                      >
+                        <svg
+                          width="18"
+                          height="18"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="#6b7280"
+                          strokeWidth="2"
+                        >
+                          <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
+                        </svg>
+                      </button>
 
-                            {/* Divider */}
-                            <div
-                              style={{
-                                width: 1,
-                                background: "#e5e7eb",
-                                margin: "4px 0",
-                              }}
-                            />
+                      {/* Divider */}
+                      <div
+                        style={{
+                          width: 1,
+                          background: "#e5e7eb",
+                          margin: "4px 0",
+                        }}
+                      />
+                    </>
+                  )}
 
                             {/* Reaction Emojis */}
                             {popularEmojis.map((emoji) => (
@@ -2523,8 +2527,8 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
                         </div>
                       </div>
 
-                      {/* Reaction & Reply Picker - only show for other people's messages */}
-                      {!isUser && hoveredMessage === msg.id && (
+                    {/* Reaction & Reply Picker */}
+                    {hoveredMessage === msg.id && (
                         <div
                           style={{
                             position: "absolute",
@@ -2540,52 +2544,56 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
                             border: "1px solid #e5e7eb",
                           }}
                         >
-                          {/* Reply Button */}
-                          <button
-                            onClick={() => setReplyingTo(msg)}
-                            style={{
-                              width: 32,
-                              height: 32,
-                              borderRadius: 16,
-                              border: "none",
-                              background: "transparent",
-                              cursor: "pointer",
-                              fontSize: 16,
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "center",
-                              transition: "background 0.2s, transform 0.1s",
-                            }}
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.background = "#f3f4f6";
-                              e.currentTarget.style.transform = "scale(1.2)";
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.background = "transparent";
-                              e.currentTarget.style.transform = "scale(1)";
-                            }}
-                            title="Trả lời"
-                          >
-                            <svg
-                              width="18"
-                              height="18"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              stroke="#6b7280"
-                              strokeWidth="2"
-                            >
-                              <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
-                            </svg>
-                          </button>
+                          {/* Reply Button - only for other people's messages */}
+                          {!isUser && (
+                            <>
+                              <button
+                                onClick={() => setReplyingTo(msg)}
+                                style={{
+                                  width: 32,
+                                  height: 32,
+                                  borderRadius: 16,
+                                  border: "none",
+                                  background: "transparent",
+                                  cursor: "pointer",
+                                  fontSize: 16,
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  transition: "background 0.2s, transform 0.1s",
+                                }}
+                                onMouseEnter={(e) => {
+                                  e.currentTarget.style.background = "#f3f4f6";
+                                  e.currentTarget.style.transform = "scale(1.2)";
+                                }}
+                                onMouseLeave={(e) => {
+                                  e.currentTarget.style.background = "transparent";
+                                  e.currentTarget.style.transform = "scale(1)";
+                                }}
+                                title="Trả lời"
+                              >
+                                <svg
+                                  width="18"
+                                  height="18"
+                                  viewBox="0 0 24 24"
+                                  fill="none"
+                                  stroke="#6b7280"
+                                  strokeWidth="2"
+                                >
+                                  <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
+                                </svg>
+                              </button>
 
-                          {/* Divider */}
-                          <div
-                            style={{
-                              width: 1,
-                              background: "#e5e7eb",
-                              margin: "4px 0",
-                            }}
-                          />
+                              {/* Divider */}
+                              <div
+                                style={{
+                                  width: 1,
+                                  background: "#e5e7eb",
+                                  margin: "4px 0",
+                                }}
+                              />
+                            </>
+                          )}
 
                           {/* Reaction Emojis */}
                           {popularEmojis.map((emoji) => (

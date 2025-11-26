@@ -1948,6 +1948,8 @@ export default function SocialPanel() {
                 visibility: "public",
                 tags: "",
                 media: editingPost.media,
+                isShared: editingPost.isShared,
+                sharedPostId: editingPost.sharedPost?.id,
               }
             : null
         }

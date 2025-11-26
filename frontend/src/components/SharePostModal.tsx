@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { apiService } from '@/services/api';
+import styles from './SharePostModal.module.css';
 
 interface SharePostModalProps {
   isOpen: boolean;
@@ -42,7 +43,7 @@ export default function SharePostModal({
     if (isOpen && visibility === 'specific' && friends.length === 0) {
       loadFriends();
     }
-  }, [isOpen, visibility]);
+  }, [isOpen, visibility, friends.length]);
 
   const loadFriends = async () => {
     setIsLoadingFriends(true);
@@ -111,34 +112,16 @@ export default function SharePostModal({
 
   return (
     <div
-      style={{
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        background: 'rgba(0,0,0,0.5)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 1100,
-      }}
+      className={styles.overlay}
       onClick={onClose}
     >
       <div
-        style={{
-          background: '#fff',
-          borderRadius: 12,
-          padding: 20,
-          width: 560,
-          maxHeight: '90vh',
-          overflow: 'auto',
-        }}
+        className={styles.modal}
         onClick={(e) => e.stopPropagation()}
       >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-          <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>Chia sẻ bài viết</h3>
-          <button onClick={onClose} style={{ border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 24, color: '#6b7280' }}>
+        <div className={styles.header}>
+          <h3 className={styles.title}>Chia sẻ bài viết</h3>
+          <button onClick={onClose} className={styles.closeButton}>
             ✕
           </button>
         </div>
@@ -148,34 +131,18 @@ export default function SharePostModal({
           value={caption}
           onChange={(e) => setCaption(e.target.value)}
           placeholder="Bạn nghĩ gì về bài viết này?"
-          style={{
-            width: '100%',
-            minHeight: 80,
-            padding: 12,
-            border: '1px solid #e5e7eb',
-            borderRadius: 8,
-            fontSize: 14,
-            resize: 'vertical',
-            marginBottom: 16,
-          }}
+          className={styles.captionInput}
         />
 
         {/* Visibility selector */}
-        <div style={{ marginBottom: 16 }}>
-          <label style={{ fontSize: 14, fontWeight: 600, color: '#374151', marginBottom: 8, display: 'block' }}>
+        <div className={styles.fieldGroup}>
+          <label className={styles.fieldLabel}>
             Ai có thể xem bài viết này?
           </label>
           <select
             value={visibility}
             onChange={(e) => setVisibility(e.target.value as any)}
-            style={{
-              width: '100%',
-              padding: '10px 12px',
-              border: '1px solid #e5e7eb',
-              borderRadius: 8,
-              fontSize: 14,
-              cursor: 'pointer',
-            }}
+            className={styles.select}
           >
             <option value="public">Công khai</option>
             <option value="friends">Tất cả bạn bè</option>
@@ -186,122 +153,70 @@ export default function SharePostModal({
 
         {/* Friend selector - only show when visibility is 'specific' */}
         {visibility === 'specific' && (
-          <div style={{ 
-            marginBottom: 16,
-            border: '1px solid #e5e7eb',
-            borderRadius: 8,
-            padding: 12,
-            maxHeight: 300,
-            overflow: 'hidden',
-            display: 'flex',
-            flexDirection: 'column'
-          }}>
-            <div style={{ marginBottom: 12 }}>
+          <div className={styles.specificContainer}>
+            <div className={styles.searchInputWrapper}>
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Tìm kiếm bạn bè..."
-                style={{
-                  width: '100%',
-                  padding: '8px 12px',
-                  border: '1px solid #e5e7eb',
-                  borderRadius: 6,
-                  fontSize: 14,
-                }}
+                className={styles.searchInput}
               />
             </div>
 
             {isLoadingFriends ? (
-              <div style={{ textAlign: 'center', padding: 20, color: '#6b7280' }}>
+              <div className={styles.friendsLoading}>
                 Đang tải danh sách bạn bè...
               </div>
             ) : filteredFriends.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: 20, color: '#6b7280' }}>
+              <div className={styles.friendsEmpty}>
                 {searchQuery ? 'Không tìm thấy bạn bè' : 'Chưa có bạn bè nào'}
               </div>
             ) : (
-              <div style={{ 
-                overflowY: 'auto',
-                maxHeight: 200,
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 8
-              }}>
-                {filteredFriends.map(friend => (
-                  <label
-                    key={friend.id}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 10,
-                      padding: '8px 10px',
-                      borderRadius: 6,
-                      cursor: 'pointer',
-                      transition: 'background 0.2s',
-                      background: selectedFriends.has(friend.id) ? '#f0f9ff' : 'transparent',
-                    }}
-                    onMouseEnter={(e) => {
-                      if (!selectedFriends.has(friend.id)) {
-                        e.currentTarget.style.background = '#f9fafb';
-                      }
-                    }}
-                    onMouseLeave={(e) => {
-                      if (!selectedFriends.has(friend.id)) {
-                        e.currentTarget.style.background = 'transparent';
-                      }
-                    }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={selectedFriends.has(friend.id)}
-                      onChange={() => toggleFriendSelection(friend.id)}
-                      style={{
-                        width: 18,
-                        height: 18,
-                        cursor: 'pointer',
-                      }}
-                    />
-                    <div style={{
-                      width: 36,
-                      height: 36,
-                      borderRadius: '50%',
-                      backgroundImage: friend.avatar ? `url(${friend.avatar})` : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                      backgroundSize: 'cover',
-                      backgroundPosition: 'center',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      flexShrink: 0,
-                    }}>
-                      {!friend.avatar && (
-                        <span style={{ fontSize: 14, color: '#fff', fontWeight: 600 }}>
-                          {friend.name.charAt(0).toUpperCase()}
-                        </span>
-                      )}
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 14, fontWeight: 600, color: '#111827', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {friend.name}
+              <div className={styles.friendsListOuter}>
+                {filteredFriends.map(friend => {
+                  const isSelected = selectedFriends.has(friend.id);
+                  return (
+                    <label
+                      key={friend.id}
+                      className={`${styles.friendItem} ${isSelected ? styles.friendItemSelected : ''}`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => toggleFriendSelection(friend.id)}
+                        className={styles.friendCheckbox}
+                      />
+                      <div
+                        className={styles.friendAvatar}
+                        style={{
+                          backgroundImage: friend.avatar
+                            ? `url(${friend.avatar})`
+                            : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                        }}
+                      >
+                        {!friend.avatar && (
+                          <span className={styles.friendInitial}>
+                            {friend.name.charAt(0).toUpperCase()}
+                          </span>
+                        )}
                       </div>
-                      <div style={{ fontSize: 12, color: '#6b7280', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {friend.email}
+                      <div className={styles.friendInfo}>
+                        <div className={styles.friendName}>
+                          {friend.name}
+                        </div>
+                        <div className={styles.friendEmail}>
+                          {friend.email}
+                        </div>
                       </div>
-                    </div>
-                  </label>
-                ))}
+                    </label>
+                  );
+                })}
               </div>
             )}
 
             {selectedFriends.size > 0 && (
-              <div style={{ 
-                marginTop: 12,
-                paddingTop: 12,
-                borderTop: '1px solid #e5e7eb',
-                fontSize: 13,
-                color: '#6b7280',
-                textAlign: 'center'
-              }}>
+              <div className={styles.selectedSummary}>
                 Đã chọn {selectedFriends.size} bạn bè
               </div>
             )}
@@ -309,20 +224,14 @@ export default function SharePostModal({
         )}
 
         {/* Original post preview */}
-        <div style={{
-          border: '1px solid #e5e7eb',
-          borderRadius: 8,
-          padding: 12,
-          background: '#f9fafb',
-          marginBottom: 16,
-        }}>
-          <div style={{ fontSize: 13, color: '#6b7280', marginBottom: 4 }}>
+        <div className={styles.postPreview}>
+          <div className={styles.postMeta}>
             Bài viết của {postAuthor}
           </div>
-          <div style={{ fontSize: 15, fontWeight: 600, color: '#111827', marginBottom: 4 }}>
+          <div className={styles.postTitle}>
             {postTitle}
           </div>
-          <div style={{ fontSize: 14, color: '#374151', lineHeight: 1.5 }}>
+          <div className={styles.postContent}>
             {postContent.length > 150 ? postContent.substring(0, 150) + '...' : postContent}
           </div>
         </div>
@@ -331,17 +240,7 @@ export default function SharePostModal({
         <button
           onClick={handleShare}
           disabled={isSharing}
-          style={{
-            width: '100%',
-            padding: '12px 24px',
-            background: isSharing ? '#9ca3af' : 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
-            color: '#fff',
-            border: 'none',
-            borderRadius: 8,
-            fontSize: 15,
-            fontWeight: 600,
-            cursor: isSharing ? 'not-allowed' : 'pointer',
-          }}
+          className={styles.shareButton}
         >
           {isSharing ? 'Đang chia sẻ...' : 'Chia sẻ ngay'}
         </button>

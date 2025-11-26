@@ -10,6 +10,8 @@ interface CreatePostModalProps {
   onClose: () => void;
   onPostCreated?: () => void;
   editingPost?: {
+    isShared?: boolean;
+    sharedPostId?: string;
     id: string;
     title: string;
     description: string;
@@ -47,7 +49,12 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated, editin
       setContent(editingPost.description || '');
       setVisibility(editingPost.visibility || 'public');
       setTags(editingPost.tags || '');
-      setExistingMedia(editingPost.media || []);
+      // Nếu là bài viết share thì không cho chỉnh ảnh/video
+      if (editingPost.isShared) {
+        setExistingMedia([]);
+      } else {
+        setExistingMedia(editingPost.media || []);
+      }
     } else {
       setTitle('');
       setContent('');
@@ -372,7 +379,8 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated, editin
             />
           </div>
 
-          {/* Media Section */}
+          {/* Media Section - hide for shared posts when editing */}
+          {!editingPost?.isShared && (
           <div>
             <label style={{
               display: 'block',
@@ -663,6 +671,7 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated, editin
               style={{ display: 'none' }}
             />
           </div>
+          )}
 
           {/* Tags */}
           <div>
