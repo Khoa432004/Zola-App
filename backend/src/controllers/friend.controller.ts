@@ -317,6 +317,12 @@ export class FriendController {
       }
 
       const friends = await friendService.getFriends(userId);
+      
+      console.log('👥 getFriends response:', {
+        userId,
+        friendsCount: friends.length,
+        friends: friends.map(f => ({ id: f.id, name: f.name, email: f.email }))
+      });
 
       return res.status(200).json({
         success: true,
