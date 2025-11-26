@@ -1,6 +1,6 @@
 import { Router } from "express";
 import multer from "multer";
-import { authenticate } from "../middlewares/auth.middleware";
+import { authenticate, optionalAuthenticate } from "../middlewares/auth.middleware";
 import { PostController } from "../controllers/post.controller";
 
 const router = Router();
@@ -24,9 +24,9 @@ const upload = multer({
   },
 });
 
-// Public routes
-router.get("/", controller.getAllPosts);
-router.get("/featured", controller.getFeaturedPosts);
+// Public routes with optional authentication
+router.get("/", optionalAuthenticate, controller.getAllPosts);
+router.get("/featured", optionalAuthenticate, controller.getFeaturedPosts);
 
 // Protected routes
 router.get('/my', authenticate, controller.getMyPosts);
@@ -57,6 +57,10 @@ router.post('/:id/restore', authenticate, controller.restorePost);
 // Like / Unlike post
 router.post('/:id/like', authenticate, controller.likePost);
 router.delete('/:id/like', authenticate, controller.unlikePost);
+
+// Share post
+router.post('/:id/share', authenticate, controller.sharePost);
+
 router.post('/', authenticate, upload.array('media', 10), controller.createPost);
 router.put('/:id', authenticate, upload.array('media', 10), controller.updatePost);
 router.delete('/:id', authenticate, controller.deletePost);

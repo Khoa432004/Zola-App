@@ -1,5 +1,6 @@
 import { firestore } from '../config/firebase-admin';
 import admin from 'firebase-admin';
+import { Friend } from './Friend';
 
 export interface IPost {
   postId: string;
@@ -20,15 +21,63 @@ export interface IPost {
   commentCount: number;
   promotionLevel: number;
   tags: string[];
-  visibility: "public" | "friends" | "private";
+  visibility: "public" | "friends" | "private" | "specific";
   isDeleted: boolean;
   isLiked?: boolean;
+  // Shared post fields
+  isShared?: boolean;
+  sharedPostId?: string;
+  sharedPost?: IPost;
+  shareCount?: number;
+  sharedWith?: string[]; // Array of user IDs who can see this post (only for specific visibility)
 }
 
 export class Post {
   private static collection = "posts";
 
-  static async findAllPublic(limit: number = 50): Promise<IPost[]> {
+  /**
+   * Check if two users are friends
+   */
+  private static async areFriends(userId1: string, userId2: string): Promise<boolean> {
+    try {
+      const friendship = await Friend.findByUsers(userId1, userId2);
+      return !!friendship;
+    } catch (error) {
+      return false;
+    }
+  }
+
+  /**
+   * Helper method to populate shared post data
+   */
+  private static async populateSharedPosts(posts: IPost[]): Promise<IPost[]> {
+    if (!firestore) return posts;
+
+    const postsWithShared = await Promise.all(
+      posts.map(async (post) => {
+        if (post.isShared && post.sharedPostId) {
+          try {
+            const sharedPost = await this.findById(post.sharedPostId);
+            if (sharedPost && !sharedPost.isDeleted) {
+              post.sharedPost = sharedPost;
+            }
+          } catch (error) {
+            console.error(`Failed to load shared post ${post.sharedPostId}:`, error);
+          }
+        }
+        return post;
+      })
+    );
+
+    return postsWithShared;
+  }
+
+  /**
+   * Find all posts accessible by a user (considering visibility settings)
+   * @param limit Maximum number of posts to return
+   * @param userId Optional user ID to check access permissions
+   */
+  static async findAllAccessiblePosts(limit: number = 50, userId?: string): Promise<IPost[]> {
     if (!firestore) {
       throw new Error("Firestore not initialized");
     }
@@ -41,7 +90,7 @@ export class Post {
         return [];
       }
 
-      const posts = snapshot.docs
+      const allPosts = snapshot.docs
         .map((doc) => {
           const data = doc.data();
           const createdAt = data.createdAt
@@ -71,9 +120,56 @@ export class Post {
             tags: data.tags || [],
             visibility: data.visibility || "public",
             isDeleted: data.isDeleted || false,
+            isShared: data.isShared || false,
+            sharedPostId: data.sharedPostId || undefined,
+            shareCount: data.shareCount || 0,
+            sharedWith: data.sharedWith || undefined,
           } as IPost;
         })
-        .filter((post) => post.visibility === "public" && !post.isDeleted)
+        .filter((post) => !post.isDeleted);
+
+      // Filter by visibility asynchronously
+      const accessiblePosts = await Promise.all(
+        allPosts.map(async (post) => {
+          // Public posts - everyone can see
+          if (post.visibility === "public") {
+            return post;
+          }
+
+          // Private posts - only author can see
+          if (post.visibility === "private") {
+            return userId && post.authorId === userId ? post : null;
+          }
+
+          // Specific users - check if userId is in sharedWith array
+          if (post.visibility === "specific") {
+            if (!userId) return null;
+            if (post.authorId === userId) return post; // Author can see own post
+            const canView = post.sharedWith && post.sharedWith.includes(userId);
+            console.log(`🔍 Checking specific post ${post.postId}:`, {
+              userId,
+              authorId: post.authorId,
+              sharedWith: post.sharedWith,
+              canView
+            });
+            return canView ? post : null;
+          }
+
+          // Friends-only posts - check friendship
+          if (post.visibility === "friends") {
+            if (!userId) return null;
+            if (post.authorId === userId) return post; // Author can see own post
+            const areFriends = await this.areFriends(userId, post.authorId);
+            console.log(`🔍 Checking friends-only post ${post.postId}: userId=${userId}, authorId=${post.authorId}, areFriends=${areFriends}`);
+            return areFriends ? post : null;
+          }
+
+          return null;
+        })
+      );
+
+      const posts = accessiblePosts
+        .filter((post): post is IPost => post !== null)
         .sort((a, b) => {
           const aTime =
             a.createdAt instanceof Date
@@ -87,15 +183,24 @@ export class Post {
         })
         .slice(0, limit);
 
-      return posts;
+      // Populate shared post data
+      const postsWithShared = await this.populateSharedPosts(posts);
+      return postsWithShared;
     } catch (error: any) {
       throw error;
     }
   }
 
+  /**
+   * @deprecated Use findAllAccessiblePosts instead
+   */
+  static async findAllPublic(limit: number = 50): Promise<IPost[]> {
+    return this.findAllAccessiblePosts(limit);
+  }
+
   // Variant that can annotate returned posts with whether the given user liked them
   static async findAllPublicWithUser(limit: number = 50, userId?: string): Promise<IPost[]> {
-    const posts = await this.findAllPublic(limit);
+    const posts = await this.findAllAccessiblePosts(limit, userId);
     if (!userId || posts.length === 0) return posts;
 
     try {
@@ -156,7 +261,9 @@ export class Post {
       })
       .slice(0, limit);
 
-    return posts;
+    // Populate shared post data
+    const postsWithShared = await this.populateSharedPosts(posts);
+    return postsWithShared;
   }
 
   static async findFeatured(limit: number = 10): Promise<IPost[]> {
@@ -207,15 +314,16 @@ export class Post {
       width: number;
       height: number;
     }>;
-    visibility: "public" | "friends" | "private";
+    visibility: "public" | "friends" | "private" | "specific";
     tags?: string[];
+    sharedWith?: string[];
   }): Promise<IPost> {
     if (!firestore) {
       throw new Error("Firestore not initialized");
     }
 
     const now = admin.firestore.Timestamp.now();
-    const newPost: Omit<IPost, "postId"> = {
+    const newPost: any = {
       authorId: postData.authorId,
       authorName: postData.authorName,
       authorAvatar: postData.authorAvatar,
@@ -231,6 +339,11 @@ export class Post {
       visibility: postData.visibility,
       isDeleted: false,
     };
+
+    // Add sharedWith array if visibility is specific
+    if (postData.visibility === "specific" && postData.sharedWith) {
+      newPost.sharedWith = postData.sharedWith;
+    }
 
     const docRef = await firestore.collection(this.collection).add(newPost);
 
@@ -785,28 +898,28 @@ export class Post {
   }
   static async findAllPublicPaginated(
     skip: number,
-    limit: number
+    limit: number,
+    userId?: string
   ): Promise<IPost[]> {
     if (!firestore) {
       throw new Error("Firestore not initialized");
     }
 
+    console.log('🔎 findAllPublicPaginated called with:', { skip, limit, userId });
+
     try {
       const postsRef = firestore.collection(this.collection);
-      // Firestore doesn't support skip directly, so we need to fetch more and slice
-      // For better performance with pagination, we should use startAfter with last document
-      // But for now, we'll fetch a reasonable amount and filter/sort in memory
+      // Fetch more posts to account for visibility filtering
       const snapshot = await postsRef
-        .where("visibility", "==", "public")
         .where("isDeleted", "==", false)
-        .limit((skip + limit) * 2) // Fetch more to account for filtering
+        .limit((skip + limit) * 3) // Fetch extra to account for visibility filtering
         .get();
 
       if (snapshot.empty) {
         return [];
       }
 
-      const posts = snapshot.docs
+      const allPosts = snapshot.docs
         .map((doc) => {
           const data = doc.data();
           const createdAt = data.createdAt
@@ -836,9 +949,58 @@ export class Post {
             tags: data.tags || [],
             visibility: data.visibility || "public",
             isDeleted: data.isDeleted || false,
+            isShared: data.isShared || false,
+            sharedPostId: data.sharedPostId || undefined,
+            shareCount: data.shareCount || 0,
+            sharedWith: data.sharedWith || undefined,
           } as IPost;
         })
-        .filter((post) => post.visibility === "public" && !post.isDeleted)
+        .filter((post) => !post.isDeleted);
+
+      console.log('📊 Total posts loaded:', allPosts.length);
+      console.log('📊 Posts by visibility:', {
+        public: allPosts.filter(p => p.visibility === 'public').length,
+        friends: allPosts.filter(p => p.visibility === 'friends').length,
+        specific: allPosts.filter(p => p.visibility === 'specific').length,
+        private: allPosts.filter(p => p.visibility === 'private').length,
+      });
+      console.log('📊 Specific visibility posts:', 
+        allPosts
+          .filter(p => p.visibility === 'specific')
+          .map(p => ({ postId: p.postId, authorId: p.authorId, sharedWith: p.sharedWith }))
+      );
+
+      // Filter by visibility
+      const accessiblePosts = await Promise.all(
+        allPosts.map(async (post) => {
+          if (post.visibility === "public") return post;
+          if (post.visibility === "private") {
+            return userId && post.authorId === userId ? post : null;
+          }
+          if (post.visibility === "specific") {
+            if (!userId) return null;
+            if (post.authorId === userId) return post; // Author can see own post
+            const canView = post.sharedWith && post.sharedWith.includes(userId);
+            console.log(`🔍 Checking specific post ${post.postId}:`, {
+              userId,
+              authorId: post.authorId,
+              sharedWith: post.sharedWith,
+              canView
+            });
+            return canView ? post : null;
+          }
+          if (post.visibility === "friends") {
+            if (!userId) return null;
+            if (post.authorId === userId) return post;
+            const areFriends = await this.areFriends(userId, post.authorId);
+            return areFriends ? post : null;
+          }
+          return null;
+        })
+      );
+
+      const posts = accessiblePosts
+        .filter((post): post is IPost => post !== null)
         .sort((a, b) => {
           const aTime =
             a.createdAt instanceof Date
@@ -852,7 +1014,16 @@ export class Post {
         })
         .slice(skip, skip + limit);
 
-      return posts;
+      console.log('📤 Posts after filter and pagination:', {
+        totalAccessible: accessiblePosts.filter(p => p !== null).length,
+        afterSlice: posts.length,
+        postIds: posts.map(p => p.postId),
+        specificInResult: posts.filter(p => p.visibility === 'specific').map(p => p.postId)
+      });
+
+      // Populate shared post data
+      const postsWithShared = await this.populateSharedPosts(posts);
+      return postsWithShared;
     } catch (error: any) {
       throw error;
     }
@@ -874,5 +1045,103 @@ export class Post {
     } catch (error: any) {
       throw error;
     }
+  }
+
+  /**
+   * Create a shared post (like Facebook share)
+   */
+  static async createSharedPost(
+    sharedPostId: string,
+    authorId: string,
+    authorName: string,
+    authorAvatar: string,
+    caption: string,
+    visibility: "public" | "friends" | "private" | "specific",
+    sharedWith?: string[]
+  ): Promise<IPost> {
+    if (!firestore) {
+      throw new Error("Firestore not initialized");
+    }
+
+    // Check if original post exists
+    const originalPost = await this.findById(sharedPostId);
+    if (!originalPost) {
+      throw new Error("Bài viết gốc không tồn tại");
+    }
+
+    if (originalPost.isDeleted) {
+      throw new Error("Bài viết gốc đã bị xóa");
+    }
+
+    const now = admin.firestore.Timestamp.now();
+    const newSharedPost: any = {
+      authorId,
+      authorName,
+      authorAvatar,
+      caption: caption || `${authorName} đã chia sẻ bài viết`,
+      media: [],
+      createdAt: now,
+      updatedAt: now,
+      likeCount: 0,
+      viewCount: 0,
+      commentCount: 0,
+      promotionLevel: 0,
+      tags: [],
+      visibility,
+      isDeleted: false,
+      isShared: true,
+      sharedPostId,
+      shareCount: 0,
+    };
+
+    // Add sharedWith array if visibility is specific
+    if (visibility === "specific" && sharedWith && sharedWith.length > 0) {
+      newSharedPost.sharedWith = sharedWith;
+      console.log('✅ Added sharedWith to post:', sharedWith);
+    }
+
+    console.log('📝 Creating shared post with data:', {
+      authorId,
+      visibility,
+      sharedWith: newSharedPost.sharedWith,
+      isShared: newSharedPost.isShared,
+      sharedPostId
+    });
+
+    const docRef = await firestore.collection(this.collection).add(newSharedPost);
+
+    // Increment share count on original post
+    await firestore
+      .collection(this.collection)
+      .doc(sharedPostId)
+      .update({
+        shareCount: admin.firestore.FieldValue.increment(1),
+        updatedAt: now,
+      });
+
+    return {
+      postId: docRef.id,
+      ...newSharedPost,
+      createdAt: now.toDate(),
+      updatedAt: now.toDate(),
+      sharedPost: originalPost,
+    };
+  }
+
+  /**
+   * Get post with shared post data populated
+   */
+  static async findByIdWithShared(postId: string): Promise<IPost | null> {
+    const post = await this.findById(postId);
+    if (!post) return null;
+
+    if (post.isShared && post.sharedPostId) {
+      const sharedPost = await this.findById(post.sharedPostId);
+      if (sharedPost) {
+        post.sharedPost = sharedPost;
+      }
+    }
+
+    return post;
   }
 }
