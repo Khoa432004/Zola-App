@@ -1,8 +1,11 @@
 import { Response } from 'express';
 import { AuthRequest } from '../middlewares/auth.middleware';
 import { FriendService } from '../services/friend.service';
+import { ConversationService } from '../services/conversation.service';
+import { IConversation } from '../models/Conversation';
 
 const friendService = new FriendService();
+const conversationService = new ConversationService();
 
 export class FriendController {
   /**
@@ -86,14 +89,25 @@ export class FriendController {
       }
 
       const friendship = await friendService.acceptFriendRequest(requestId, userId);
+      const otherUserId = friendship.users.find((id: string) => id !== userId);
+
+      let createdConversation: IConversation | null = null;
+      if (otherUserId) {
+        try {
+          createdConversation = await conversationService.createPrivateConversation(
+            userId,
+            otherUserId
+          );
+        } catch (convError) {
+          console.error('Failed to create private conversation after accepting friend request:', convError);
+        }
+      }
 
       const io = (global as any).io;
       if (io) {
         const Account = (await import('../models/Account')).Account;
         const FriendRequest = (await import('../models/FriendRequest')).FriendRequest;
-        
-        const otherUserId = friendship.users.find((id: string) => id !== userId);
-        
+
         const [request, otherUser] = await Promise.all([
           FriendRequest.findById(requestId),
           otherUserId ? Account.findById(otherUserId) : Promise.resolve(null)
@@ -119,12 +133,22 @@ export class FriendController {
           io.to(`user:${userId}`).emit('friend_request_accepted', eventData);
           console.log(`📤 Emitted friend_request_accepted to users ${request.from} and ${userId} with requestId ${requestId}`);
         }
+
+        if (createdConversation) {
+          createdConversation.members.forEach(member => {
+            io.to(`user:${member.user_id}`).emit('conversation_created', {
+              conversation: createdConversation,
+            });
+          });
+          console.log(`📤 Emitted conversation_created to users ${createdConversation.members.map(m => m.user_id).join(', ')}`);
+        }
       }
 
       return res.status(200).json({
         success: true,
         message: 'Đã chấp nhận lời mời kết bạn',
         data: friendship,
+        conversation: createdConversation,
       });
     } catch (error: any) {
       return res.status(400).json({
@@ -293,6 +317,12 @@ export class FriendController {
       }
 
       const friends = await friendService.getFriends(userId);
+      
+      console.log('👥 getFriends response:', {
+        userId,
+        friendsCount: friends.length,
+        friends: friends.map(f => ({ id: f.id, name: f.name, email: f.email }))
+      });
 
       return res.status(200).json({
         success: true,

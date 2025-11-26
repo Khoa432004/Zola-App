@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { apiService } from '@/services/api';
 import { useAuth } from '@/hooks/useAuth';
 import { socketService } from '@/services/socket';
+import SharePostModal from './SharePostModal';
 
 interface DisplayPost {
   id: string;
@@ -59,6 +60,7 @@ export default function PostDetailModal({ isOpen, post, onClose }: PostDetailMod
   const [editTexts, setEditTexts] = useState<{ [key: string]: string }>({});
   const [postLikeCount, setPostLikeCount] = useState(post?.likes || 0);
   const [isPostLiked, setIsPostLiked] = useState(post?.isLiked || false);
+  const [showShareModal, setShowShareModal] = useState(false);
   const [totalCommentCount, setTotalCommentCount] = useState(0);
 
   const countAllComments = (commentsList: Comment[]): number => {
@@ -1323,6 +1325,27 @@ export default function PostDetailModal({ isOpen, post, onClose }: PostDetailMod
                 </svg>
                 <span>{postLikeCount} lượt thích</span>
               </button>
+              <button
+                onClick={() => setShowShareModal(true)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  background: 'transparent',
+                  border: 'none',
+                  color: '#6b7280',
+                  cursor: 'pointer',
+                  fontSize: 14,
+                  padding: 0
+                }}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7" />
+                  <polyline points="16 6 12 2 8 6" />
+                  <line x1="12" y1="2" x2="12" y2="15" />
+                </svg>
+                <span>Chia sẻ</span>
+              </button>
               <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
@@ -1330,6 +1353,20 @@ export default function PostDetailModal({ isOpen, post, onClose }: PostDetailMod
                 <span>{totalCommentCount} bình luận</span>
               </div>
             </div>
+
+            <SharePostModal
+              isOpen={showShareModal}
+              postId={post?.id || ''}
+              postTitle={post?.title || ''}
+              postAuthor={post?.author || 'Người dùng'}
+              postContent={post?.description || ''}
+              onClose={() => setShowShareModal(false)}
+              onShared={() => {
+                setShowShareModal(false);
+                // Optionally reload posts or show success message
+              }}
+            />
+
           </div>
 
           {/* Comments Section */}

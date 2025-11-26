@@ -9,8 +9,8 @@ import MyPostsModal from './MyPostsModal';
 import TrashModal from './TrashModal';
 
 interface SidebarProps {
-  activePage?: 'chat' | 'friends' | 'social';
-  onPageChange?: (page: 'chat' | 'friends' | 'social') => void;
+  activePage?: 'chat' | 'friends' | 'social' | 'profile';
+  onPageChange?: (page: 'chat' | 'friends' | 'social' | 'profile') => void;
 }
 
 export default function Sidebar({ activePage = 'chat', onPageChange }: SidebarProps) {
@@ -114,7 +114,7 @@ export default function Sidebar({ activePage = 'chat', onPageChange }: SidebarPr
             alignItems: "center", 
             justifyContent: "center",
             marginBottom: 4,
-            border: "2px solid rgba(255,255,255,0.3)",
+            border: activePage === 'profile' ? "2px solid #ffffff" : "2px solid rgba(255,255,255,0.3)",
             cursor: "pointer",
             transition: "transform 0.2s"
           }}
@@ -145,11 +145,11 @@ export default function Sidebar({ activePage = 'chat', onPageChange }: SidebarPr
             zIndex: 1000,
             border: "1px solid #e5e7eb"
           }}>
-            {/* Profile */}
+            {/* Trang cá nhân */}
             <div
               onClick={() => {
                 setShowUserMenu(false);
-                setShowProfileModal(true);
+                onPageChange?.('profile');
               }}
               style={{
                 padding: "12px 16px",
@@ -166,34 +166,7 @@ export default function Sidebar({ activePage = 'chat', onPageChange }: SidebarPr
                 <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
                 <circle cx="12" cy="7" r="4" />
               </svg>
-              <span style={{ fontSize: 14, color: "#111827" }}>Profile</span>
-            </div>
-
-            {/* Bài đăng của tôi */}
-            <div
-              onClick={() => {
-                setShowUserMenu(false);
-                setShowMyPostsModal(true);
-              }}
-              style={{
-                padding: "12px 16px",
-                display: "flex",
-                alignItems: "center",
-                gap: 12,
-                cursor: "pointer",
-                transition: "background 0.2s"
-              }}
-              onMouseEnter={(e) => (e.currentTarget.style.background = "#f9fafb")}
-              onMouseLeave={(e) => (e.currentTarget.style.background = "#ffffff")}
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2">
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                <polyline points="14 2 14 8 20 8" />
-                <line x1="16" y1="13" x2="8" y2="13" />
-                <line x1="16" y1="17" x2="8" y2="17" />
-                <polyline points="10 9 9 9 8 9" />
-              </svg>
-              <span style={{ fontSize: 14, color: "#111827" }}>Bài đăng của tôi</span>
+              <span style={{ fontSize: 14, color: "#111827" }}>Trang cá nhân</span>
             </div>
 
             <div style={{ height: 1, background: "#e5e7eb", margin: "4px 0" }} />

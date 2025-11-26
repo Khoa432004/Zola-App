@@ -3,7 +3,8 @@ import { Post, IPost } from "../models/Post";
 export class PostService {
   async getPublicPosts(
     page: number = 1,
-    limit: number = 10
+    limit: number = 10,
+    userId?: string
   ): Promise<{
     items: IPost[];
     total: number;
@@ -13,7 +14,7 @@ export class PostService {
       const skip = (page - 1) * limit;
 
       const [items, total] = await Promise.all([
-        Post.findAllPublicPaginated(skip, limit),
+        Post.findAllPublicPaginated(skip, limit, userId),
         Post.countAllPublic(),
       ]);
 
@@ -165,6 +166,30 @@ async toggleLike(
 async checkUserLiked(postId: string, userId: string): Promise<boolean> {
   try {
     return await Post.checkUserLiked(postId, userId);
+  } catch (error) {
+    throw error;
+  }
+}
+
+async sharePost(
+  sharedPostId: string,
+  authorId: string,
+  authorName: string,
+  authorAvatar: string,
+  caption: string,
+  visibility: "public" | "friends" | "private" | "specific",
+  sharedWith?: string[]
+): Promise<IPost> {
+  try {
+    return await Post.createSharedPost(
+      sharedPostId,
+      authorId,
+      authorName,
+      authorAvatar,
+      caption,
+      visibility,
+      sharedWith
+    );
   } catch (error) {
     throw error;
   }

@@ -1,7 +1,7 @@
-import { Router } from 'express';
-import multer from 'multer';
-import { authenticate } from '../middlewares/auth.middleware';
-import { MessageController } from '../controllers/message.controller';
+import { Router } from "express";
+import multer from "multer";
+import { authenticate } from "../middlewares/auth.middleware";
+import { MessageController } from "../controllers/message.controller";
 
 const router = Router();
 const messageController = new MessageController();
@@ -13,10 +13,14 @@ const upload = multer({
     fileSize: 10 * 1024 * 1024, // 10MB limit
   },
   fileFilter: (req, file, cb) => {
-    if (file.mimetype.startsWith('image/') || file.mimetype.startsWith('video/') || file.mimetype.startsWith('audio/')) {
+    if (
+      file.mimetype.startsWith("image/") ||
+      file.mimetype.startsWith("video/") ||
+      file.mimetype.startsWith("audio/")
+    ) {
       cb(null, true);
     } else {
-      cb(new Error('Chỉ chấp nhận file ảnh, video hoặc audio'));
+      cb(new Error("Chỉ chấp nhận file ảnh, video hoặc audio"));
     }
   },
 });
@@ -25,19 +29,43 @@ const upload = multer({
 router.use(authenticate);
 
 // Gửi message (có thể có file upload)
-router.post('/send', upload.single('file'), (req, res) => messageController.sendMessage(req as any, res));
+router.post("/send", upload.single("file"), (req, res) =>
+  messageController.sendMessage(req as any, res)
+);
 
 // Lấy messages của conversation
-router.get('/:conId', (req, res) => messageController.getConversationMessages(req as any, res));
+router.get("/:conId", (req, res) =>
+  messageController.getConversationMessages(req as any, res)
+);
 
 // Đánh dấu message đã xem
-router.post('/:messageId/seen', (req, res) => messageController.markMessageAsSeen(req as any, res));
+router.post("/:messageId/seen", (req, res) =>
+  messageController.markMessageAsSeen(req as any, res)
+);
 
 // Đánh dấu conversation đã xem
-router.post('/conversation/:conId/seen', (req, res) => messageController.markConversationAsSeen(req as any, res));
+router.post("/conversation/:conId/seen", (req, res) =>
+  messageController.markConversationAsSeen(req as any, res)
+);
 
 // Xóa message
-router.delete('/:messageId', (req, res) => messageController.deleteMessage(req as any, res));
+router.delete("/:messageId", (req, res) =>
+  messageController.deleteMessage(req as any, res)
+);
+
+// Toggle reaction cho message
+router.post("/:messageId/reaction", (req, res) =>
+  messageController.toggleReaction(req as any, res)
+);
+
+// Lấy reactions của message
+router.get("/:messageId/reactions", (req, res) =>
+  messageController.getMessageReactions(req as any, res)
+);
+
+// Tìm kiếm messages theo keyword
+router.get("/search/all", (req, res) =>
+  messageController.searchMessages(req as any, res)
+);
 
 export default router;
-
