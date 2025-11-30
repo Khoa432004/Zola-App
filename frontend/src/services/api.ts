@@ -749,6 +749,97 @@ class ApiService {
       throw new Error(error.response?.data?.message || "Tìm kiếm tin nhắn thất bại");
     }
   }
+
+  // ==================== STORY APIs ====================
+
+  /**
+   * Lấy tất cả stories (grouped by author)
+   */
+  async getStories() {
+    try {
+      const response = await this.axiosInstance.get("/stories");
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.message || "Lấy danh sách stories thất bại");
+    }
+  }
+
+  /**
+   * Lấy stories của tôi
+   */
+  async getMyStories(includeExpired: boolean = false) {
+    try {
+      const params = includeExpired ? { includeExpired: "true" } : {};
+      const response = await this.axiosInstance.get("/stories/my", { params });
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.message || "Lấy stories của tôi thất bại");
+    }
+  }
+
+  /**
+   * Lấy story theo ID
+   */
+  async getStoryById(storyId: string) {
+    try {
+      const response = await this.axiosInstance.get(`/stories/${storyId}`);
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.message || "Lấy story thất bại");
+    }
+  }
+
+  /**
+   * Tạo story mới
+   */
+  async createStory(formData: FormData) {
+    try {
+      const response = await this.axiosInstance.post("/stories", formData, {
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
+      });
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.message || "Đăng story thất bại");
+    }
+  }
+
+  /**
+   * Đánh dấu story đã xem
+   */
+  async markStoryAsViewed(storyId: string) {
+    try {
+      const response = await this.axiosInstance.post(`/stories/${storyId}/view`);
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.message || "Đánh dấu story đã xem thất bại");
+    }
+  }
+
+  /**
+   * Xóa story
+   */
+  async deleteStory(storyId: string) {
+    try {
+      const response = await this.axiosInstance.delete(`/stories/${storyId}`);
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.message || "Xóa story thất bại");
+    }
+  }
+
+  /**
+   * Lấy danh sách viewers của story
+   */
+  async getStoryViewers(storyId: string) {
+    try {
+      const response = await this.axiosInstance.get(`/stories/${storyId}/viewers`);
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.message || "Lấy danh sách viewers thất bại");
+    }
+  }
 }
 
 // Export the class
