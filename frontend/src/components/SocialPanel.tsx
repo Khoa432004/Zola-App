@@ -6,7 +6,9 @@ import { useAuth } from '@/hooks/useAuth';
 import { socketService } from '@/services/socket';
 import CreatePostModal from './CreatePostModal';
 import PostDetailModal from './PostDetailModal';
-import SharePostModal from './SharePostModal'; 
+import SharePostModal from './SharePostModal';
+import StoryBar from './StoryBar';
+import CreateStoryModal from './CreateStoryModal'; 
 
 interface Post {
   postId: string;
@@ -102,6 +104,8 @@ export default function SocialPanel() {
   const [showPostDetailModal, setShowPostDetailModal] = useState(false); // State to control the post detail modal visibility
   const [showShareModal, setShowShareModal] = useState(false);
   const [sharingPost, setSharingPost] = useState<DisplayPost | null>(null);
+  const [showCreateStoryModal, setShowCreateStoryModal] = useState(false);
+  const [storyRefreshTrigger, setStoryRefreshTrigger] = useState(0);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [editingPost, setEditingPost] = useState<DisplayPost | null>(null);
   const [activeFilter, setActiveFilter] = useState<FilterType>("newest");
@@ -1198,6 +1202,12 @@ export default function SocialPanel() {
           </div>
         </div>
 
+        {/* Story Bar */}
+        <StoryBar 
+          onCreateStory={() => setShowCreateStoryModal(true)}
+          refreshTrigger={storyRefreshTrigger}
+        />
+
         {/* Posts Feed */}
         <div
           style={{
@@ -1970,6 +1980,16 @@ export default function SocialPanel() {
           setSharingPost(null);
           // Reload posts to show the new shared post
           loadPosts(false);
+        }}
+      />
+      {/* Create Story Modal */}
+      <CreateStoryModal
+        isOpen={showCreateStoryModal}
+        onClose={() => setShowCreateStoryModal(false)}
+        onStoryCreated={() => {
+          setShowCreateStoryModal(false);
+          // Trigger StoryBar reload
+          setStoryRefreshTrigger(prev => prev + 1);
         }}
       />
     </div>

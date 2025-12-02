@@ -13,6 +13,7 @@ import commentRoutes from "./routes/comment.routes";
 import friendRoutes from "./routes/friend.routes";
 import conversationRoutes from "./routes/conversation.routes";
 import messageRoutes from "./routes/message.routes";
+import storyRoutes from "./routes/story.routes";
 import { setupSocketHandlers } from "./socket/socket.handlers";
 
 const app = express();
@@ -67,6 +68,8 @@ app.use("/api/friends", friendRoutes);
 app.use("/api/conversations", conversationRoutes);
 // Message routes
 app.use("/api/messages", messageRoutes);
+// Story routes
+app.use("/api/stories", storyRoutes);
 
 // Setup Socket.IO
 const io = new SocketIOServer(httpServer, {
