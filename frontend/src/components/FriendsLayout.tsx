@@ -4,7 +4,9 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import FriendsPanel from './FriendsPanel';
 import { apiService } from '@/services/api';
 import { socketService } from '@/services/socket';
-import { useAppSelector } from '@/store/hooks';
+import { useAppSelector, useAppDispatch } from '@/store/hooks';
+import { setUserOnline, setUserOffline, selectIsUserOnline } from '@/store/slices/onlineStatusSlice';
+import OnlineStatusIndicator from './OnlineStatusIndicator';
 
 interface Friend {
   id: string;
@@ -28,6 +30,7 @@ interface FriendRequest {
 }
 
 export default function FriendsLayout() {
+  const dispatch = useAppDispatch();
   const [activeView, setActiveView] = useState<'friends' | 'invitations'>('friends');
   const [searchQuery, setSearchQuery] = useState('');
   const [friends, setFriends] = useState<Friend[]>([]);
@@ -183,12 +186,46 @@ export default function FriendsLayout() {
     socketService.on('friend_request_accepted', handleFriendRequestAccepted);
     socketService.on('friend_request_rejected', handleFriendRequestRejected);
 
+    // Listen for online/offline status
+    const handleUserOnline = (data: { userId: string }) => {
+      console.log('🟢 User online event received:', data.userId);
+      console.log('🟢 Current friends list:', friends.map(f => ({ id: f.id, name: f.name })));
+      dispatch(setUserOnline(data.userId));
+      // Log Redux state after dispatch
+      setTimeout(() => {
+        const state = (window as any).__REDUX_STORE__?.getState?.() || {};
+        console.log('🟢 Redux state after setUserOnline:', state.onlineStatus?.onlineUsers);
+      }, 100);
+    };
+
+    const handleUserOffline = (data: { userId: string }) => {
+      console.log('🔴 User offline event received:', data.userId);
+      dispatch(setUserOffline(data.userId));
+    };
+
+    // Listen for initial online friends list
+    const handleOnlineFriendsList = (data: { onlineUserIds: string[] }) => {
+      console.log('📋 Online friends list received:', data.onlineUserIds);
+      console.log('📋 Current friends list:', friends.map(f => ({ id: f.id, name: f.name })));
+      data.onlineUserIds.forEach(userId => {
+        console.log(`📋 Setting user online: ${userId}`);
+        dispatch(setUserOnline(userId));
+      });
+    };
+
+    socketService.on('user_online', handleUserOnline);
+    socketService.on('user_offline', handleUserOffline);
+    socketService.on('online_friends_list', handleOnlineFriendsList);
+
     return () => {
       socketService.off('friend_request_received', handleFriendRequestReceived);
       socketService.off('friend_request_accepted', handleFriendRequestAccepted);
       socketService.off('friend_request_rejected', handleFriendRequestRejected);
+      socketService.off('user_online', handleUserOnline);
+      socketService.off('user_offline', handleUserOffline);
+      socketService.off('online_friends_list', handleOnlineFriendsList);
     };
-  }, [activeView, loadFriends, loadRequests]);
+  }, [activeView, loadFriends, loadRequests, dispatch]);
 
   useEffect(() => {
     loadFriends();
@@ -282,6 +319,66 @@ export default function FriendsLayout() {
     }
     return name.substring(0, 2).toUpperCase();
   }, []);
+
+  // Component to display friend avatar with online status
+  const FriendAvatarWithStatus = ({ friendId, friend }: { friendId: string; friend: Friend }) => {
+    const onlineUsersState = useAppSelector((state) => state.onlineStatus.onlineUsers);
+    const isOnline = !!onlineUsersState[friendId];
+    
+    // Debug log
+    console.log(`[FriendAvatarWithStatus] Friend ${friend.name} (${friendId}): isOnline=${isOnline}`);
+    
+    return (
+      <div style={{ 
+        width: 48, 
+        height: 48, 
+        borderRadius: 24, 
+        overflow: "visible", // Changed from "hidden" to "visible" to allow green dot to show
+        background: friend.avatar && (friend.avatar.startsWith("http") || friend.avatar.startsWith("data:"))
+          ? "transparent"
+          : "linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)", 
+        display: "flex", 
+        alignItems: "center", 
+        justifyContent: "center",
+        flexShrink: 0,
+        position: "relative"
+      }}>
+        <div style={{
+          width: "100%",
+          height: "100%",
+          borderRadius: 24,
+          overflow: "hidden", // Keep overflow hidden on inner div for avatar clipping
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}>
+          {friend.avatar && (friend.avatar.startsWith("http") || friend.avatar.startsWith("data:")) ? (
+            <img
+              src={friend.avatar}
+              alt={friend.name}
+              style={{
+                width: "100%",
+                height: "100%",
+                objectFit: "cover",
+              }}
+              onError={(e) => {
+                e.currentTarget.style.display = "none";
+              }}
+            />
+          ) : (
+            <span style={{ fontSize: 16, color: "#fff", fontWeight: 600 }}>
+              {getAvatarInitials(friend.name)}
+            </span>
+          )}
+        </div>
+        <OnlineStatusIndicator 
+          isOnline={isOnline}
+          size="small"
+          position="bottom-right"
+        />
+      </div>
+    );
+  };
 
   return (
     <>
@@ -437,21 +534,7 @@ export default function FriendsLayout() {
               onMouseEnter={(e) => (e.currentTarget.style.background = "#f9fafb")}
               onMouseLeave={(e) => (e.currentTarget.style.background = "#ffffff")}
             >
-              <div style={{ 
-                width: 48, 
-                height: 48, 
-                borderRadius: 24, 
-                overflow: "hidden", 
-                background: "linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)", 
-                display: "flex", 
-                alignItems: "center", 
-                justifyContent: "center",
-                flexShrink: 0
-              }}>
-                <span style={{ fontSize: 16, color: "#fff", fontWeight: 600 }}>
-                      {friend.avatar || getAvatarInitials(friend.name)}
-                </span>
-              </div>
+              <FriendAvatarWithStatus friendId={friend.id} friend={friend} />
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ 
                   fontSize: 15, 

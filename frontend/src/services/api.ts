@@ -239,6 +239,19 @@ class ApiService {
     }
   }
 
+  async updatePrivacySettings(showOnlineStatus: boolean) {
+    try {
+      const response = await this.axiosInstance.patch("/profile/privacy", {
+        showOnlineStatus,
+      });
+      return response.data;
+    } catch (error: any) {
+      throw new Error(
+        error.response?.data?.message || "Cập nhật cài đặt quyền riêng tư thất bại"
+      );
+    }
+  }
+
   // Posts
   async getPosts(page: number = 1, limit: number = 10) {
     const response = await this.axiosInstance.get("/posts", {

@@ -7,6 +7,7 @@ import { fetchProfileAsync } from '@/store/slices/authSlice';
 import { apiService } from '@/services/api';
 import { MapPin, Calendar, MoreHorizontal } from 'lucide-react';
 import UserProfileModal from './UserProfileModal';
+import PrivacySettingsModal from './PrivacySettingsModal';
 
 // Interfaces
 interface Post {
@@ -56,6 +57,7 @@ interface MediaItem {
 export default function ProfilePanel() {
   const { user } = useAuth();
   const dispatch = useAppDispatch();
+  const [mounted, setMounted] = useState(false);
   const [activeTab, setActiveTab] = useState<'posts' | 'featured' | 'media'>('posts');
   const [posts, setPosts] = useState<Post[]>([]);
   const [mediaItems, setMediaItems] = useState<MediaItem[]>([]);
@@ -63,6 +65,7 @@ export default function ProfilePanel() {
   const [friendsCount, setFriendsCount] = useState(0);
   const [postsCount, setPostsCount] = useState(0);
   const [showProfileModal, setShowProfileModal] = useState(false);
+  const [showPrivacyModal, setShowPrivacyModal] = useState(false);
   const [selectedMedia, setSelectedMedia] = useState<MediaItem | null>(null);
   const [showMediaModal, setShowMediaModal] = useState(false);
   const hasLoadedRef = useRef(false);
@@ -76,10 +79,15 @@ export default function ProfilePanel() {
     return `${month}/${year}`;
   };
 
+  // Set mounted to true after component mounts on client
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   useEffect(() => {
     const loadProfileData = async () => {
-      // Chỉ load một lần khi component mount và có user
-      if (!user || hasLoadedRef.current) return;
+      // Chỉ load một lần khi component mount và có user và đã mounted
+      if (!mounted || !user || hasLoadedRef.current) return;
       
       setIsLoading(true);
       try {
@@ -179,9 +187,10 @@ export default function ProfilePanel() {
     
     loadProfileData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [mounted, user]);
 
-  if (!user) return null;
+  // Prevent hydration mismatch by not rendering until mounted
+  if (!mounted || !user) return null;
 
   return (
     <>
@@ -367,19 +376,22 @@ export default function ProfilePanel() {
               
               {/* Action Buttons */}
               <div className="profile-action-buttons">
-                  <button style={{
-                      background: 'transparent',
-                      border: '1px solid #d1d5db',
-                      borderRadius: '999px',
-                      width: 40,
-                      height: 40,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      color: '#374151',
-                      cursor: 'pointer',
-                      flexShrink: 0
-                  }}>
+                  <button 
+                      onClick={() => setShowPrivacyModal(true)}
+                      style={{
+                          background: 'transparent',
+                          border: '1px solid #d1d5db',
+                          borderRadius: '999px',
+                          width: 40,
+                          height: 40,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          color: '#374151',
+                          cursor: 'pointer',
+                          flexShrink: 0
+                      }}
+                  >
                       <MoreHorizontal size={22} />
                   </button>
                   <button 
@@ -904,6 +916,12 @@ export default function ProfilePanel() {
           </div>
         </div>
       </div>
+
+      {/* Privacy Settings Modal */}
+      <PrivacySettingsModal
+        isOpen={showPrivacyModal}
+        onClose={() => setShowPrivacyModal(false)}
+      />
 
       {/* User Profile Modal */}
       <UserProfileModal
