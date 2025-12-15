@@ -168,7 +168,8 @@ interface Conversation {
   timestamp: string;
   isOnline?: boolean;
   is_group: boolean;
-  members?: Array<{ user_id: string; user_name: string; user_avatar?: string }>;
+  members?: Array<{ user_id: string; user_name: string; user_avatar?: string; last_seen?: Date | string }>;
+  otherUserId?: string;
 }
 
 interface MessageData {
@@ -243,6 +244,7 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
   const [hoveredMessage, setHoveredMessage] = useState<string | null>(null);
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
   const user = useAppSelector((state) => state.auth.user);
+  const onlineUsers = useAppSelector((state) => state.onlineStatus.onlineUsers);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const searchMessageRefs = useRef<Map<number, HTMLDivElement>>(new Map());
@@ -440,8 +442,22 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
       if (isUser) {
         // Current user's message
         senderName = user.name || user.email?.split("@")[0] || "Bạn";
-        senderAvatar =
-          user.avatar || user.name?.charAt(0)?.toUpperCase() || "U";
+        // Use user.avatar if it's a URL, otherwise use initials
+        if (user.avatar && typeof user.avatar === 'string') {
+          const trimmedAvatar = user.avatar.trim();
+          if (trimmedAvatar.length > 0 && 
+              (trimmedAvatar.startsWith("http://") || 
+               trimmedAvatar.startsWith("https://") || 
+               trimmedAvatar.startsWith("http") ||
+               trimmedAvatar.startsWith("data:"))) {
+            senderAvatar = trimmedAvatar;
+          } else {
+            // Not a URL, use initials
+            senderAvatar = user.name?.charAt(0)?.toUpperCase() || "U";
+          }
+        } else {
+          senderAvatar = user.name?.charAt(0)?.toUpperCase() || "U";
+        }
       } else {
         // Other person's message
         // Priority: msg.sender_name > conversation.members > default
@@ -453,11 +469,34 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
           );
           if (sender) {
             senderName = sender.user_name || senderName;
-            senderAvatar =
-              sender.user_avatar ||
-              sender.user_name?.charAt(0)?.toUpperCase() ||
-              "?";
+            // Use user_avatar if it's a URL, otherwise use initials
+            if (sender.user_avatar && typeof sender.user_avatar === 'string') {
+              const trimmedAvatar = sender.user_avatar.trim();
+              if (trimmedAvatar.length > 0 && 
+                  (trimmedAvatar.startsWith("http://") || 
+                   trimmedAvatar.startsWith("https://") || 
+                   trimmedAvatar.startsWith("http") ||
+                   trimmedAvatar.startsWith("data:"))) {
+                senderAvatar = trimmedAvatar;
+                console.log('[ChatPanel] Using avatar URL for sender:', senderName, senderAvatar);
+              } else {
+                // Not a URL, use initials
+                senderAvatar = sender.user_name?.charAt(0)?.toUpperCase() || "?";
+                console.log('[ChatPanel] Using initials for sender:', senderName, 'avatar value:', sender.user_avatar);
+              }
+            } else {
+              senderAvatar = sender.user_name?.charAt(0)?.toUpperCase() || "?";
+              console.log('[ChatPanel] Using initials for sender (no avatar):', senderName);
+            }
+          } else {
+            // Fallback if sender not found in members
+            senderAvatar = senderName?.charAt(0)?.toUpperCase() || "?";
+            console.log('[ChatPanel] Sender not found in members:', msg.sender_id);
           }
+        } else {
+          // Fallback if no members
+          senderAvatar = senderName?.charAt(0)?.toUpperCase() || "?";
+          console.log('[ChatPanel] No members in conversation');
         }
       }
 
@@ -1375,47 +1414,214 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
             padding: "12px 16px",
           }}
         >
-          <div
-            style={{
-              width: 40,
-              height: 40,
-              borderRadius: 20,
-              background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              marginRight: 12,
-            }}
-          >
-            <span style={{ fontSize: 14, color: "#fff", fontWeight: 600 }}>
-              {conversation.avatar}
-            </span>
-          </div>
-          <div style={{ flex: 1 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <strong
-                style={{ fontSize: 15, color: "#111827", fontWeight: 600 }}
+          {(() => {
+            // Get other user info for private chat
+            const otherUserId = !conversation.is_group && conversation.otherUserId
+              ? conversation.otherUserId
+              : null;
+            const isOnline = otherUserId ? !!onlineUsers[otherUserId] : false;
+            
+            // Get avatar from conversation members
+            let avatarUrl: string | undefined;
+            let avatarInitials: string = conversation.avatar;
+            
+            if (!conversation.is_group && conversation.members && user) {
+              const otherMember = conversation.members.find(
+                (m) => m.user_id !== user.id
+              );
+              if (otherMember?.user_avatar) {
+                const trimmedAvatar = otherMember.user_avatar.trim();
+                if (trimmedAvatar.startsWith("http://") || 
+                    trimmedAvatar.startsWith("https://") || 
+                    trimmedAvatar.startsWith("data:")) {
+                  avatarUrl = trimmedAvatar;
+                } else {
+                  avatarInitials = trimmedAvatar;
+                }
+              } else if (otherMember?.user_name) {
+                avatarInitials = otherMember.user_name.charAt(0).toUpperCase();
+              }
+            }
+            
+            const hasImageAvatar = !!avatarUrl;
+            
+            return (
+              <div
+                style={{
+                  width: 40,
+                  height: 40,
+                  borderRadius: 20,
+                  background: hasImageAvatar
+                    ? "transparent"
+                    : "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  marginRight: 12,
+                  overflow: "hidden",
+                  position: "relative",
+                }}
               >
-                {conversation.name}
-              </strong>
-              {conversation.isOnline && (
-                <>
-                  <span
+                {hasImageAvatar ? (
+                  <img
+                    src={avatarUrl}
+                    alt={conversation.name}
                     style={{
-                      width: 8,
-                      height: 8,
-                      borderRadius: 4,
-                      background: "#10b981",
-                      display: "inline-block",
+                      width: "100%",
+                      height: "100%",
+                      objectFit: "cover",
+                    }}
+                    onError={(e) => {
+                      e.currentTarget.style.display = "none";
                     }}
                   />
-                  <span
-                    style={{ fontSize: 13, color: "#10b981", fontWeight: 500 }}
-                  >
-                    Online
+                ) : (
+                  <span style={{ fontSize: 14, color: "#fff", fontWeight: 600 }}>
+                    {avatarInitials}
                   </span>
-                </>
-              )}
+                )}
+                {!conversation.is_group && isOnline && (
+                  <div
+                    style={{
+                      position: "absolute",
+                      bottom: 0,
+                      right: 0,
+                      width: 12,
+                      height: 12,
+                      borderRadius: "50%",
+                      backgroundColor: "#10b981",
+                      border: "2px solid #ffffff",
+                      zIndex: 10,
+                    }}
+                  />
+                )}
+              </div>
+            );
+          })()}
+          <div style={{ flex: 1 }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <strong
+                  style={{ fontSize: 15, color: "#111827", fontWeight: 600 }}
+                >
+                  {conversation.name}
+                </strong>
+              </div>
+              {(() => {
+                // Get other user info for private chat
+                const otherUserId = !conversation.is_group && conversation.otherUserId
+                  ? conversation.otherUserId
+                  : null;
+                const isOnline = otherUserId ? !!onlineUsers[otherUserId] : false;
+                
+                if (conversation.is_group) {
+                  return null; // Don't show status for group chats
+                }
+                
+                // Helper function to format last seen time
+                const formatLastSeen = (lastSeen: Date | string | any | undefined): string => {
+                  if (!lastSeen) return "";
+                  
+                  let lastSeenDate: Date;
+                  
+                  // Handle different types of lastSeen
+                  if (typeof lastSeen === 'string') {
+                    lastSeenDate = new Date(lastSeen);
+                  } else if (lastSeen instanceof Date) {
+                    lastSeenDate = lastSeen;
+                  } else if (lastSeen && typeof lastSeen === 'object') {
+                    // Handle Firestore Timestamp or similar objects
+                    if (lastSeen.toDate && typeof lastSeen.toDate === 'function') {
+                      lastSeenDate = lastSeen.toDate();
+                    } else if (lastSeen.seconds) {
+                      // Firestore Timestamp with seconds
+                      lastSeenDate = new Date(lastSeen.seconds * 1000);
+                    } else if (lastSeen._seconds) {
+                      // Firestore Timestamp with _seconds
+                      lastSeenDate = new Date(lastSeen._seconds * 1000);
+                    } else if (lastSeen.getTime && typeof lastSeen.getTime === 'function') {
+                      lastSeenDate = new Date(lastSeen.getTime());
+                    } else {
+                      // Try to parse as string
+                      lastSeenDate = new Date(String(lastSeen));
+                    }
+                  } else {
+                    // Fallback: try to parse as string
+                    lastSeenDate = new Date(String(lastSeen));
+                  }
+                  
+                  // Validate date
+                  if (isNaN(lastSeenDate.getTime())) {
+                    return "";
+                  }
+                  
+                  const now = new Date();
+                  const diffMs = now.getTime() - lastSeenDate.getTime();
+                  
+                  // Handle negative diff (future dates)
+                  if (diffMs < 0) {
+                    return "Vừa hoạt động";
+                  }
+                  
+                  const diffMins = Math.floor(diffMs / 60000);
+                  const diffHours = Math.floor(diffMs / 3600000);
+                  const diffDays = Math.floor(diffMs / 86400000);
+                  
+                  if (diffMins < 1) {
+                    return "Vừa hoạt động";
+                  } else if (diffMins < 60) {
+                    return `Hoạt động ${diffMins} phút trước`;
+                  } else if (diffHours < 24) {
+                    return `Hoạt động ${diffHours} giờ trước`;
+                  } else if (diffDays < 7) {
+                    return `Hoạt động ${diffDays} ngày trước`;
+                  } else {
+                    return lastSeenDate.toLocaleDateString("vi-VN", {
+                      day: "2-digit",
+                      month: "2-digit",
+                    });
+                  }
+                };
+                
+                if (isOnline) {
+                  return (
+                    <span
+                      style={{ fontSize: 12, color: "#10b981", fontWeight: 500 }}
+                    >
+                      Đang hoạt động
+                    </span>
+                  );
+                } else {
+                  // Get last_seen from conversation members
+                  let lastSeen: Date | string | undefined;
+                  if (conversation.members && user) {
+                    const otherMember = conversation.members.find(
+                      (m) => m.user_id !== user.id
+                    );
+                    lastSeen = otherMember?.last_seen;
+                  }
+                  
+                  const lastSeenText = formatLastSeen(lastSeen);
+                  
+                  if (lastSeenText) {
+                    return (
+                      <span
+                        style={{ fontSize: 12, color: "#9ca3af", fontWeight: 500 }}
+                      >
+                        {lastSeenText}
+                      </span>
+                    );
+                  } else {
+                    return (
+                      <span
+                        style={{ fontSize: 12, color: "#9ca3af", fontWeight: 500 }}
+                      >
+                        Offline
+                      </span>
+                    );
+                  }
+                }
+              })()}
             </div>
           </div>
           <button
@@ -2292,10 +2498,16 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
                         width: 32,
                         height: 32,
                         borderRadius: 16,
-                        background:
-                          msg.senderAvatar && msg.senderAvatar.length === 1
-                            ? "linear-gradient(135deg, #667eea 0%, #764ba2 100%)"
-                            : "transparent",
+                        background: (() => {
+                          const isImageUrl = msg.senderAvatar && 
+                            typeof msg.senderAvatar === 'string' &&
+                            (msg.senderAvatar.startsWith("http://") || 
+                             msg.senderAvatar.startsWith("https://") || 
+                             msg.senderAvatar.startsWith("data:"));
+                          return isImageUrl 
+                            ? "transparent"
+                            : "linear-gradient(135deg, #667eea 0%, #764ba2 100%)";
+                        })(),
                         display: "flex",
                         alignItems: "center",
                         justifyContent: "center",
@@ -2303,36 +2515,86 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
                         overflow: "hidden",
                       }}
                     >
-                      {msg.senderAvatar && msg.senderAvatar.length === 1 ? (
-                        <span
-                          style={{
-                            fontSize: 14,
-                            color: "#fff",
-                            fontWeight: 600,
-                          }}
-                        >
-                          {msg.senderAvatar}
-                        </span>
-                      ) : msg.senderAvatar ? (
-                        <img
-                          src={msg.senderAvatar}
-                          alt={msg.senderName || ""}
-                          style={{
-                            width: "100%",
-                            height: "100%",
-                            objectFit: "cover",
-                          }}
-                          onError={(e) => {
-                            const target = e.target as HTMLImageElement;
-                            target.style.display = "none";
-                            if (target.parentElement) {
-                              target.parentElement.innerHTML = `<span style="font-size: 14px; color: #fff; font-weight: 600;">${
-                                msg.senderName?.charAt(0)?.toUpperCase() || "?"
-                              }</span>`;
-                            }
-                          }}
-                        />
-                      ) : null}
+                      {(() => {
+                        if (!msg.senderAvatar || typeof msg.senderAvatar !== 'string') {
+                          // Fallback to sender name initial if no avatar
+                          return (
+                            <span
+                              style={{
+                                fontSize: 14,
+                                color: "#fff",
+                                fontWeight: 600,
+                              }}
+                            >
+                              {msg.senderName?.charAt(0)?.toUpperCase() || "?"}
+                            </span>
+                          );
+                        }
+                        
+                        // Trim and check if senderAvatar is a valid image URL
+                        const trimmedAvatar = msg.senderAvatar.trim();
+                        const isImageUrl = trimmedAvatar.length > 0 && (
+                          trimmedAvatar.startsWith("http://") || 
+                          trimmedAvatar.startsWith("https://") || 
+                          trimmedAvatar.startsWith("http") || // Fallback for URLs without //
+                          trimmedAvatar.startsWith("data:image") ||
+                          trimmedAvatar.startsWith("data:")
+                        );
+                        
+                        // Debug log
+                        console.log('[ChatPanel Avatar Render]', {
+                          senderName: msg.senderName,
+                          originalAvatar: msg.senderAvatar,
+                          trimmedAvatar,
+                          isImageUrl,
+                          avatarLength: trimmedAvatar.length
+                        });
+                        
+                        if (isImageUrl) {
+                          // Always render img tag for URLs, never show URL as text
+                          return (
+                            <img
+                              src={trimmedAvatar}
+                              alt={msg.senderName || ""}
+                              style={{
+                                width: "100%",
+                                height: "100%",
+                                objectFit: "cover",
+                              }}
+                              onError={(e) => {
+                                console.error('[ChatPanel Avatar Error] Failed to load image:', trimmedAvatar);
+                                const target = e.target as HTMLImageElement;
+                                target.style.display = "none";
+                                if (target.parentElement) {
+                                  target.parentElement.innerHTML = `<span style="font-size: 14px; color: #fff; font-weight: 600;">${
+                                    msg.senderName?.charAt(0)?.toUpperCase() || "?"
+                                  }</span>`;
+                                }
+                              }}
+                              onLoad={() => {
+                                console.log('[ChatPanel Avatar] Image loaded successfully:', trimmedAvatar);
+                              }}
+                            />
+                          );
+                        } else {
+                          // Show initials if senderAvatar exists but is not a URL (should be 1-2 characters)
+                          const initials = trimmedAvatar.length <= 2 
+                            ? trimmedAvatar 
+                            : msg.senderName?.charAt(0)?.toUpperCase() || "?";
+                          
+                          return (
+                            <span
+                              style={{
+                                fontSize: 14,
+                                color: "#fff",
+                                fontWeight: 600,
+                              }}
+                            >
+                              {initials}
+                            </span>
+                          );
+                        }
+                      })()}
                     </div>
                   )}
                   <div

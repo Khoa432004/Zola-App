@@ -21,6 +21,8 @@ export interface IAccount {
   otpAttempts?: number
   otpSendAttempts?: number
   otpLastSendTime?: Date
+  showOnlineStatus?: boolean; // Mặc định true, user có thể tắt
+  lastSeen?: Date; // Thời gian online cuối cùng
   createdAt: Date;
   updatedAt: Date;
 }
@@ -52,6 +54,7 @@ export class Account {
       updatedAt: doc.data().updatedAt?.toDate() || new Date(),
       otpExpiry: data.otpExpiry?.toDate() || undefined,
       otpLastSendTime: data.otpLastSendTime?.toDate() || undefined,
+      lastSeen: data.lastSeen?.toDate() || undefined,
     } as IAccount;
   }
 
@@ -71,12 +74,14 @@ export class Account {
     }
 
     const doc = snapshot.docs[0];
+    const data = doc.data();
     return {
       id: doc.id,
       ...doc.data(),
       createdAt: doc.data().createdAt?.toDate() || new Date(),
       updatedAt: doc.data().updatedAt?.toDate() || new Date(),
       otpLastSendTime: doc.data().otpLastSendTime?.toDate() || undefined,
+      lastSeen: data.lastSeen?.toDate() || undefined,
     } as IAccount;
   }
 
@@ -119,12 +124,14 @@ export class Account {
         const emailSnapshot = await accountsRef.where('email', '==', email.toLowerCase()).limit(1).get();
         if (!emailSnapshot.empty) {
           const doc = emailSnapshot.docs[0];
+          const data = doc.data();
           return {
             id: doc.id,
             ...doc.data(),
             createdAt: doc.data().createdAt?.toDate() || new Date(),
             updatedAt: doc.data().updatedAt?.toDate() || new Date(),
             otpLastSendTime: doc.data()?.otpLastSendTime?.toDate() || undefined,
+            lastSeen: data?.lastSeen?.toDate() || undefined,
           } as IAccount;
         }
       } catch (emailError: any) {
@@ -141,12 +148,14 @@ export class Account {
         const googleSnapshot = await accountsRef.where('googleId', '==', googleId).limit(1).get();
         if (!googleSnapshot.empty) {
           const doc = googleSnapshot.docs[0];
+          const data = doc.data();
           return {
             id: doc.id,
             ...doc.data(),
             createdAt: doc.data().createdAt?.toDate() || new Date(),
             updatedAt: doc.data().updatedAt?.toDate() || new Date(),
             otpLastSendTime: doc.data()?.otpLastSendTime?.toDate() || undefined,
+            lastSeen: data?.lastSeen?.toDate() || undefined,
           } as IAccount;
         }
       } catch (googleError: any) {
@@ -188,6 +197,7 @@ export class Account {
 
     const docRef = await firestore.collection(this.collection).add(accountToCreate);
     const doc = await docRef.get();
+    const data = doc.data();
 
     return {
       id: doc.id,
@@ -195,6 +205,7 @@ export class Account {
       createdAt: doc.data()?.createdAt?.toDate() || new Date(),
       updatedAt: doc.data()?.updatedAt?.toDate() || new Date(),
       otpLastSendTime: doc.data()?.otpLastSendTime?.toDate() || undefined,
+      lastSeen: data?.lastSeen?.toDate() || undefined,
     } as IAccount;
   }
 
@@ -229,15 +240,22 @@ export class Account {
       updateData.email = updates.email.toLowerCase();
     }
 
+    // Xử lý Date cho lastSeen
+    if (updates.lastSeen instanceof Date) {
+      updateData.lastSeen = admin.firestore.Timestamp.fromDate(updates.lastSeen);
+    }
+
     await firestore.collection(this.collection).doc(id).update(updateData);
     
     const updatedDoc = await firestore.collection(this.collection).doc(id).get();
+    const data = updatedDoc.data();
     return {
       id: updatedDoc.id,
       ...updatedDoc.data(),
       createdAt: updatedDoc.data()?.createdAt?.toDate() || new Date(),
       updatedAt: updatedDoc.data()?.updatedAt?.toDate() || new Date(),
       otpLastSendTime: updatedDoc.data()?.otpLastSendTime?.toDate() || undefined,
+      lastSeen: data?.lastSeen?.toDate() || undefined,
     } as IAccount;
   }
 

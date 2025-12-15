@@ -7,6 +7,8 @@ import admin from 'firebase-admin';
 export interface IConversationMember {
   user_id: string;
   user_name: string;
+  user_avatar?: string;
+  last_seen?: Date;
 }
 
 /**

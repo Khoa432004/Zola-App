@@ -106,7 +106,35 @@ export class ConversationService {
    */
   async getUserConversations(userId: string): Promise<IConversation[]> {
     try {
-      return await Conversation.findByUserId(userId);
+      const conversations = await Conversation.findByUserId(userId);
+      
+      // Populate user_avatar và last_seen cho tất cả members
+      const conversationsWithAvatars = await Promise.all(
+        conversations.map(async (conv) => {
+          const membersWithAvatars = await Promise.all(
+            conv.members.map(async (member) => {
+              try {
+                const account = await Account.findById(member.user_id);
+                return {
+                  ...member,
+                  user_avatar: account?.avatar || undefined,
+                  last_seen: account?.lastSeen || undefined,
+                };
+              } catch (error) {
+                // Nếu không tìm thấy account, giữ nguyên member không có avatar
+                return member;
+              }
+            })
+          );
+          
+          return {
+            ...conv,
+            members: membersWithAvatars,
+          };
+        })
+      );
+      
+      return conversationsWithAvatars;
     } catch (error: any) {
       throw error;
     }
@@ -119,13 +147,36 @@ export class ConversationService {
     try {
       // Thử tìm bằng id trước
       let conversation = await Conversation.findById(conversationId);
-      if (conversation) {
-        return conversation;
+      if (!conversation) {
+        // Nếu không tìm thấy, thử tìm bằng con_id
+        conversation = await Conversation.findByConId(conversationId);
       }
-
-      // Nếu không tìm thấy, thử tìm bằng con_id
-      conversation = await Conversation.findByConId(conversationId);
-      return conversation;
+      
+      if (!conversation) {
+        return null;
+      }
+      
+      // Populate user_avatar và last_seen cho tất cả members
+      const membersWithAvatars = await Promise.all(
+        conversation.members.map(async (member) => {
+          try {
+            const account = await Account.findById(member.user_id);
+            return {
+              ...member,
+              user_avatar: account?.avatar || undefined,
+              last_seen: account?.lastSeen || undefined,
+            };
+          } catch (error) {
+            // Nếu không tìm thấy account, giữ nguyên member không có avatar
+            return member;
+          }
+        })
+      );
+      
+      return {
+        ...conversation,
+        members: membersWithAvatars,
+      };
     } catch (error: any) {
       throw error;
     }

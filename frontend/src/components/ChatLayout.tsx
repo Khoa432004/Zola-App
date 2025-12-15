@@ -3,11 +3,13 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useAppSelector } from "@/store/hooks";
+import { useAppSelector, useAppDispatch } from "@/store/hooks";
+import { setUserOnline, setUserOffline } from "@/store/slices/onlineStatusSlice";
 import ChatPanel from "./ChatPanel";
 import CreateConversationModal from "./CreateConversationModal";
 import { apiService } from "@/services/api";
 import { socketService } from "@/services/socket";
+import OnlineStatusIndicator from "./OnlineStatusIndicator";
 
 interface ConversationData {
   id: string;
@@ -23,12 +25,13 @@ interface Conversation {
   id: string;
   con_id: string;
   name: string;
-  avatar: string;
+  avatar: string; // Can be avatar URL or initials character
   lastMessage: string;
   timestamp: string;
   isOnline?: boolean;
   is_group: boolean;
-  members?: Array<{ user_id: string; user_name: string; user_avatar?: string }>;
+  members?: Array<{ user_id: string; user_name: string; user_avatar?: string; last_seen?: Date | string }>;
+  otherUserId?: string; // For private chats, store the other user's ID for online status
 }
 
 interface Friend {
@@ -38,8 +41,94 @@ interface Friend {
   avatar?: string;
 }
 
+// Component to display friend avatar with online status in chat
+function FriendAvatarWithOnlineStatus({ 
+  friendId, 
+  friend,
+  size = 36 
+}: { 
+  friendId: string; 
+  friend: Friend;
+  size?: number;
+}) {
+  const isOnline = useAppSelector((state) => !!state.onlineStatus.onlineUsers[friendId]);
+  
+  // Check if avatar is a valid image URL/data URL
+  const hasImageAvatar = friend.avatar && 
+    (friend.avatar.startsWith("http") || friend.avatar.startsWith("data:"));
+  
+  // Get initials for display
+  const getInitials = (name: string) => {
+    if (!name) return "B";
+    const parts = name.split(" ");
+    if (parts.length >= 2) {
+      return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+    }
+    return name.substring(0, 2).toUpperCase();
+  };
+  
+  const borderRadius = size / 2;
+  const fontSize = size <= 36 ? 14 : 16;
+  
+  return (
+    <div
+      style={{
+        width: size,
+        height: size,
+        borderRadius: borderRadius,
+        background: hasImageAvatar
+          ? "transparent"
+          : "linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        color: "#fff",
+        fontWeight: 600,
+        flexShrink: 0,
+        overflow: "visible", // Changed from "hidden" to "visible" to allow green dot to show
+        position: "relative",
+      }}
+    >
+      <div style={{
+        width: "100%",
+        height: "100%",
+        borderRadius: borderRadius,
+        overflow: "hidden", // Keep overflow hidden on inner div for avatar clipping
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+      }}>
+        {hasImageAvatar ? (
+          <img
+            src={friend.avatar}
+            alt={friend.name}
+            style={{
+              width: "100%",
+              height: "100%",
+              objectFit: "cover",
+            }}
+            onError={(e) => {
+              e.currentTarget.style.display = "none";
+            }}
+          />
+        ) : (
+          <span style={{ fontSize: fontSize, color: "#fff", fontWeight: 600 }}>
+            {getInitials(friend.name || "B")}
+          </span>
+        )}
+      </div>
+      <OnlineStatusIndicator 
+        isOnline={isOnline}
+        size={size <= 36 ? "small" : "medium"}
+        position="bottom-right"
+      />
+    </div>
+  );
+}
+
 export default function ChatLayout() {
   const router = useRouter();
+  const dispatch = useAppDispatch();
   const [selectedConversation, setSelectedConversation] =
     useState<Conversation | null>(null);
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -163,7 +252,8 @@ export default function ChatLayout() {
           const otherMember = conv.members.find((m) => m.user_id !== user.id);
           if (otherMember) {
             name = otherMember.user_name;
-            avatar = otherMember.user_name?.charAt(0)?.toUpperCase() || "?";
+            // Use user_avatar if available, otherwise fallback to initials
+            avatar = otherMember.user_avatar || otherMember.user_name?.charAt(0)?.toUpperCase() || "?";
           }
         }
 
@@ -202,6 +292,13 @@ export default function ChatLayout() {
           });
         }
 
+        // Get other user ID for private chats (for online status)
+        let otherUserId: string | undefined;
+        if (!conv.is_group) {
+          const otherMember = conv.members.find((m) => m.user_id !== user.id);
+          otherUserId = otherMember?.user_id;
+        }
+
         return {
           id: conv.con_id || conv.id,
           con_id: conv.con_id || conv.id,
@@ -211,6 +308,7 @@ export default function ChatLayout() {
           timestamp,
           is_group: conv.is_group,
           members: conv.members,
+          otherUserId,
         };
       });
     },
@@ -433,11 +531,37 @@ export default function ChatLayout() {
     socketService.on("conversation_updated", handleConversationUpdate);
     socketService.on("conversation_created", handleConversationCreated);
 
+    // Listen for online/offline status
+    const handleUserOnline = (data: { userId: string }) => {
+      console.log('🟢 User online event received:', data.userId);
+      dispatch(setUserOnline(data.userId));
+    };
+
+    const handleUserOffline = (data: { userId: string }) => {
+      console.log('🔴 User offline event received:', data.userId);
+      dispatch(setUserOffline(data.userId));
+    };
+
+    // Listen for initial online friends list
+    const handleOnlineFriendsList = (data: { onlineUserIds: string[] }) => {
+      console.log('📋 Online friends list received:', data.onlineUserIds);
+      data.onlineUserIds.forEach(userId => {
+        dispatch(setUserOnline(userId));
+      });
+    };
+
+    socketService.on("user_online", handleUserOnline);
+    socketService.on("user_offline", handleUserOffline);
+    socketService.on("online_friends_list", handleOnlineFriendsList);
+
     return () => {
       socketService.off("conversation_updated", handleConversationUpdate);
       socketService.off("conversation_created", handleConversationCreated);
+      socketService.off("user_online", handleUserOnline);
+      socketService.off("user_offline", handleUserOffline);
+      socketService.off("online_friends_list", handleOnlineFriendsList);
     };
-  }, [mounted, user, loadConversations]);
+  }, [mounted, user, loadConversations, dispatch]);
 
   return (
     <>
@@ -851,42 +975,7 @@ export default function ChatLayout() {
                           border: "1px solid #fde68a",
                         }}
                       >
-                        <div
-                          style={{
-                            width: 36,
-                            height: 36,
-                            borderRadius: 18,
-                            background: friend.avatar
-                              ? "transparent"
-                              : "linear-gradient(135deg, #f97316, #fb923c)",
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            color: "#fff",
-                            fontWeight: 600,
-                            flexShrink: 0,
-                            overflow: "hidden",
-                          }}
-                        >
-                          {friend.avatar &&
-                          (friend.avatar.startsWith("http") ||
-                            friend.avatar.startsWith("data:")) ? (
-                            <img
-                              src={friend.avatar}
-                              alt={friend.name}
-                              style={{
-                                width: "100%",
-                                height: "100%",
-                                objectFit: "cover",
-                              }}
-                              onError={(e) => {
-                                e.currentTarget.style.display = "none";
-                              }}
-                            />
-                          ) : (
-                            (friend.name || "B").substring(0, 2).toUpperCase()
-                          )}
-                        </div>
+                        <FriendAvatarWithOnlineStatus friendId={friend.id} friend={friend} />
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div
                             style={{
@@ -1012,26 +1101,43 @@ export default function ChatLayout() {
                       }
                     }}
                   >
-                    <div
-                      style={{
-                        width: 48,
-                        height: 48,
-                        borderRadius: 24,
-                        overflow: "hidden",
-                        background:
-                          "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        flexShrink: 0,
-                      }}
-                    >
-                      <span
-                        style={{ fontSize: 16, color: "#fff", fontWeight: 600 }}
+                    {conv.is_group ? (
+                      // Group chat: show initials
+                      <div
+                        style={{
+                          width: 48,
+                          height: 48,
+                          borderRadius: 24,
+                          overflow: "hidden",
+                          background:
+                            "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          flexShrink: 0,
+                        }}
                       >
-                        {conv.avatar}
-                      </span>
-                    </div>
+                        <span
+                          style={{ fontSize: 16, color: "#fff", fontWeight: 600 }}
+                        >
+                          {conv.avatar}
+                        </span>
+                      </div>
+                    ) : (
+                      // Private chat: use FriendAvatarWithOnlineStatus component
+                      <FriendAvatarWithOnlineStatus
+                        friendId={conv.otherUserId || ""}
+                        friend={{
+                          id: conv.otherUserId || "",
+                          name: conv.name,
+                          email: "",
+                          avatar: conv.avatar && (conv.avatar.startsWith("http") || conv.avatar.startsWith("data:"))
+                            ? conv.avatar
+                            : undefined,
+                        }}
+                        size={48}
+                      />
+                    )}
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div
                         style={{

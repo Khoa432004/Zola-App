@@ -23,6 +23,7 @@ export class ProfileController {
           phone: acc.phone,
           address: acc.address,
           bio: acc.bio,
+          showOnlineStatus: acc.showOnlineStatus ?? true,
           createdAt: acc.createdAt,
         },
       });
@@ -108,6 +109,28 @@ export class ProfileController {
         success: false, 
         message: e.message || "Không thể cập nhật ảnh đại diện" 
       });
+    }
+  }
+
+  async updatePrivacySettings(req: AuthRequest, res: Response) {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ success: false, message: "Unauthorized" });
+      }
+      const { showOnlineStatus } = req.body as { showOnlineStatus?: boolean };
+      
+      const updated = await Account.update(req.user.userId, { showOnlineStatus });
+      
+      return res.json({
+        success: true,
+        data: {
+          id: updated.id,
+          showOnlineStatus: updated.showOnlineStatus ?? true,
+        },
+        message: "Cập nhật cài đặt quyền riêng tư thành công",
+      });
+    } catch (e: any) {
+      return res.status(400).json({ success: false, message: e.message || "Cập nhật thất bại" });
     }
   }
 }

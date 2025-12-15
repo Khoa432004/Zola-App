@@ -5,6 +5,7 @@ import { ConversationService } from '../services/conversation.service';
 import { FriendService } from '../services/friend.service';
 import { Post } from '../models/Post';
 import { Comment } from '../models/Comment';
+import { Account } from '../models/Account';
 
 const messageService = new MessageService();
 const conversationService = new ConversationService();
@@ -53,6 +54,70 @@ interface SocketUser {
 // Store connected users
 const connectedUsers = new Map<string, string>(); // userId -> socketId
 
+/**
+ * Send list of online friends to a user
+ */
+async function sendOnlineFriendsList(io: SocketIOServer, socket: any, userId: string) {
+  try {
+    // Get user's friends
+    const friendService = new FriendService();
+    const friends = await friendService.getFriends(userId);
+
+    // Get list of online friend IDs (friends that are in connectedUsers)
+    const onlineFriendIds: string[] = [];
+    
+    for (const friend of friends) {
+      if (friend && friend.id && connectedUsers.has(friend.id)) {
+        // Check if friend has enabled showing online status
+        const friendAccount = await Account.findById(friend.id);
+        if (friendAccount && friendAccount.showOnlineStatus !== false) {
+          onlineFriendIds.push(friend.id);
+        }
+      }
+    }
+
+    // Emit online friends list to the user
+    socket.emit('online_friends_list', {
+      onlineUserIds: onlineFriendIds,
+    });
+    
+    console.log(`📤 Sent online friends list to user ${userId}:`, onlineFriendIds);
+  } catch (error) {
+    console.error('Error sending online friends list:', error);
+  }
+}
+
+/**
+ * Emit user online/offline status to friends
+ */
+async function emitUserOnlineStatus(io: SocketIOServer, userId: string, isOnline: boolean) {
+  try {
+    // Get user account to check privacy settings
+    const account = await Account.findById(userId);
+    if (!account) return;
+
+    // If user has disabled showing online status, don't emit
+    if (account.showOnlineStatus === false) {
+      return;
+    }
+
+    // Get user's friends
+    const friendService = new FriendService();
+    const friends = await friendService.getFriends(userId);
+
+    // Emit to all friends
+    friends.forEach((friend) => {
+      if (friend && friend.id) {
+        io.to(`user:${friend.id}`).emit(isOnline ? 'user_online' : 'user_offline', {
+          userId,
+        });
+      }
+    });
+  } catch (error) {
+    console.error('Error emitting user online status:', error);
+  }
+}
+
 export function setupSocketHandlers(io: SocketIOServer) {
   // Authentication middleware for socket
   io.use(async (socket, next) => {
@@ -85,6 +150,12 @@ export function setupSocketHandlers(io: SocketIOServer) {
 
     // Join user's personal room
     socket.join(`user:${userId}`);
+
+    // Emit user online event to friends
+    emitUserOnlineStatus(io, userId, true);
+
+    // Send list of online friends to the newly connected user
+    sendOnlineFriendsList(io, socket, userId);
 
     // ========== CHAT MESSAGES ==========
     
@@ -246,9 +317,17 @@ export function setupSocketHandlers(io: SocketIOServer) {
 
     // ========== DISCONNECT ==========
     
-    socket.on('disconnect', () => {
+    socket.on('disconnect', async () => {
       connectedUsers.delete(userId);
       console.log(`❌ User ${userId} disconnected (Socket ID: ${socket.id})`);
+      
+      // Update lastSeen and emit offline status
+      try {
+        await Account.update(userId, { lastSeen: new Date() });
+        emitUserOnlineStatus(io, userId, false);
+      } catch (error) {
+        console.error('Error updating lastSeen:', error);
+      }
     });
   });
 
