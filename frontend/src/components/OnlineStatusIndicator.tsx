@@ -17,9 +17,9 @@ export default function OnlineStatusIndicator({
   if (!isOnline) return null;
 
   const sizeMap = {
-    small: 16, // Doubled from 8 to 16
-    medium: 24, // Doubled from 12 to 24
-    large: 32, // Doubled from 16 to 32
+    small: 9, // Reduced by 30% from 13
+    medium: 13, // Reduced by 30% from 19
+    large: 18, // Reduced by 30% from 26
   };
 
   const positionMap = {

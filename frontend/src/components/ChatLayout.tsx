@@ -25,12 +25,13 @@ interface Conversation {
   id: string;
   con_id: string;
   name: string;
-  avatar: string;
+  avatar: string; // Can be avatar URL or initials character
   lastMessage: string;
   timestamp: string;
   isOnline?: boolean;
   is_group: boolean;
-  members?: Array<{ user_id: string; user_name: string; user_avatar?: string }>;
+  members?: Array<{ user_id: string; user_name: string; user_avatar?: string; last_seen?: Date | string }>;
+  otherUserId?: string; // For private chats, store the other user's ID for online status
 }
 
 interface Friend {
@@ -41,7 +42,15 @@ interface Friend {
 }
 
 // Component to display friend avatar with online status in chat
-function FriendAvatarWithOnlineStatus({ friendId, friend }: { friendId: string; friend: Friend }) {
+function FriendAvatarWithOnlineStatus({ 
+  friendId, 
+  friend,
+  size = 36 
+}: { 
+  friendId: string; 
+  friend: Friend;
+  size?: number;
+}) {
   const isOnline = useAppSelector((state) => !!state.onlineStatus.onlineUsers[friendId]);
   
   // Check if avatar is a valid image URL/data URL
@@ -58,15 +67,18 @@ function FriendAvatarWithOnlineStatus({ friendId, friend }: { friendId: string; 
     return name.substring(0, 2).toUpperCase();
   };
   
+  const borderRadius = size / 2;
+  const fontSize = size <= 36 ? 14 : 16;
+  
   return (
     <div
       style={{
-        width: 36,
-        height: 36,
-        borderRadius: 18,
+        width: size,
+        height: size,
+        borderRadius: borderRadius,
         background: hasImageAvatar
           ? "transparent"
-          : "linear-gradient(135deg, #f97316, #fb923c)",
+          : "linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
@@ -80,7 +92,7 @@ function FriendAvatarWithOnlineStatus({ friendId, friend }: { friendId: string; 
       <div style={{
         width: "100%",
         height: "100%",
-        borderRadius: 18,
+        borderRadius: borderRadius,
         overflow: "hidden", // Keep overflow hidden on inner div for avatar clipping
         display: "flex",
         alignItems: "center",
@@ -100,14 +112,14 @@ function FriendAvatarWithOnlineStatus({ friendId, friend }: { friendId: string; 
             }}
           />
         ) : (
-          <span style={{ fontSize: 14, color: "#fff", fontWeight: 600 }}>
+          <span style={{ fontSize: fontSize, color: "#fff", fontWeight: 600 }}>
             {getInitials(friend.name || "B")}
           </span>
         )}
       </div>
       <OnlineStatusIndicator 
         isOnline={isOnline}
-        size="small"
+        size={size <= 36 ? "small" : "medium"}
         position="bottom-right"
       />
     </div>
@@ -240,7 +252,8 @@ export default function ChatLayout() {
           const otherMember = conv.members.find((m) => m.user_id !== user.id);
           if (otherMember) {
             name = otherMember.user_name;
-            avatar = otherMember.user_name?.charAt(0)?.toUpperCase() || "?";
+            // Use user_avatar if available, otherwise fallback to initials
+            avatar = otherMember.user_avatar || otherMember.user_name?.charAt(0)?.toUpperCase() || "?";
           }
         }
 
@@ -279,6 +292,13 @@ export default function ChatLayout() {
           });
         }
 
+        // Get other user ID for private chats (for online status)
+        let otherUserId: string | undefined;
+        if (!conv.is_group) {
+          const otherMember = conv.members.find((m) => m.user_id !== user.id);
+          otherUserId = otherMember?.user_id;
+        }
+
         return {
           id: conv.con_id || conv.id,
           con_id: conv.con_id || conv.id,
@@ -288,6 +308,7 @@ export default function ChatLayout() {
           timestamp,
           is_group: conv.is_group,
           members: conv.members,
+          otherUserId,
         };
       });
     },
@@ -1080,26 +1101,43 @@ export default function ChatLayout() {
                       }
                     }}
                   >
-                    <div
-                      style={{
-                        width: 48,
-                        height: 48,
-                        borderRadius: 24,
-                        overflow: "hidden",
-                        background:
-                          "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        flexShrink: 0,
-                      }}
-                    >
-                      <span
-                        style={{ fontSize: 16, color: "#fff", fontWeight: 600 }}
+                    {conv.is_group ? (
+                      // Group chat: show initials
+                      <div
+                        style={{
+                          width: 48,
+                          height: 48,
+                          borderRadius: 24,
+                          overflow: "hidden",
+                          background:
+                            "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          flexShrink: 0,
+                        }}
                       >
-                        {conv.avatar}
-                      </span>
-                    </div>
+                        <span
+                          style={{ fontSize: 16, color: "#fff", fontWeight: 600 }}
+                        >
+                          {conv.avatar}
+                        </span>
+                      </div>
+                    ) : (
+                      // Private chat: use FriendAvatarWithOnlineStatus component
+                      <FriendAvatarWithOnlineStatus
+                        friendId={conv.otherUserId || ""}
+                        friend={{
+                          id: conv.otherUserId || "",
+                          name: conv.name,
+                          email: "",
+                          avatar: conv.avatar && (conv.avatar.startsWith("http") || conv.avatar.startsWith("data:"))
+                            ? conv.avatar
+                            : undefined,
+                        }}
+                        size={48}
+                      />
+                    )}
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div
                         style={{
