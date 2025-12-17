@@ -41,7 +41,7 @@ export default function LoginPage() {
     }
 
     try {
-      await login({ email, password });
+      const result = await login({ email, password });
       
       // Save remember me preference
       if (rememberMe) {
@@ -50,8 +50,23 @@ export default function LoginPage() {
         localStorage.removeItem('rememberMe');
       }
 
-      // Redirect về trang chủ sau khi đăng nhập thành công
-      router.push('/chat');
+      // Lấy role từ localStorage (đã được lưu bởi Redux)
+      const accountData = localStorage.getItem('account');
+      if (accountData) {
+        const account = JSON.parse(accountData);
+        
+        // Redirect dựa trên role
+        if (account.role === 'admin') {
+          console.log('Admin detected, redirecting to /admin');
+          router.push('/admin');
+        } else {
+          console.log('Regular user, redirecting to /chat');
+          router.push('/chat');
+        }
+      } else {
+        // Fallback nếu không có account data
+        router.push('/chat');
+      }
     } catch (error: any) {
       // Lỗi sẽ được xử lý bởi Redux và hiển thị qua authError
       console.error('Login error:', error);
@@ -66,8 +81,23 @@ export default function LoginPage() {
 
       await loginWithGoogle();
 
-      // Redirect về trang chat sau khi đăng nhập thành công
-      router.push('/chat');
+      // Lấy role từ localStorage (đã được lưu bởi Redux)
+      const accountData = localStorage.getItem('account');
+      if (accountData) {
+        const account = JSON.parse(accountData);
+        
+        // Redirect dựa trên role
+        if (account.role === 'admin') {
+          console.log('Admin detected, redirecting to /admin');
+          router.push('/admin');
+        } else {
+          console.log('Regular user, redirecting to /chat');
+          router.push('/chat');
+        }
+      } else {
+        // Fallback nếu không có account data
+        router.push('/chat');
+      }
     } catch (error: any) {
       console.error('Google login error:', error);
       setLocalError(error.message || (language === 'vi' ? 'Đăng nhập Google thất bại' : 'Google login failed'));

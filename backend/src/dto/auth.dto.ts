@@ -19,6 +19,7 @@ export interface AuthResponseDto {
       email: string;
       name: string;
       avatar?: string;
+      role: 'user' | 'admin';
     };
     token: string;
   };

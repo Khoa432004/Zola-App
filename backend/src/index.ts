@@ -1,4 +1,4 @@
-﻿import "./config/env";
+import "./config/env";
 
 import express from "express";
 import cors from "cors";
@@ -14,6 +14,7 @@ import friendRoutes from "./routes/friend.routes";
 import conversationRoutes from "./routes/conversation.routes";
 import messageRoutes from "./routes/message.routes";
 import storyRoutes from "./routes/story.routes";
+import adminRoutes from "./routes/admin.routes";
 import { setupSocketHandlers } from "./socket/socket.handlers";
 
 const app = express();
@@ -70,6 +71,8 @@ app.use("/api/conversations", conversationRoutes);
 app.use("/api/messages", messageRoutes);
 // Story routes
 app.use("/api/stories", storyRoutes);
+// Admin routes
+app.use("/api/admin", adminRoutes);
 
 // Setup Socket.IO
 const io = new SocketIOServer(httpServer, {
