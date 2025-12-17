@@ -44,6 +44,7 @@ export class AuthService {
     const token = generateToken({
       userId: account.id,
       email: account.email,
+      role: account.role,
     });
 
     return {
@@ -52,6 +53,7 @@ export class AuthService {
         email: account.email,
         name: account.name,
         avatar: account.avatar,
+        role: account.role,
       },
       token,
     };
@@ -160,6 +162,7 @@ export class AuthService {
             avatar: avatar && avatar.trim() !== '' ? avatar : undefined,
             provider: "google",
             googleId,
+            role: "user",
           });
         } catch (createError: any) {
           throw new Error(`Lỗi khi tạo account: ${createError.message}`);
@@ -170,6 +173,7 @@ export class AuthService {
       const token = generateToken({
         userId: account.id,
         email: account.email,
+        role: account.role,
       });
 
       return {
@@ -178,6 +182,7 @@ export class AuthService {
           email: account.email,
           name: account.name,
           avatar: account.avatar,
+          role: account.role,
         },
         token,
       };
@@ -206,11 +211,13 @@ export class AuthService {
       password,
       name,
       provider: "email",
+      role: "user",
     });
 
     const token = generateToken({
       userId: account.id,
       email: account.email,
+      role: account.role,
     });
 
     return {
@@ -219,6 +226,7 @@ export class AuthService {
         email: account.email,
         name: account.name,
         avatar: account.avatar,
+        role: account.role,
       },
       token,
     };
@@ -236,6 +244,7 @@ export class AuthService {
       name: dto.username,
       password: dto.password,
       provider: "email",
+      role: "user",
     });
 
     return user;

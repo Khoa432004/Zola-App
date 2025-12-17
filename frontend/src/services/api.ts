@@ -24,6 +24,7 @@ export interface AuthResponse {
       email: string;
       name: string;
       avatar?: string;
+      role?: 'user' | 'admin';
     };
     token: string;
   };

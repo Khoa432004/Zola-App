@@ -12,6 +12,7 @@ export interface AuthState {
     address?: string;
     bio?: string;
     createdAt?: string | Date;
+    role?: 'user' | 'admin';
   } | null;
   token: string | null;
   isLoading: boolean;

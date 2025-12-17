@@ -16,6 +16,7 @@ export interface IAccount {
   bio?: string;
   provider: 'email' | 'google';
   googleId?: string;
+  role: 'user' | 'admin';
   otp?: string
   otpExpiry?: Date
   otpAttempts?: number

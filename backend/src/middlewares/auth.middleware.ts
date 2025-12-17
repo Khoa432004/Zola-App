@@ -96,5 +96,73 @@ export const optionalAuthenticate = (
   }
 };
 
+/**
+ * Middleware kiểm tra user phải có role admin
+ */
+export const requireAdmin = (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    // Kiểm tra xem user đã được authenticate chưa
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Bạn cần đăng nhập để thực hiện thao tác này',
+      });
+    }
 
+    // Kiểm tra role
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Bạn không có quyền truy cập. Chỉ admin mới được phép.',
+      });
+    }
+
+    next();
+  } catch (error: any) {
+    console.log('Admin Check - Error:', error.message);
+    return res.status(403).json({
+      success: false,
+      message: 'Không có quyền truy cập',
+    });
+  }
+};
+
+/**
+ * Middleware kiểm tra user phải có role user hoặc admin
+ */
+export const requireUser = (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    // Kiểm tra xem user đã được authenticate chưa
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Bạn cần đăng nhập để thực hiện thao tác này',
+      });
+    }
+
+    // Kiểm tra role (cả user và admin đều được phép)
+    if (req.user.role !== 'user' && req.user.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Bạn không có quyền truy cập',
+      });
+    }
+
+    next();
+  } catch (error: any) {
+    console.log('User Check - Error:', error.message);
+    return res.status(403).json({
+      success: false,
+      message: 'Không có quyền truy cập',
+    });
+  }
+};
 

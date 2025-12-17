@@ -169,6 +169,35 @@ export default function Sidebar({ activePage = 'chat', onPageChange }: SidebarPr
               <span style={{ fontSize: 14, color: "#111827" }}>Trang cá nhân</span>
             </div>
 
+            {/* Admin Dashboard - Chỉ hiển thị với admin */}
+            {mounted && user?.role === 'admin' && (
+              <>
+                <div style={{ height: 1, background: "#e5e7eb", margin: "4px 0" }} />
+                <div
+                  onClick={() => {
+                    setShowUserMenu(false);
+                    window.location.href = '/admin';
+                  }}
+                  style={{
+                    padding: "12px 16px",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 12,
+                    cursor: "pointer",
+                    transition: "background 0.2s"
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = "#fef3c7")}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = "#ffffff")}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2">
+                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                    <line x1="9" y1="3" x2="9" y2="21" />
+                  </svg>
+                  <span style={{ fontSize: 14, color: "#f59e0b", fontWeight: 600 }}>Admin Dashboard</span>
+                </div>
+              </>
+            )}
+
             <div style={{ height: 1, background: "#e5e7eb", margin: "4px 0" }} />
 
             {/* Logout */}
