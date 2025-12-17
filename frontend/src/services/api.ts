@@ -854,6 +854,86 @@ class ApiService {
       throw new Error(error.response?.data?.message || "Lấy danh sách viewers thất bại");
     }
   }
+
+  // ==================== APPOINTMENT METHODS ====================
+
+  /**
+   * Tạo cuộc hẹn mới
+   */
+  async createAppointment(data: {
+    con_id: string;
+    title: string;
+    description?: string;
+    appointment_time: string;
+    location?: string;
+    participant_ids: string[];
+    reminder_times: number[];
+    repeat_type?: 'none' | 'daily' | 'weekly' | 'monthly';
+  }) {
+    try {
+      const response = await this.axiosInstance.post('/appointments', data);
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.error || 'Không thể tạo cuộc hẹn');
+    }
+  }
+
+  /**
+   * Lấy danh sách cuộc hẹn của conversation
+   */
+  async getConversationAppointments(conversationId: string) {
+    try {
+      const response = await this.axiosInstance.get(`/appointments/conversation/${conversationId}`);
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.error || 'Không thể lấy danh sách cuộc hẹn');
+    }
+  }
+
+  /**
+   * Lấy chi tiết một cuộc hẹn
+   */
+  async getAppointmentById(appointmentId: string) {
+    try {
+      const response = await this.axiosInstance.get(`/appointments/${appointmentId}`);
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.error || 'Không thể lấy thông tin cuộc hẹn');
+    }
+  }
+
+  /**
+   * Cập nhật cuộc hẹn
+   */
+  async updateAppointment(appointmentId: string, data: {
+    title?: string;
+    description?: string;
+    appointment_time?: string;
+    location?: string;
+    participant_ids?: string[];
+    reminder_times?: number[];
+    repeat_type?: 'none' | 'daily' | 'weekly' | 'monthly';
+    status?: 'pending' | 'completed' | 'cancelled';
+  }) {
+    try {
+      const response = await this.axiosInstance.put(`/appointments/${appointmentId}`, data);
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.error || 'Không thể cập nhật cuộc hẹn');
+    }
+  }
+
+  /**
+   * Xóa cuộc hẹn
+   */
+  async deleteAppointment(appointmentId: string) {
+    try {
+      const response = await this.axiosInstance.delete(`/appointments/${appointmentId}`);
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.error || 'Không thể xóa cuộc hẹn');
+    }
+  }
 }
 
 // Export the class

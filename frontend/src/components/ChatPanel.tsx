@@ -5,6 +5,7 @@ import { useAppSelector } from "@/store/hooks";
 import { apiService } from "@/services/api";
 import { socketService } from "@/services/socket";
 import EmojiPicker from "./EmojiPicker";
+import { AppointmentModal } from "./AppointmentModal";
 
 // Voice Message Player Component
 function VoiceMessagePlayer({ src, isUser }: { src: string; isUser: boolean }) {
@@ -231,6 +232,7 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
   const [searchResults, setSearchResults] = useState<number[]>([]);
   const [currentSearchIndex, setCurrentSearchIndex] = useState(-1);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [showAppointmentModal, setShowAppointmentModal] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [previewUrls, setPreviewUrls] = useState<string[]>([]);
   const [isRecording, setIsRecording] = useState(false);
@@ -1624,6 +1626,37 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
               })()}
             </div>
           </div>
+          <button
+            onClick={() => setShowAppointmentModal(true)}
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: 8,
+              border: "none",
+              background: "transparent",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              cursor: "pointer",
+              transition: "background 0.2s",
+              marginRight: 4,
+            }}
+            title="Tạo nhắc hẹn"
+          >
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="#6b7280"
+              strokeWidth="2"
+            >
+              <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+              <line x1="16" y1="2" x2="16" y2="6" />
+              <line x1="8" y1="2" x2="8" y2="6" />
+              <line x1="3" y1="10" x2="21" y2="10" />
+            </svg>
+          </button>
           <button
             onClick={() => setShowSearch(!showSearch)}
             style={{
@@ -3437,6 +3470,23 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
           </svg>
         </button>
       </div>
+
+      {/* Appointment Modal */}
+      <AppointmentModal
+        isOpen={showAppointmentModal}
+        onClose={() => setShowAppointmentModal(false)}
+        conversationId={conversation.con_id}
+        conversationMembers={conversation.members.map(m => ({
+          user_id: m.user_id,
+          user_name: m.user_name,
+          user_email: '', // Email will be fetched from user profile in the modal
+          user_avatar: m.user_avatar,
+        }))}
+        onAppointmentCreated={() => {
+          // Có thể thêm logic reload appointments hoặc hiển thị notification
+          console.log('Appointment created successfully');
+        }}
+      />
     </main>
   );
 }
