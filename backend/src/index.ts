@@ -15,7 +15,9 @@ import conversationRoutes from "./routes/conversation.routes";
 import messageRoutes from "./routes/message.routes";
 import storyRoutes from "./routes/story.routes";
 import adminRoutes from "./routes/admin.routes";
+import appointmentRoutes from "./routes/appointment.routes";
 import { setupSocketHandlers } from "./socket/socket.handlers";
+import { SchedulerService } from "./services/scheduler.service";
 
 const app = express();
 const httpServer = createServer(app);
@@ -73,6 +75,8 @@ app.use("/api/messages", messageRoutes);
 app.use("/api/stories", storyRoutes);
 // Admin routes
 app.use("/api/admin", adminRoutes);
+// Appointment routes
+app.use("/api/appointments", appointmentRoutes);
 
 // Setup Socket.IO
 const io = new SocketIOServer(httpServer, {
@@ -88,6 +92,19 @@ setupSocketHandlers(io);
 
 // Make io available globally (for use in controllers)
 (global as any).io = io;
+
+// Start scheduler for appointment reminders
+const scheduler = new SchedulerService();
+scheduler.start();
+
+// Graceful shutdown
+process.on('SIGTERM', () => {
+  console.log('SIGTERM signal received: closing HTTP server');
+  scheduler.stop();
+  httpServer.close(() => {
+    console.log('HTTP server closed');
+  });
+});
 
 // Start server
 const port = Number(process.env.PORT) || 4000;
