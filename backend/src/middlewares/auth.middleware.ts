@@ -16,12 +16,11 @@ export const authenticate = (
   try {
     const authHeader = req.headers.authorization;
 
-    console.log('Auth Middleware - Authorization header:', authHeader ? authHeader.substring(0, 20) + '...' : 'NO HEADER');
+    console.log('[Auth Middleware]', req.method, req.path, '- Authorization header:', authHeader ? authHeader.substring(0, 20) + '...' : 'NO HEADER');
 
     // Kiểm tra Authorization header
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-
-      console.log('Auth Middleware - Missing or invalid Bearer format');
+      console.log('[Auth Middleware]', req.method, req.path, '- Missing or invalid Bearer format');
 
       return res.status(401).json({
         success: false,
@@ -31,10 +30,14 @@ export const authenticate = (
 
     // Extract token và verify
     const token = authHeader.substring(7);
-    console.log('Auth Middleware - Token extracted:', token.substring(0, 20) + '...');
+    console.log('[Auth Middleware]', req.method, req.path, '- Token extracted:', token.substring(0, 20) + '...');
 
     const decoded = verifyToken(token);
-    console.log('Auth Middleware - Token verified successfully:', decoded);
+    console.log('[Auth Middleware]', req.method, req.path, '- Token verified successfully:', {
+      userId: decoded.userId,
+      email: decoded.email,
+      role: decoded.role,
+    });
 
     // Normalize token payload to include `uid` for compatibility with controllers
     const normalizedUser: any = {
@@ -43,9 +46,10 @@ export const authenticate = (
     };
 
     req.user = normalizedUser;
+    console.log('[Auth Middleware]', req.method, req.path, '- Authentication successful for user:', normalizedUser.userId || normalizedUser.uid);
     next();
   } catch (error: any) {
-    console.log('Auth Middleware - Error:', error.message);
+    console.log('[Auth Middleware]', req.method, req.path, '- Error:', error.message);
     return res.status(401).json({
       success: false,
       message: 'Token không hợp lệ hoặc đã hết hạn',

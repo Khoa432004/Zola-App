@@ -15,19 +15,32 @@ export class AuthService {
   async loginWithEmail(loginDto: LoginDto) {
     const { email, password } = loginDto;
 
+    console.log('[Auth Service] Login attempt for email:', email);
+
     // Find account by email
     const account = await Account.findByEmail(email);
+    console.log('[Auth Service] Account found:', account ? {
+      id: account.id,
+      email: account.email,
+      provider: account.provider,
+      hasPassword: !!account.password,
+      role: account.role,
+    } : 'NOT FOUND');
+
     if (!account) {
+      console.log('[Auth Service] Account not found for email:', email);
       throw new Error("Email hoặc mật khẩu không đúng");
     }
 
     // Check if account uses email provider
     if (account.provider !== "email") {
+      console.log('[Auth Service] Account uses different provider:', account.provider);
       throw new Error("Tài khoản này sử dụng đăng nhập Google");
     }
 
     // Check if password exists
     if (!account.password) {
+      console.log('[Auth Service] Account has no password set');
       throw new Error("Tài khoản chưa được thiết lập mật khẩu");
     }
 
@@ -36,7 +49,10 @@ export class AuthService {
       account.password,
       password
     );
+    console.log('[Auth Service] Password valid:', isPasswordValid);
+
     if (!isPasswordValid) {
+      console.log('[Auth Service] Invalid password for email:', email);
       throw new Error("Email hoặc mật khẩu không đúng");
     }
 
@@ -46,6 +62,8 @@ export class AuthService {
       email: account.email,
       role: account.role,
     });
+
+    console.log('[Auth Service] Login successful for user:', account.id);
 
     return {
       account: {

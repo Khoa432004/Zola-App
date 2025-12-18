@@ -24,12 +24,39 @@ export interface AuthResponse {
       email: string;
       name: string;
       avatar?: string;
-      role?: 'user' | 'admin';
+      role?: "user" | "admin";
     };
     token: string;
   };
 }
 
+export interface ReportMessageRequest {
+  messageId: string;
+  conversationId: string;
+  reason: string;
+  description: string;
+}
+
+export interface MessageReport {
+  id: string;
+  reportedBy: {
+    id: string;
+    name: string;
+    email: string;
+    avatar?: string;
+  };
+  reportedUser: {
+    id: string;
+    name: string;
+    email: string;
+    avatar?: string;
+  };
+  reason: string;
+  description: string;
+  content: string;
+  status: "pending" | "approved" | "rejected";
+  createdAt: string;
+}
 class ApiService {
   private axiosInstance: AxiosInstance;
 
@@ -46,9 +73,35 @@ class ApiService {
       (config) => {
         if (typeof window !== "undefined") {
           const token = localStorage.getItem("token");
-          console.log("Request interceptor - Token from localStorage:", token ? token.substring(0, 20) + "..." : "NO TOKEN FOUND");
+          const account = localStorage.getItem("account");
+
+          console.log(
+            "[API Request Interceptor]",
+            config.url,
+            "- Token from localStorage:",
+            token ? token.substring(0, 20) + "..." : "NO TOKEN FOUND"
+          );
+
           if (token) {
             config.headers.Authorization = `Bearer ${token}`;
+            console.log("[API Request Interceptor] Added Authorization header");
+          } else {
+            console.warn("[API Request Interceptor] No token found in localStorage");
+          }
+
+          // Log user info if available
+          if (account) {
+            try {
+              const user = JSON.parse(account);
+              console.log("[API Request Interceptor] User from localStorage:", {
+                id: user.id,
+                email: user.email,
+                role: user.role,
+                name: user.name,
+              });
+            } catch (e) {
+              console.warn("[API Request Interceptor] Failed to parse account:", e);
+            }
           }
         }
         return config;
@@ -248,7 +301,8 @@ class ApiService {
       return response.data;
     } catch (error: any) {
       throw new Error(
-        error.response?.data?.message || "Cập nhật cài đặt quyền riêng tư thất bại"
+        error.response?.data?.message ||
+          "Cập nhật cài đặt quyền riêng tư thất bại"
       );
     }
   }
@@ -372,25 +426,29 @@ class ApiService {
     }
   }
 
-  async createComment(targetId: string, content: string, files?: File | File[]) {
+  async createComment(
+    targetId: string,
+    content: string,
+    files?: File | File[]
+  ) {
     try {
       if (files) {
         const formData = new FormData();
-        formData.append('targetId', targetId);
-        formData.append('content', content || '');
+        formData.append("targetId", targetId);
+        formData.append("content", content || "");
         if (Array.isArray(files)) {
-          files.forEach((f) => formData.append('media', f));
+          files.forEach((f) => formData.append("media", f));
         } else {
-          formData.append('media', files);
+          formData.append("media", files);
         }
 
-        const response = await this.axiosInstance.post('/comments', formData, {
-          headers: { 'Content-Type': 'multipart/form-data' }
+        const response = await this.axiosInstance.post("/comments", formData, {
+          headers: { "Content-Type": "multipart/form-data" },
         });
         return response.data;
       }
 
-      const response = await this.axiosInstance.post('/comments', {
+      const response = await this.axiosInstance.post("/comments", {
         targetId,
         content,
       });
@@ -417,19 +475,27 @@ class ApiService {
 
   async likeComment(commentId: string) {
     try {
-      const response = await this.axiosInstance.post(`/comments/${commentId}/like`);
+      const response = await this.axiosInstance.post(
+        `/comments/${commentId}/like`
+      );
       return response.data;
     } catch (error: any) {
-      throw new Error(error.response?.data?.message || "Không thể thích bình luận");
+      throw new Error(
+        error.response?.data?.message || "Không thể thích bình luận"
+      );
     }
   }
 
   async unlikeComment(commentId: string) {
     try {
-      const response = await this.axiosInstance.delete(`/comments/${commentId}/like`);
+      const response = await this.axiosInstance.delete(
+        `/comments/${commentId}/like`
+      );
       return response.data;
     } catch (error: any) {
-      throw new Error(error.response?.data?.message || "Không thể bỏ thích bình luận");
+      throw new Error(
+        error.response?.data?.message || "Không thể bỏ thích bình luận"
+      );
     }
   }
 
@@ -483,7 +549,9 @@ class ApiService {
       const response = await this.axiosInstance.get(`/posts/${postId}`);
       return response.data;
     } catch (error: any) {
-      throw new Error(error.response?.data?.message || "Không lấy được bài viết");
+      throw new Error(
+        error.response?.data?.message || "Không lấy được bài viết"
+      );
     }
   }
 
@@ -492,7 +560,9 @@ class ApiService {
       const response = await this.axiosInstance.post(`/posts/${postId}/like`);
       return response.data;
     } catch (error: any) {
-      throw new Error(error.response?.data?.message || "Không thể thích bài viết");
+      throw new Error(
+        error.response?.data?.message || "Không thể thích bài viết"
+      );
     }
   }
 
@@ -501,13 +571,15 @@ class ApiService {
       const response = await this.axiosInstance.delete(`/posts/${postId}/like`);
       return response.data;
     } catch (error: any) {
-      throw new Error(error.response?.data?.message || "Không thể bỏ thích bài viết");
+      throw new Error(
+        error.response?.data?.message || "Không thể bỏ thích bài viết"
+      );
     }
   }
 
   async sharePost(
-    postId: string, 
-    caption?: string, 
+    postId: string,
+    caption?: string,
     visibility?: "public" | "friends" | "private" | "specific",
     sharedWith?: string[]
   ) {
@@ -519,26 +591,36 @@ class ApiService {
       });
       return response.data;
     } catch (error: any) {
-      throw new Error(error.response?.data?.message || "Không thể chia sẻ bài viết");
+      throw new Error(
+        error.response?.data?.message || "Không thể chia sẻ bài viết"
+      );
     }
   }
 
   // Friends
   async sendFriendRequest(email: string) {
     try {
-      const response = await this.axiosInstance.post("/friends/requests", { email });
+      const response = await this.axiosInstance.post("/friends/requests", {
+        email,
+      });
       return response.data;
     } catch (error: any) {
-      throw new Error(error.response?.data?.message || "Gửi lời mời kết bạn thất bại");
+      throw new Error(
+        error.response?.data?.message || "Gửi lời mời kết bạn thất bại"
+      );
     }
   }
 
   async getReceivedRequests() {
     try {
-      const response = await this.axiosInstance.get("/friends/requests/received");
+      const response = await this.axiosInstance.get(
+        "/friends/requests/received"
+      );
       return response.data;
     } catch (error: any) {
-      throw new Error(error.response?.data?.message || "Lấy danh sách lời mời thất bại");
+      throw new Error(
+        error.response?.data?.message || "Lấy danh sách lời mời thất bại"
+      );
     }
   }
 
@@ -547,34 +629,48 @@ class ApiService {
       const response = await this.axiosInstance.get("/friends/requests/sent");
       return response.data;
     } catch (error: any) {
-      throw new Error(error.response?.data?.message || "Lấy danh sách lời mời thất bại");
+      throw new Error(
+        error.response?.data?.message || "Lấy danh sách lời mời thất bại"
+      );
     }
   }
 
   async acceptFriendRequest(requestId: string) {
     try {
-      const response = await this.axiosInstance.post(`/friends/requests/${requestId}/accept`);
+      const response = await this.axiosInstance.post(
+        `/friends/requests/${requestId}/accept`
+      );
       return response.data;
     } catch (error: any) {
-      throw new Error(error.response?.data?.message || "Chấp nhận lời mời kết bạn thất bại");
+      throw new Error(
+        error.response?.data?.message || "Chấp nhận lời mời kết bạn thất bại"
+      );
     }
   }
 
   async rejectFriendRequest(requestId: string) {
     try {
-      const response = await this.axiosInstance.post(`/friends/requests/${requestId}/reject`);
+      const response = await this.axiosInstance.post(
+        `/friends/requests/${requestId}/reject`
+      );
       return response.data;
     } catch (error: any) {
-      throw new Error(error.response?.data?.message || "Từ chối lời mời kết bạn thất bại");
+      throw new Error(
+        error.response?.data?.message || "Từ chối lời mời kết bạn thất bại"
+      );
     }
   }
 
   async cancelFriendRequest(requestId: string) {
     try {
-      const response = await this.axiosInstance.delete(`/friends/requests/${requestId}`);
+      const response = await this.axiosInstance.delete(
+        `/friends/requests/${requestId}`
+      );
       return response.data;
     } catch (error: any) {
-      throw new Error(error.response?.data?.message || "Hủy lời mời kết bạn thất bại");
+      throw new Error(
+        error.response?.data?.message || "Hủy lời mời kết bạn thất bại"
+      );
     }
   }
 
@@ -583,7 +679,9 @@ class ApiService {
       const response = await this.axiosInstance.get("/friends");
       return response.data;
     } catch (error: any) {
-      throw new Error(error.response?.data?.message || "Lấy danh sách bạn bè thất bại");
+      throw new Error(
+        error.response?.data?.message || "Lấy danh sách bạn bè thất bại"
+      );
     }
   }
 
@@ -608,7 +706,9 @@ class ApiService {
       });
       return response.data;
     } catch (error: any) {
-      throw new Error(error.response?.data?.message || "Tạo cuộc trò chuyện thất bại");
+      throw new Error(
+        error.response?.data?.message || "Tạo cuộc trò chuyện thất bại"
+      );
     }
   }
 
@@ -623,7 +723,9 @@ class ApiService {
       });
       return response.data;
     } catch (error: any) {
-      throw new Error(error.response?.data?.message || "Tạo nhóm chat thất bại");
+      throw new Error(
+        error.response?.data?.message || "Tạo nhóm chat thất bại"
+      );
     }
   }
 
@@ -635,7 +737,10 @@ class ApiService {
       const response = await this.axiosInstance.get("/conversations");
       return response.data;
     } catch (error: any) {
-      throw new Error(error.response?.data?.message || "Lấy danh sách cuộc trò chuyện thất bại");
+      throw new Error(
+        error.response?.data?.message ||
+          "Lấy danh sách cuộc trò chuyện thất bại"
+      );
     }
   }
 
@@ -644,10 +749,14 @@ class ApiService {
    */
   async getConversationById(conversationId: string) {
     try {
-      const response = await this.axiosInstance.get(`/conversations/${conversationId}`);
+      const response = await this.axiosInstance.get(
+        `/conversations/${conversationId}`
+      );
       return response.data;
     } catch (error: any) {
-      throw new Error(error.response?.data?.message || "Lấy cuộc trò chuyện thất bại");
+      throw new Error(
+        error.response?.data?.message || "Lấy cuộc trò chuyện thất bại"
+      );
     }
   }
 
@@ -656,26 +765,36 @@ class ApiService {
   /**
    * Gửi message (có thể có file)
    */
-  async sendMessage(conId: string, content: string, type: 'text' | 'image' | 'video' | 'sticker' | 'audio' = 'text', file?: File, replyToId?: string) {
+  async sendMessage(
+    conId: string,
+    content: string,
+    type: "text" | "image" | "video" | "sticker" | "audio" = "text",
+    file?: File,
+    replyToId?: string
+  ) {
     try {
       const formData = new FormData();
-      formData.append('conId', conId);
-      formData.append('content', content);
-      formData.append('type', type);
-      
+      formData.append("conId", conId);
+      formData.append("content", content);
+      formData.append("type", type);
+
       if (file) {
-        formData.append('file', file);
+        formData.append("file", file);
       }
 
       if (replyToId) {
-        formData.append('replyToId', replyToId);
+        formData.append("replyToId", replyToId);
       }
 
-      const response = await this.axiosInstance.post("/messages/send", formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-      });
+      const response = await this.axiosInstance.post(
+        "/messages/send",
+        formData,
+        {
+          headers: {
+            "Content-Type": "multipart/form-data",
+          },
+        }
+      );
       return response.data;
     } catch (error: any) {
       throw new Error(error.response?.data?.message || "Gửi tin nhắn thất bại");
@@ -693,7 +812,9 @@ class ApiService {
       const params: any = {};
       if (limit) params.limit = limit.toString();
       if (beforeTimestamp) params.beforeTimestamp = beforeTimestamp.toString();
-      const response = await this.axiosInstance.get(`/messages/${conId}`, { params });
+      const response = await this.axiosInstance.get(`/messages/${conId}`, {
+        params,
+      });
       return response.data;
     } catch (error: any) {
       throw new Error(error.response?.data?.message || "Lấy tin nhắn thất bại");
@@ -705,10 +826,15 @@ class ApiService {
    */
   async markConversationAsSeen(conId: string) {
     try {
-      const response = await this.axiosInstance.post(`/messages/conversation/${conId}/seen`);
+      const response = await this.axiosInstance.post(
+        `/messages/conversation/${conId}/seen`
+      );
       return response.data;
     } catch (error: any) {
-      throw new Error(error.response?.data?.message || "Đánh dấu cuộc trò chuyện đã xem thất bại");
+      throw new Error(
+        error.response?.data?.message ||
+          "Đánh dấu cuộc trò chuyện đã xem thất bại"
+      );
     }
   }
 
@@ -717,7 +843,9 @@ class ApiService {
    */
   async deleteMessage(messageId: string) {
     try {
-      const response = await this.axiosInstance.delete(`/messages/${messageId}`);
+      const response = await this.axiosInstance.delete(
+        `/messages/${messageId}`
+      );
       return response.data;
     } catch (error: any) {
       throw new Error(error.response?.data?.message || "Xóa tin nhắn thất bại");
@@ -729,9 +857,12 @@ class ApiService {
    */
   async toggleMessageReaction(messageId: string, emoji: string) {
     try {
-      const response = await this.axiosInstance.post(`/messages/${messageId}/reaction`, {
-        emoji,
-      });
+      const response = await this.axiosInstance.post(
+        `/messages/${messageId}/reaction`,
+        {
+          emoji,
+        }
+      );
       return response.data;
     } catch (error: any) {
       throw new Error(error.response?.data?.message || "Thả cảm xúc thất bại");
@@ -743,10 +874,14 @@ class ApiService {
    */
   async getMessageReactions(messageId: string) {
     try {
-      const response = await this.axiosInstance.get(`/messages/${messageId}/reactions`);
+      const response = await this.axiosInstance.get(
+        `/messages/${messageId}/reactions`
+      );
       return response.data;
     } catch (error: any) {
-      throw new Error(error.response?.data?.message || "Lấy danh sách cảm xúc thất bại");
+      throw new Error(
+        error.response?.data?.message || "Lấy danh sách cảm xúc thất bại"
+      );
     }
   }
 
@@ -757,10 +892,14 @@ class ApiService {
     try {
       const params: any = { keyword };
       if (limit) params.limit = limit.toString();
-      const response = await this.axiosInstance.get("/messages/search/all", { params });
+      const response = await this.axiosInstance.get("/messages/search/all", {
+        params,
+      });
       return response.data;
     } catch (error: any) {
-      throw new Error(error.response?.data?.message || "Tìm kiếm tin nhắn thất bại");
+      throw new Error(
+        error.response?.data?.message || "Tìm kiếm tin nhắn thất bại"
+      );
     }
   }
 
@@ -774,7 +913,9 @@ class ApiService {
       const response = await this.axiosInstance.get("/stories");
       return response.data;
     } catch (error: any) {
-      throw new Error(error.response?.data?.message || "Lấy danh sách stories thất bại");
+      throw new Error(
+        error.response?.data?.message || "Lấy danh sách stories thất bại"
+      );
     }
   }
 
@@ -787,7 +928,9 @@ class ApiService {
       const response = await this.axiosInstance.get("/stories/my", { params });
       return response.data;
     } catch (error: any) {
-      throw new Error(error.response?.data?.message || "Lấy stories của tôi thất bại");
+      throw new Error(
+        error.response?.data?.message || "Lấy stories của tôi thất bại"
+      );
     }
   }
 
@@ -824,10 +967,14 @@ class ApiService {
    */
   async markStoryAsViewed(storyId: string) {
     try {
-      const response = await this.axiosInstance.post(`/stories/${storyId}/view`);
+      const response = await this.axiosInstance.post(
+        `/stories/${storyId}/view`
+      );
       return response.data;
     } catch (error: any) {
-      throw new Error(error.response?.data?.message || "Đánh dấu story đã xem thất bại");
+      throw new Error(
+        error.response?.data?.message || "Đánh dấu story đã xem thất bại"
+      );
     }
   }
 
@@ -848,10 +995,14 @@ class ApiService {
    */
   async getStoryViewers(storyId: string) {
     try {
-      const response = await this.axiosInstance.get(`/stories/${storyId}/viewers`);
+      const response = await this.axiosInstance.get(
+        `/stories/${storyId}/viewers`
+      );
       return response.data;
     } catch (error: any) {
-      throw new Error(error.response?.data?.message || "Lấy danh sách viewers thất bại");
+      throw new Error(
+        error.response?.data?.message || "Lấy danh sách viewers thất bại"
+      );
     }
   }
 
@@ -868,13 +1019,13 @@ class ApiService {
     location?: string;
     participant_ids: string[];
     reminder_times: number[];
-    repeat_type?: 'none' | 'daily' | 'weekly' | 'monthly';
+    repeat_type?: "none" | "daily" | "weekly" | "monthly";
   }) {
     try {
-      const response = await this.axiosInstance.post('/appointments', data);
+      const response = await this.axiosInstance.post("/appointments", data);
       return response.data;
     } catch (error: any) {
-      throw new Error(error.response?.data?.error || 'Không thể tạo cuộc hẹn');
+      throw new Error(error.response?.data?.error || "Không thể tạo cuộc hẹn");
     }
   }
 
@@ -883,10 +1034,14 @@ class ApiService {
    */
   async getConversationAppointments(conversationId: string) {
     try {
-      const response = await this.axiosInstance.get(`/appointments/conversation/${conversationId}`);
+      const response = await this.axiosInstance.get(
+        `/appointments/conversation/${conversationId}`
+      );
       return response.data;
     } catch (error: any) {
-      throw new Error(error.response?.data?.error || 'Không thể lấy danh sách cuộc hẹn');
+      throw new Error(
+        error.response?.data?.error || "Không thể lấy danh sách cuộc hẹn"
+      );
     }
   }
 
@@ -895,31 +1050,43 @@ class ApiService {
    */
   async getAppointmentById(appointmentId: string) {
     try {
-      const response = await this.axiosInstance.get(`/appointments/${appointmentId}`);
+      const response = await this.axiosInstance.get(
+        `/appointments/${appointmentId}`
+      );
       return response.data;
     } catch (error: any) {
-      throw new Error(error.response?.data?.error || 'Không thể lấy thông tin cuộc hẹn');
+      throw new Error(
+        error.response?.data?.error || "Không thể lấy thông tin cuộc hẹn"
+      );
     }
   }
 
   /**
    * Cập nhật cuộc hẹn
    */
-  async updateAppointment(appointmentId: string, data: {
-    title?: string;
-    description?: string;
-    appointment_time?: string;
-    location?: string;
-    participant_ids?: string[];
-    reminder_times?: number[];
-    repeat_type?: 'none' | 'daily' | 'weekly' | 'monthly';
-    status?: 'pending' | 'completed' | 'cancelled';
-  }) {
+  async updateAppointment(
+    appointmentId: string,
+    data: {
+      title?: string;
+      description?: string;
+      appointment_time?: string;
+      location?: string;
+      participant_ids?: string[];
+      reminder_times?: number[];
+      repeat_type?: "none" | "daily" | "weekly" | "monthly";
+      status?: "pending" | "completed" | "cancelled";
+    }
+  ) {
     try {
-      const response = await this.axiosInstance.put(`/appointments/${appointmentId}`, data);
+      const response = await this.axiosInstance.put(
+        `/appointments/${appointmentId}`,
+        data
+      );
       return response.data;
     } catch (error: any) {
-      throw new Error(error.response?.data?.error || 'Không thể cập nhật cuộc hẹn');
+      throw new Error(
+        error.response?.data?.error || "Không thể cập nhật cuộc hẹn"
+      );
     }
   }
 
@@ -928,10 +1095,116 @@ class ApiService {
    */
   async deleteAppointment(appointmentId: string) {
     try {
-      const response = await this.axiosInstance.delete(`/appointments/${appointmentId}`);
+      const response = await this.axiosInstance.delete(
+        `/appointments/${appointmentId}`
+      );
       return response.data;
     } catch (error: any) {
-      throw new Error(error.response?.data?.error || 'Không thể xóa cuộc hẹn');
+      throw new Error(error.response?.data?.error || "Không thể xóa cuộc hẹn");
+    }
+  }
+
+  // 📝 Báo cáo tin nhắn
+  async reportMessage(
+    reportData: ReportMessageRequest
+  ): Promise<{ success: boolean; message: string }> {
+    try {
+      const response = await this.axiosInstance.post(
+        "/admin/reports/messages",
+        reportData
+      );
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.message || "Báo cáo thất bại");
+    }
+  }
+
+  // 📋 Lấy danh sách báo cáo tin nhắn (admin only)
+  async getMessageReports(
+    status: string = "all"
+  ): Promise<{ success: boolean; data: MessageReport[] }> {
+    try {
+      console.log("[API] Fetching message reports with status:", status);
+      
+      // Validate status
+      const validStatuses = ["all", "pending", "approved", "rejected"];
+      if (!validStatuses.includes(status)) {
+        throw new Error(`Status không hợp lệ: ${status}`);
+      }
+
+      const response = await this.axiosInstance.get(
+        `/admin/reports/messages`,
+        {
+          params: { status },
+        }
+      );
+      
+      console.log("[API] Message reports fetched successfully:", response.data?.data?.length || 0, "reports");
+      return response.data;
+    } catch (error: any) {
+      console.error("[API] Error fetching message reports:", {
+        status,
+        error: error.response?.data || error.message,
+        statusCode: error.response?.status,
+      });
+      
+      // Provide more detailed error messages
+      if (error.response?.status === 401) {
+        throw new Error("Bạn cần đăng nhập để xem báo cáo");
+      } else if (error.response?.status === 403) {
+        throw new Error("Bạn không có quyền xem báo cáo. Chỉ admin mới được phép.");
+      } else if (error.response?.status === 400) {
+        throw new Error(error.response?.data?.message || "Dữ liệu không hợp lệ");
+      } else if (error.response?.status === 500) {
+        throw new Error(error.response?.data?.message || "Lỗi server khi tải báo cáo. Vui lòng thử lại sau.");
+      } else {
+        throw new Error(error.response?.data?.message || "Lỗi khi tải báo cáo");
+      }
+    }
+  }
+
+  // ✅ Duyệt/từ chối báo cáo tin nhắn (admin only)
+  async updateMessageReportStatus(
+    reportId: string,
+    status: "approved" | "rejected"
+  ): Promise<{ success: boolean; message: string }> {
+    try {
+      console.log("[API] Updating report status:", { reportId, status });
+      
+      if (!reportId || reportId.trim() === "") {
+        throw new Error("Report ID không hợp lệ");
+      }
+
+      if (!status || !["approved", "rejected"].includes(status)) {
+        throw new Error("Status không hợp lệ");
+      }
+
+      const response = await this.axiosInstance.put(
+        `/admin/reports/messages/${reportId}/status`,
+        { status }
+      );
+      
+      console.log("[API] Report status updated successfully:", response.data);
+      return response.data;
+    } catch (error: any) {
+      console.error("[API] Error updating report status:", {
+        reportId,
+        status,
+        error: error.response?.data || error.message,
+      });
+      
+      // Provide more detailed error messages
+      if (error.response?.status === 404) {
+        throw new Error("Báo cáo không tồn tại");
+      } else if (error.response?.status === 401) {
+        throw new Error("Bạn cần đăng nhập để thực hiện thao tác này");
+      } else if (error.response?.status === 403) {
+        throw new Error("Bạn không có quyền thực hiện thao tác này");
+      } else if (error.response?.status === 400) {
+        throw new Error(error.response?.data?.message || "Dữ liệu không hợp lệ");
+      } else {
+        throw new Error(error.response?.data?.message || "Cập nhật thất bại. Vui lòng thử lại.");
+      }
     }
   }
 }
