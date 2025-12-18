@@ -5,6 +5,7 @@ import { apiService } from '@/services/api';
 import { useAuth } from '@/hooks/useAuth';
 import { socketService } from '@/services/socket';
 import SharePostModal from './SharePostModal';
+import PostReportModal from './PostReportModal';
 
 interface DisplayPost {
   id: string;
@@ -1326,6 +1327,30 @@ export default function PostDetailModal({ isOpen, post, onClose }: PostDetailMod
                 <span>{postLikeCount} lượt thích</span>
               </button>
               <button
+                onClick={() => {
+                  if (post) {
+                    setShowReportModal(true);
+                  }
+                }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  background: 'transparent',
+                  border: 'none',
+                  color: '#dc2626',
+                  cursor: 'pointer',
+                  fontSize: 14,
+                  padding: 0
+                }}
+                title="Báo cáo bài viết"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                </svg>
+                <span>Báo cáo</span>
+              </button>
+              <button
                 onClick={() => setShowShareModal(true)}
                 style={{
                   display: 'flex',
@@ -1366,6 +1391,16 @@ export default function PostDetailModal({ isOpen, post, onClose }: PostDetailMod
                 // Optionally reload posts or show success message
               }}
             />
+
+            {post && (
+              <PostReportModal
+                isOpen={showReportModal}
+                onClose={() => setShowReportModal(false)}
+                postId={post.id}
+                postContent={post.description}
+                postMedia={post.media}
+              />
+            )}
 
           </div>
 

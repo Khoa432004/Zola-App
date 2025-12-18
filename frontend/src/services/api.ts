@@ -57,6 +57,37 @@ export interface MessageReport {
   status: "pending" | "approved" | "rejected";
   createdAt: string;
 }
+
+export interface ReportPostRequest {
+  postId: string;
+  reason: string;
+  description: string;
+}
+
+export interface PostReport {
+  id: string;
+  reportedBy: {
+    id: string;
+    name: string;
+    email: string;
+    avatar?: string;
+  };
+  reportedUser: {
+    id: string;
+    name: string;
+    email: string;
+    avatar?: string;
+  };
+  reason: string;
+  description: string;
+  content: string;
+  media?: Array<{
+    type: "image" | "video";
+    sourceUrl: string;
+  }>;
+  status: "pending" | "approved" | "rejected";
+  createdAt: string;
+}
 class ApiService {
   private axiosInstance: AxiosInstance;
 
@@ -86,7 +117,9 @@ class ApiService {
             config.headers.Authorization = `Bearer ${token}`;
             console.log("[API Request Interceptor] Added Authorization header");
           } else {
-            console.warn("[API Request Interceptor] No token found in localStorage");
+            console.warn(
+              "[API Request Interceptor] No token found in localStorage"
+            );
           }
 
           // Log user info if available
@@ -100,7 +133,10 @@ class ApiService {
                 name: user.name,
               });
             } catch (e) {
-              console.warn("[API Request Interceptor] Failed to parse account:", e);
+              console.warn(
+                "[API Request Interceptor] Failed to parse account:",
+                e
+              );
             }
           }
         }
@@ -1125,21 +1161,22 @@ class ApiService {
   ): Promise<{ success: boolean; data: MessageReport[] }> {
     try {
       console.log("[API] Fetching message reports with status:", status);
-      
+
       // Validate status
       const validStatuses = ["all", "pending", "approved", "rejected"];
       if (!validStatuses.includes(status)) {
         throw new Error(`Status không hợp lệ: ${status}`);
       }
 
-      const response = await this.axiosInstance.get(
-        `/admin/reports/messages`,
-        {
-          params: { status },
-        }
+      const response = await this.axiosInstance.get(`/admin/reports/messages`, {
+        params: { status },
+      });
+
+      console.log(
+        "[API] Message reports fetched successfully:",
+        response.data?.data?.length || 0,
+        "reports"
       );
-      
-      console.log("[API] Message reports fetched successfully:", response.data?.data?.length || 0, "reports");
       return response.data;
     } catch (error: any) {
       console.error("[API] Error fetching message reports:", {
@@ -1147,16 +1184,23 @@ class ApiService {
         error: error.response?.data || error.message,
         statusCode: error.response?.status,
       });
-      
+
       // Provide more detailed error messages
       if (error.response?.status === 401) {
         throw new Error("Bạn cần đăng nhập để xem báo cáo");
       } else if (error.response?.status === 403) {
-        throw new Error("Bạn không có quyền xem báo cáo. Chỉ admin mới được phép.");
+        throw new Error(
+          "Bạn không có quyền xem báo cáo. Chỉ admin mới được phép."
+        );
       } else if (error.response?.status === 400) {
-        throw new Error(error.response?.data?.message || "Dữ liệu không hợp lệ");
+        throw new Error(
+          error.response?.data?.message || "Dữ liệu không hợp lệ"
+        );
       } else if (error.response?.status === 500) {
-        throw new Error(error.response?.data?.message || "Lỗi server khi tải báo cáo. Vui lòng thử lại sau.");
+        throw new Error(
+          error.response?.data?.message ||
+            "Lỗi server khi tải báo cáo. Vui lòng thử lại sau."
+        );
       } else {
         throw new Error(error.response?.data?.message || "Lỗi khi tải báo cáo");
       }
@@ -1170,7 +1214,7 @@ class ApiService {
   ): Promise<{ success: boolean; message: string }> {
     try {
       console.log("[API] Updating report status:", { reportId, status });
-      
+
       if (!reportId || reportId.trim() === "") {
         throw new Error("Report ID không hợp lệ");
       }
@@ -1183,7 +1227,7 @@ class ApiService {
         `/admin/reports/messages/${reportId}/status`,
         { status }
       );
-      
+
       console.log("[API] Report status updated successfully:", response.data);
       return response.data;
     } catch (error: any) {
@@ -1192,7 +1236,7 @@ class ApiService {
         status,
         error: error.response?.data || error.message,
       });
-      
+
       // Provide more detailed error messages
       if (error.response?.status === 404) {
         throw new Error("Báo cáo không tồn tại");
@@ -1201,9 +1245,142 @@ class ApiService {
       } else if (error.response?.status === 403) {
         throw new Error("Bạn không có quyền thực hiện thao tác này");
       } else if (error.response?.status === 400) {
-        throw new Error(error.response?.data?.message || "Dữ liệu không hợp lệ");
+        throw new Error(
+          error.response?.data?.message || "Dữ liệu không hợp lệ"
+        );
       } else {
-        throw new Error(error.response?.data?.message || "Cập nhật thất bại. Vui lòng thử lại.");
+        throw new Error(
+          error.response?.data?.message ||
+            "Cập nhật thất bại. Vui lòng thử lại."
+        );
+      }
+    }
+  }
+
+  // 📝 Báo cáo bài viết
+  async reportPost(
+    reportData: ReportPostRequest
+  ): Promise<{ success: boolean; message: string }> {
+    try {
+      console.log("[API] Reporting post:", reportData.postId);
+      const response = await this.axiosInstance.post(
+        "/admin/reports/posts",
+        reportData
+      );
+      console.log("[API] Post report submitted successfully");
+      return response.data;
+    } catch (error: any) {
+      console.error(
+        "[API] Error reporting post:",
+        error.response?.data || error.message
+      );
+      throw new Error(
+        error.response?.data?.message || "Báo cáo bài viết thất bại"
+      );
+    }
+  }
+
+  // 📋 Lấy danh sách báo cáo bài viết (admin only)
+  async getPostReports(
+    status: string = "all"
+  ): Promise<{ success: boolean; data: PostReport[] }> {
+    try {
+      console.log("[API] Fetching post reports with status:", status);
+
+      // Validate status
+      const validStatuses = ["all", "pending", "approved", "rejected"];
+      if (!validStatuses.includes(status)) {
+        throw new Error(`Status không hợp lệ: ${status}`);
+      }
+
+      const response = await this.axiosInstance.get(`/admin/reports/posts`, {
+        params: { status },
+      });
+
+      console.log(
+        "[API] Post reports fetched successfully:",
+        response.data?.data?.length || 0,
+        "reports"
+      );
+      return response.data;
+    } catch (error: any) {
+      console.error("[API] Error fetching post reports:", {
+        status,
+        error: error.response?.data || error.message,
+        statusCode: error.response?.status,
+      });
+
+      // Provide more detailed error messages
+      if (error.response?.status === 401) {
+        throw new Error("Bạn cần đăng nhập để xem báo cáo");
+      } else if (error.response?.status === 403) {
+        throw new Error(
+          "Bạn không có quyền xem báo cáo. Chỉ admin mới được phép."
+        );
+      } else if (error.response?.status === 400) {
+        throw new Error(
+          error.response?.data?.message || "Dữ liệu không hợp lệ"
+        );
+      } else if (error.response?.status === 500) {
+        throw new Error(
+          error.response?.data?.message ||
+            "Lỗi server khi tải báo cáo. Vui lòng thử lại sau."
+        );
+      } else {
+        throw new Error(error.response?.data?.message || "Lỗi khi tải báo cáo");
+      }
+    }
+  }
+
+  // ✅ Duyệt/từ chối báo cáo bài viết (admin only)
+  async updatePostReportStatus(
+    reportId: string,
+    status: "approved" | "rejected"
+  ): Promise<{ success: boolean; message: string }> {
+    try {
+      console.log("[API] Updating post report status:", { reportId, status });
+
+      if (!reportId || reportId.trim() === "") {
+        throw new Error("Report ID không hợp lệ");
+      }
+
+      if (!status || !["approved", "rejected"].includes(status)) {
+        throw new Error("Status không hợp lệ");
+      }
+
+      const response = await this.axiosInstance.put(
+        `/admin/reports/posts/${reportId}/status`,
+        { status }
+      );
+
+      console.log(
+        "[API] Post report status updated successfully:",
+        response.data
+      );
+      return response.data;
+    } catch (error: any) {
+      console.error("[API] Error updating post report status:", {
+        reportId,
+        status,
+        error: error.response?.data || error.message,
+      });
+
+      // Provide more detailed error messages
+      if (error.response?.status === 404) {
+        throw new Error("Báo cáo không tồn tại");
+      } else if (error.response?.status === 401) {
+        throw new Error("Bạn cần đăng nhập để thực hiện thao tác này");
+      } else if (error.response?.status === 403) {
+        throw new Error("Bạn không có quyền thực hiện thao tác này");
+      } else if (error.response?.status === 400) {
+        throw new Error(
+          error.response?.data?.message || "Dữ liệu không hợp lệ"
+        );
+      } else {
+        throw new Error(
+          error.response?.data?.message ||
+            "Cập nhật thất bại. Vui lòng thử lại."
+        );
       }
     }
   }

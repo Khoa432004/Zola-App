@@ -1,28 +1,9 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { apiService } from "@/services/api";
+import { apiService, MessageReport, PostReport } from "@/services/api";
 
-interface Report {
-  id: string;
-  reportedBy: {
-    id: string;
-    name: string;
-    email: string;
-    avatar?: string;
-  };
-  reportedUser: {
-    id: string;
-    name: string;
-    email: string;
-    avatar?: string;
-  };
-  reason: string;
-  description: string;
-  content?: string;
-  status: "pending" | "approved" | "rejected";
-  createdAt: string;
-}
+type Report = MessageReport | PostReport;
 
 interface ReportsManagementProps {
   type: "message" | "post";
@@ -39,7 +20,10 @@ export default function ReportsManagement({ type }: ReportsManagementProps) {
 
   // Load reports
   useEffect(() => {
-    console.log("[ReportsManagement] useEffect triggered:", { type, filterStatus });
+    console.log("[ReportsManagement] useEffect triggered:", {
+      type,
+      filterStatus,
+    });
     loadReports();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [type, filterStatus]);
@@ -58,8 +42,28 @@ export default function ReportsManagement({ type }: ReportsManagementProps) {
         const response = await apiService.getMessageReports(
           statusFilter || filterStatus
         );
-        console.log("[ReportsManagement] Reports loaded:", response.data?.length || 0, "reports");
-        
+        console.log(
+          "[ReportsManagement] Reports loaded:",
+          response.data?.length || 0,
+          "reports"
+        );
+
+        if (response.success) {
+          setReports(response.data || []);
+        } else {
+          console.error("[ReportsManagement] API returned success=false");
+          setError("Không thể tải danh sách báo cáo");
+        }
+      } else if (type === "post") {
+        const response = await apiService.getPostReports(
+          statusFilter || filterStatus
+        );
+        console.log(
+          "[ReportsManagement] Post reports loaded:",
+          response.data?.length || 0,
+          "reports"
+        );
+
         if (response.success) {
           setReports(response.data || []);
         } else {
@@ -67,8 +71,6 @@ export default function ReportsManagement({ type }: ReportsManagementProps) {
           setError("Không thể tải danh sách báo cáo");
         }
       } else {
-        // For post reports - implement later
-        console.log("[ReportsManagement] Post reports not implemented yet");
         setReports([]);
       }
     } catch (error: any) {
@@ -84,14 +86,24 @@ export default function ReportsManagement({ type }: ReportsManagementProps) {
 
     try {
       if (type === "message") {
-        console.log("[ReportsManagement] Approving report:", reportId);
+        console.log("[ReportsManagement] Approving message report:", reportId);
         await apiService.updateMessageReportStatus(reportId, "approved");
-        console.log("[ReportsManagement] Report approved successfully");
-        
+        console.log("[ReportsManagement] Message report approved successfully");
+
         // Reload reports to reflect changes
         await loadReports(filterStatus);
-        
+
         alert("Đã xóa nội dung vi phạm");
+        setSelectedReport(null);
+      } else if (type === "post") {
+        console.log("[ReportsManagement] Approving post report:", reportId);
+        await apiService.updatePostReportStatus(reportId, "approved");
+        console.log("[ReportsManagement] Post report approved successfully");
+
+        // Reload reports to reflect changes
+        await loadReports(filterStatus);
+
+        alert("Đã xóa bài viết vi phạm");
         setSelectedReport(null);
       }
     } catch (error: any) {
@@ -105,13 +117,23 @@ export default function ReportsManagement({ type }: ReportsManagementProps) {
 
     try {
       if (type === "message") {
-        console.log("[ReportsManagement] Rejecting report:", reportId);
+        console.log("[ReportsManagement] Rejecting message report:", reportId);
         await apiService.updateMessageReportStatus(reportId, "rejected");
-        console.log("[ReportsManagement] Report rejected successfully");
-        
+        console.log("[ReportsManagement] Message report rejected successfully");
+
         // Reload reports to reflect changes
         await loadReports(filterStatus);
-        
+
+        alert("Đã từ chối báo cáo");
+        setSelectedReport(null);
+      } else if (type === "post") {
+        console.log("[ReportsManagement] Rejecting post report:", reportId);
+        await apiService.updatePostReportStatus(reportId, "rejected");
+        console.log("[ReportsManagement] Post report rejected successfully");
+
+        // Reload reports to reflect changes
+        await loadReports(filterStatus);
+
         alert("Đã từ chối báo cáo");
         setSelectedReport(null);
       }

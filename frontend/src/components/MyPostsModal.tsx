@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { apiService } from '@/services/api';
 import { X } from 'lucide-react';
+import PostReportModal from './PostReportModal';
 
 interface FirebasePost {
   postId: string;
@@ -55,6 +56,15 @@ export default function MyPostsModal({ isOpen, onClose }: MyPostsModalProps) {
   const [myPosts, setMyPosts] = useState<Post[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [selectedPostForReport, setSelectedPostForReport] = useState<{
+    id: string;
+    content: string;
+    media?: Array<{
+      type: "image" | "video";
+      sourceUrl: string;
+    }>;
+  } | null>(null);
 
   const formatTimestamp = (date: Date | string): string => {
     const d = typeof date === 'string' ? new Date(date) : date;
@@ -412,12 +422,60 @@ export default function MyPostsModal({ isOpen, onClose }: MyPostsModalProps) {
                   <div style={{
                     display: 'flex',
                     alignItems: 'center',
-                    gap: 8,
+                    justifyContent: 'space-between',
                     paddingTop: 12,
                     borderTop: '1px solid #f3f4f6'
                   }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <button
+                        onClick={() => handleLike(post.id)}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 6,
+                          background: 'transparent',
+                          border: 'none',
+                          cursor: 'pointer',
+                          padding: '6px 12px',
+                          borderRadius: 6,
+                          transition: 'background 0.2s'
+                        }}
+                        onMouseEnter={(e) => (e.currentTarget.style.background = '#f9fafb')}
+                        onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                      >
+                        <svg
+                          width="20"
+                          height="20"
+                          viewBox="0 0 24 24"
+                          fill={post.isLiked ? '#ef4444' : 'none'}
+                          stroke={post.isLiked ? '#ef4444' : '#6b7280'}
+                          strokeWidth="2"
+                        >
+                          <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+                        </svg>
+                        <span style={{
+                          fontSize: 14,
+                          color: post.isLiked ? '#ef4444' : '#6b7280',
+                          fontWeight: 500
+                        }}>
+                          Thích
+                        </span>
+                      </button>
+                      <span style={{ fontSize: 13, color: '#9ca3af' }}>
+                        {post.likes} lượt thích
+                      </span>
+                    </div>
+
+                    {/* Report Button */}
                     <button
-                      onClick={() => handleLike(post.id)}
+                      onClick={() => {
+                        setSelectedPostForReport({
+                          id: post.id,
+                          content: post.description,
+                          media: post.media,
+                        });
+                        setShowReportModal(true);
+                      }}
                       style={{
                         display: 'flex',
                         alignItems: 'center',
@@ -427,32 +485,27 @@ export default function MyPostsModal({ isOpen, onClose }: MyPostsModalProps) {
                         cursor: 'pointer',
                         padding: '6px 12px',
                         borderRadius: 6,
-                        transition: 'background 0.2s'
+                        transition: 'background 0.2s',
+                        color: '#dc2626',
+                        fontSize: 14,
+                        fontWeight: 500
                       }}
-                      onMouseEnter={(e) => (e.currentTarget.style.background = '#f9fafb')}
+                      onMouseEnter={(e) => (e.currentTarget.style.background = '#fef2f2')}
                       onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                      title="Báo cáo bài viết"
                     >
                       <svg
-                        width="20"
-                        height="20"
+                        width="18"
+                        height="18"
                         viewBox="0 0 24 24"
-                        fill={post.isLiked ? '#ef4444' : 'none'}
-                        stroke={post.isLiked ? '#ef4444' : '#6b7280'}
+                        fill="none"
+                        stroke="currentColor"
                         strokeWidth="2"
                       >
-                        <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+                        <path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
                       </svg>
-                      <span style={{
-                        fontSize: 14,
-                        color: post.isLiked ? '#ef4444' : '#6b7280',
-                        fontWeight: 500
-                      }}>
-                        Thích
-                      </span>
+                      <span>Báo cáo</span>
                     </button>
-                    <span style={{ fontSize: 13, color: '#9ca3af' }}>
-                      {post.likes} lượt thích
-                    </span>
                   </div>
                 </div>
               ))}
@@ -460,6 +513,18 @@ export default function MyPostsModal({ isOpen, onClose }: MyPostsModalProps) {
           )}
         </div>
       </div>
+
+      {/* Post Report Modal */}
+      <PostReportModal
+        isOpen={showReportModal}
+        onClose={() => {
+          setShowReportModal(false);
+          setSelectedPostForReport(null);
+        }}
+        postId={selectedPostForReport?.id || ""}
+        postContent={selectedPostForReport?.content || ""}
+        postMedia={selectedPostForReport?.media}
+      />
     </div>
   );
 }

@@ -1,7 +1,9 @@
 import { Router } from "express";
 import { authenticate, requireAdmin } from "../middlewares/auth.middleware";
 import { MessageReport } from "../models/MessageReport";
+import { PostReport } from "../models/PostReport";
 import { firestore } from "../config/firebase-admin";
+import admin from "firebase-admin";
 
 const router = Router();
 
@@ -546,6 +548,494 @@ router.put(
       });
     } catch (error: any) {
       console.error("[Update Report Status] Error:", {
+        message: error.message,
+        stack: error.stack,
+        name: error.name,
+        reportId: req.params?.reportId,
+      });
+      res.status(500).json({
+        success: false,
+        message: error.message || "Lỗi server khi cập nhật trạng thái báo cáo",
+      });
+    }
+  }
+);
+
+/**
+ * @route   POST /api/admin/reports/posts
+ * @desc    Tạo báo cáo bài viết mới
+ * @access  Private (All users)
+ */
+router.post("/reports/posts", authenticate, async (req: any, res) => {
+  try {
+    const { postId, reason, description } = req.body;
+
+    console.log("[Report Post] Request received:", {
+      postId,
+      reason,
+      hasDescription: !!description,
+      userId: req.user?.userId || req.user?.uid || req.user?.id,
+    });
+
+    // Validation
+    if (!postId || !reason || !description) {
+      console.log("[Report Post] Validation failed - missing fields");
+      return res.status(400).json({
+        success: false,
+        message: "Vui lòng điền đầy đủ thông tin",
+      });
+    }
+
+    // Check authentication
+    if (!req.user) {
+      console.log("[Report Post] Authentication failed - no user");
+      return res.status(401).json({
+        success: false,
+        message: "Bạn cần đăng nhập để thực hiện thao tác này",
+      });
+    }
+
+    // Get user ID from token
+    const reporterId = req.user.userId || req.user.uid || req.user.id;
+    if (!reporterId) {
+      console.error("[Report Post] No user ID found in token:", req.user);
+      return res.status(401).json({
+        success: false,
+        message: "Không thể xác định người dùng",
+      });
+    }
+
+    if (!firestore) {
+      console.error("[Report Post] Firestore not initialized");
+      return res.status(500).json({
+        success: false,
+        message: "Firestore chưa được khởi tạo",
+      });
+    }
+
+    // Lấy thông tin bài viết
+    console.log("[Report Post] Fetching post:", postId);
+    const postDoc = await firestore.collection("posts").doc(postId).get();
+
+    if (!postDoc.exists) {
+      console.log("[Report Post] Post not found:", postId);
+      return res.status(404).json({
+        success: false,
+        message: "Bài viết không tồn tại",
+      });
+    }
+
+    const postData = postDoc.data();
+    console.log("[Report Post] Post found:", {
+      postId,
+      authorId: postData?.authorId,
+      hasCaption: !!postData?.caption,
+      hasMedia: !!postData?.media,
+    });
+
+    // Kiểm tra xem người dùng đã báo cáo bài viết này chưa
+    console.log("[Report Post] Checking for existing reports");
+    const existingReports = await firestore
+      .collection("post_reports")
+      .where("postId", "==", postId)
+      .where("reporterId", "==", reporterId)
+      .where("status", "==", "pending")
+      .get();
+
+    if (!existingReports.empty) {
+      console.log("[Report Post] Duplicate report found");
+      return res.status(400).json({
+        success: false,
+        message: "Bạn đã báo cáo bài viết này rồi. Vui lòng chờ admin xử lý.",
+      });
+    }
+
+    // Validate reportedUserId
+    const reportedUserId = postData?.authorId;
+    if (!reportedUserId) {
+      console.error("[Report Post] No authorId in post:", postData);
+      return res.status(400).json({
+        success: false,
+        message: "Không thể xác định tác giả bài viết",
+      });
+    }
+
+    const reportData = {
+      postId,
+      reporterId,
+      reportedUserId,
+      reason: reason.trim(),
+      description: description.trim(),
+      postContent: postData?.caption || "",
+      postMedia: postData?.media || [],
+      status: "pending" as const,
+    };
+
+    console.log("[Report Post] Creating report:", {
+      postId,
+      reporterId,
+      reportedUserId,
+    });
+
+    const report = await PostReport.create(reportData);
+
+    console.log("[Report Post] Report created successfully:", report.id);
+
+    res.json({
+      success: true,
+      message: "Báo cáo đã được gửi thành công",
+      data: report,
+    });
+  } catch (error: any) {
+    console.error("[Report Post] Error creating report:", {
+      message: error.message,
+      stack: error.stack,
+      name: error.name,
+    });
+    res.status(500).json({
+      success: false,
+      message: error.message || "Lỗi server khi tạo báo cáo",
+    });
+  }
+});
+
+/**
+ * @route   GET /api/admin/reports/posts
+ * @desc    Lấy danh sách báo cáo bài viết (chỉ admin)
+ * @access  Private (Admin only)
+ */
+router.get(
+  "/reports/posts",
+  authenticate,
+  requireAdmin,
+  async (req: any, res) => {
+    try {
+      const { status = "all" } = req.query;
+
+      console.log("[Get Post Reports] Request received:", {
+        status,
+        userId: req.user?.userId || req.user?.uid || req.user?.id,
+        userRole: req.user?.role,
+      });
+
+      // Validate status parameter
+      const validStatuses = ["all", "pending", "approved", "rejected"];
+      const statusFilter = status as string;
+      if (!validStatuses.includes(statusFilter)) {
+        console.log("[Get Post Reports] Invalid status:", statusFilter);
+        return res.status(400).json({
+          success: false,
+          message: `Status không hợp lệ. Chỉ chấp nhận: ${validStatuses.join(
+            ", "
+          )}`,
+        });
+      }
+
+      // Check Firestore initialization
+      if (!firestore) {
+        console.error("[Get Post Reports] Firestore not initialized");
+        return res.status(500).json({
+          success: false,
+          message: "Firestore chưa được khởi tạo",
+        });
+      }
+
+      // Fetch reports
+      console.log(
+        "[Get Post Reports] Fetching reports with status:",
+        statusFilter
+      );
+      const reports = await PostReport.findAll(statusFilter);
+      console.log("[Get Post Reports] Found", reports.length, "reports");
+
+      // Lấy thông tin chi tiết cho mỗi báo cáo
+      const detailedReports = await Promise.all(
+        reports.map(async (report) => {
+          try {
+            // Lấy thông tin người báo cáo
+            let reporterData: any = null;
+            if (report.reporterId) {
+              try {
+                const reporterDoc = await firestore!
+                  .collection("accounts")
+                  .doc(report.reporterId)
+                  .get();
+                reporterData = reporterDoc.exists ? reporterDoc.data() : null;
+              } catch (error: any) {
+                console.warn(
+                  "[Get Post Reports] Error fetching reporter:",
+                  report.reporterId,
+                  error.message
+                );
+              }
+            }
+
+            // Lấy thông tin người bị báo cáo
+            let reportedUserData: any = null;
+            if (report.reportedUserId) {
+              try {
+                const reportedUserDoc = await firestore!
+                  .collection("accounts")
+                  .doc(report.reportedUserId)
+                  .get();
+                reportedUserData = reportedUserDoc.exists
+                  ? reportedUserDoc.data()
+                  : null;
+              } catch (error: any) {
+                console.warn(
+                  "[Get Post Reports] Error fetching reported user:",
+                  report.reportedUserId,
+                  error.message
+                );
+              }
+            }
+
+            // Convert createdAt to ISO string safely
+            let createdAtISO: string;
+            if (report.createdAt instanceof Date) {
+              createdAtISO = report.createdAt.toISOString();
+            } else if (
+              report.createdAt &&
+              typeof report.createdAt === "object" &&
+              "toDate" in report.createdAt
+            ) {
+              // Firestore Timestamp
+              createdAtISO = (report.createdAt as any).toDate().toISOString();
+            } else {
+              createdAtISO = new Date().toISOString();
+            }
+
+            return {
+              id: report.id,
+              reason: report.reason || "",
+              description: report.description || "",
+              content: report.postContent || "",
+              media: report.postMedia || [],
+              status: report.status || "pending",
+              createdAt: createdAtISO,
+              reportedBy: {
+                id: report.reporterId || "",
+                name: reporterData?.name || "Unknown",
+                email: reporterData?.email || "unknown@example.com",
+                avatar: reporterData?.avatar,
+              },
+              reportedUser: {
+                id: report.reportedUserId || "",
+                name: reportedUserData?.name || "Unknown",
+                email: reportedUserData?.email || "unknown@example.com",
+                avatar: reportedUserData?.avatar,
+              },
+            };
+          } catch (error: any) {
+            console.error(
+              "[Get Post Reports] Error processing report:",
+              report.id,
+              error.message
+            );
+            // Return basic report info even if user data fetch fails
+            return {
+              id: report.id,
+              reason: report.reason || "",
+              description: report.description || "",
+              content: report.postContent || "",
+              media: report.postMedia || [],
+              status: report.status || "pending",
+              createdAt:
+                report.createdAt instanceof Date
+                  ? report.createdAt.toISOString()
+                  : new Date().toISOString(),
+              reportedBy: {
+                id: report.reporterId || "",
+                name: "Unknown",
+                email: "unknown@example.com",
+              },
+              reportedUser: {
+                id: report.reportedUserId || "",
+                name: "Unknown",
+                email: "unknown@example.com",
+              },
+            };
+          }
+        })
+      );
+
+      console.log(
+        "[Get Post Reports] Returning",
+        detailedReports.length,
+        "detailed reports"
+      );
+
+      res.json({
+        success: true,
+        data: detailedReports,
+      });
+    } catch (error: any) {
+      console.error("[Get Post Reports] Error:", {
+        message: error.message,
+        stack: error.stack,
+        name: error.name,
+        code: error.code,
+      });
+      res.status(500).json({
+        success: false,
+        message: error.message || "Lỗi server khi lấy danh sách báo cáo",
+      });
+    }
+  }
+);
+
+/**
+ * @route   PUT /api/admin/reports/posts/:reportId/status
+ * @desc    Cập nhật trạng thái báo cáo bài viết (chỉ admin)
+ * @access  Private (Admin only)
+ */
+router.put(
+  "/reports/posts/:reportId/status",
+  authenticate,
+  requireAdmin,
+  async (req: any, res) => {
+    try {
+      const { reportId } = req.params;
+      const { status } = req.body; // 'approved' | 'rejected'
+
+      console.log("[Update Post Report Status] Request received:", {
+        reportId,
+        status,
+        userId: req.user?.userId || req.user?.uid || req.user?.id,
+        userRole: req.user?.role,
+      });
+
+      // Validation: Check reportId
+      if (!reportId || reportId.trim() === "") {
+        console.log(
+          "[Update Post Report Status] Validation failed - missing reportId"
+        );
+        return res.status(400).json({
+          success: false,
+          message: "Report ID không hợp lệ",
+        });
+      }
+
+      // Validation: Check status
+      if (!status || !["approved", "rejected"].includes(status)) {
+        console.log(
+          "[Update Post Report Status] Validation failed - invalid status:",
+          status
+        );
+        return res.status(400).json({
+          success: false,
+          message:
+            "Status không hợp lệ. Chỉ chấp nhận 'approved' hoặc 'rejected'",
+        });
+      }
+
+      // Check authentication
+      if (!req.user) {
+        console.log(
+          "[Update Post Report Status] Authentication failed - no user"
+        );
+        return res.status(401).json({
+          success: false,
+          message: "Bạn cần đăng nhập để thực hiện thao tác này",
+        });
+      }
+
+      // Get admin user ID from token
+      const adminId = req.user.userId || req.user.uid || req.user.id;
+      if (!adminId) {
+        console.error(
+          "[Update Post Report Status] No user ID found in token:",
+          req.user
+        );
+        return res.status(401).json({
+          success: false,
+          message: "Không thể xác định người dùng",
+        });
+      }
+
+      // Check Firestore initialization
+      if (!firestore) {
+        console.error("[Update Post Report Status] Firestore not initialized");
+        return res.status(500).json({
+          success: false,
+          message: "Firestore chưa được khởi tạo",
+        });
+      }
+
+      // Verify report exists before updating
+      console.log(
+        "[Update Post Report Status] Checking if report exists:",
+        reportId
+      );
+      const reportDoc = await firestore
+        .collection("post_reports")
+        .doc(reportId)
+        .get();
+
+      if (!reportDoc.exists) {
+        console.log("[Update Post Report Status] Report not found:", reportId);
+        return res.status(404).json({
+          success: false,
+          message: "Báo cáo không tồn tại",
+        });
+      }
+
+      const reportData = reportDoc.data();
+      console.log("[Update Post Report Status] Report found:", {
+        reportId,
+        currentStatus: reportData?.status,
+        postId: reportData?.postId,
+      });
+
+      // If status is 'approved', soft-delete the reported post
+      if (status === "approved" && reportData?.postId) {
+        console.log(
+          "[Update Post Report Status] Approved - checking if post should be deleted"
+        );
+
+        // Check if post exists
+        const postDoc = await firestore
+          .collection("posts")
+          .doc(reportData.postId)
+          .get();
+
+        if (postDoc.exists) {
+          console.log(
+            "[Update Post Report Status] Soft-deleting reported post:",
+            reportData.postId
+          );
+          await firestore.collection("posts").doc(reportData.postId).update({
+            isDeleted: true,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+          console.log(
+            "[Update Post Report Status] Post soft-deleted successfully"
+          );
+        } else {
+          console.log(
+            "[Update Post Report Status] Post not found (may have been deleted already):",
+            reportData.postId
+          );
+        }
+      }
+
+      // Update report status
+      console.log("[Update Post Report Status] Updating report status");
+      await PostReport.updateStatus(reportId, status, adminId);
+
+      console.log(
+        "[Update Post Report Status] Report status updated successfully"
+      );
+
+      res.json({
+        success: true,
+        message:
+          status === "approved"
+            ? "Đã xóa bài viết vi phạm và cập nhật trạng thái báo cáo"
+            : "Đã từ chối báo cáo",
+      });
+    } catch (error: any) {
+      console.error("[Update Post Report Status] Error:", {
         message: error.message,
         stack: error.stack,
         name: error.name,
