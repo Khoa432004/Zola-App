@@ -1,6 +1,6 @@
-import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
-import { apiService } from '@/services/api';
-import { LoginRequest, GoogleLoginRequest, AuthResponse } from '@/services/api';
+import { createSlice, createAsyncThunk, PayloadAction } from "@reduxjs/toolkit";
+import { apiService } from "@/services/api";
+import { LoginRequest, GoogleLoginRequest, AuthResponse } from "@/services/api";
 
 export interface AuthState {
   user: {
@@ -12,19 +12,19 @@ export interface AuthState {
     address?: string;
     bio?: string;
     createdAt?: string | Date;
-    role?: 'user' | 'admin';
+    role?: "user" | "admin";
   } | null;
   token: string | null;
   isLoading: boolean;
   error: string | null;
   isAuthenticated: boolean;
-  resetPasswordEmail: string | null
-  otpVerified: boolean
+  resetPasswordEmail: string | null;
+  otpVerified: boolean;
 }
 
 const initialState: AuthState = {
   user: null,
-  token: typeof window !== 'undefined' ? localStorage.getItem('token') : null,
+  token: typeof window !== "undefined" ? localStorage.getItem("token") : null,
   isLoading: false,
   error: null,
   isAuthenticated: false,
@@ -33,53 +33,85 @@ const initialState: AuthState = {
 };
 
 // Load user from localStorage on initialization
-if (typeof window !== 'undefined') {
-  const savedAccount = localStorage.getItem('account');
+if (typeof window !== "undefined") {
+  const savedAccount = localStorage.getItem("account");
   if (savedAccount) {
     try {
       initialState.user = JSON.parse(savedAccount);
       initialState.isAuthenticated = !!initialState.token;
     } catch (e) {
-      console.error('Failed to parse saved account:', e);
+      console.error("Failed to parse saved account:", e);
     }
   }
 }
 
 // Async thunks for API calls
 export const loginAsync = createAsyncThunk(
-  'auth/login',
+  "auth/login",
   async (credentials: LoginRequest, { rejectWithValue }) => {
     try {
       const response = await apiService.login(credentials);
       if (response.success && response.data) {
         // Save to localStorage
-        localStorage.setItem('token', response.data.token);
-        localStorage.setItem('account', JSON.stringify(response.data.account));
+        localStorage.setItem("token", response.data.token);
+        localStorage.setItem("account", JSON.stringify(response.data.account));
         return response.data;
       }
-      return rejectWithValue(response.message || 'Login failed');
+      return rejectWithValue({
+        message: response.message || "Login failed",
+        banned: false,
+        code: "auth/login-failed",
+      });
     } catch (error: any) {
-      return rejectWithValue(error.message || 'Login failed');
+      // Check if account is banned
+      if (error.banned) {
+        return rejectWithValue({
+          message:
+            error.message ||
+            "Tài khoản của bạn đã bị khóa. Vui lòng liên hệ admin.",
+          banned: true,
+          code: "auth/account-banned",
+        });
+      }
+      
+      // Check if wrong password
+      if (error.wrongPassword || error.code === "auth/wrong-password") {
+        return rejectWithValue({
+          message: error.message || "Email hoặc mật khẩu không đúng",
+          banned: false,
+          code: "auth/wrong-password",
+          wrongPassword: true,
+        });
+      }
+      
+      return rejectWithValue({
+        message: error.message || "Login failed",
+        banned: false,
+        code: error.code || "auth/login-failed",
+      });
     }
   }
 );
 
 export const googleLoginAsync = createAsyncThunk(
-  'auth/googleLogin',
+  "auth/googleLogin",
   async (googleData: GoogleLoginRequest, { rejectWithValue }) => {
     try {
       const response = await apiService.googleLogin(googleData);
       if (response.success && response.data) {
         // Save to localStorage
-        localStorage.setItem('token', response.data.token);
-        localStorage.setItem('account', JSON.stringify(response.data.account));
-        
+        localStorage.setItem("token", response.data.token);
+        localStorage.setItem("account", JSON.stringify(response.data.account));
+
         // Fetch profile ngay sau khi login để lấy avatar mới nhất từ database
         try {
           const profileResponse = await apiService.getProfile();
           if (profileResponse.success && profileResponse.data) {
             // Cập nhật với dữ liệu mới nhất từ database
-            localStorage.setItem('account', JSON.stringify(profileResponse.data));
+            localStorage.setItem(
+              "account",
+              JSON.stringify(profileResponse.data)
+            );
             return {
               ...response.data,
               account: profileResponse.data,
@@ -87,132 +119,171 @@ export const googleLoginAsync = createAsyncThunk(
           }
         } catch (profileError) {
           // Nếu fetch profile thất bại, vẫn trả về dữ liệu login
-          console.warn('Failed to fetch profile after login:', profileError);
+          console.warn("Failed to fetch profile after login:", profileError);
         }
-        
+
         return response.data;
       }
-      return rejectWithValue(response.message || 'Google login failed');
+      return rejectWithValue({
+        message: response.message || "Google login failed",
+        banned: false,
+      });
     } catch (error: any) {
-      return rejectWithValue(error.message || 'Google login failed');
+      // Check if account is banned
+      if (error.banned) {
+        return rejectWithValue({
+          message:
+            error.message ||
+            "Tài khoản của bạn đã bị khóa. Vui lòng liên hệ admin.",
+          banned: true,
+        });
+      }
+      return rejectWithValue({
+        message: error.message || "Google login failed",
+        banned: false,
+      });
     }
   }
 );
 
 export const logoutAsync = createAsyncThunk(
-  'auth/logout',
+  "auth/logout",
   async (_, { rejectWithValue }) => {
     try {
       try {
         await apiService.logout();
       } catch (apiError) {
-        console.warn('Logout API call failed, but continuing with client-side logout:', apiError);
+        console.warn(
+          "Logout API call failed, but continuing with client-side logout:",
+          apiError
+        );
       }
-      localStorage.removeItem('token');
-      localStorage.removeItem('account');
-      localStorage.removeItem('rememberMe');
+      localStorage.removeItem("token");
+      localStorage.removeItem("account");
+      localStorage.removeItem("rememberMe");
       return true;
     } catch (error: any) {
-      localStorage.removeItem('token');
-      localStorage.removeItem('account');
-      localStorage.removeItem('rememberMe');
-      return rejectWithValue(error.message || 'Logout failed');
+      localStorage.removeItem("token");
+      localStorage.removeItem("account");
+      localStorage.removeItem("rememberMe");
+      return rejectWithValue(error.message || "Logout failed");
     }
-  })
+  }
+);
 
 export const fetchProfileAsync = createAsyncThunk(
-  'auth/fetchProfile',
+  "auth/fetchProfile",
   async (_, { rejectWithValue }) => {
     try {
       const response = await apiService.getProfile();
       if (response.success && response.data) {
         // Luôn lưu dữ liệu mới từ server (override localStorage)
-        if (typeof window !== 'undefined') {
-          localStorage.setItem('account', JSON.stringify(response.data));
+        if (typeof window !== "undefined") {
+          localStorage.setItem("account", JSON.stringify(response.data));
         }
         return response.data;
       }
-      return rejectWithValue(response.message || 'Fetch profile failed');
+      return rejectWithValue(response.message || "Fetch profile failed");
     } catch (error: any) {
-      return rejectWithValue(error.message || 'Fetch profile failed');
+      return rejectWithValue(error.message || "Fetch profile failed");
     }
   }
 );
 
 export const updateProfileAsync = createAsyncThunk(
-  'auth/updateProfile',
-  async (payload: { name?: string; phone?: string; address?: string; bio?: string; avatar?: string }, { rejectWithValue }) => {
+  "auth/updateProfile",
+  async (
+    payload: {
+      name?: string;
+      phone?: string;
+      address?: string;
+      bio?: string;
+      avatar?: string;
+    },
+    { rejectWithValue }
+  ) => {
     try {
       const response = await apiService.updateProfile(payload);
       if (response.success && response.data) {
-        if (typeof window !== 'undefined') {
-          const saved = JSON.parse(localStorage.getItem('account') || '{}');
-          localStorage.setItem('account', JSON.stringify({ ...saved, ...response.data }));
+        if (typeof window !== "undefined") {
+          const saved = JSON.parse(localStorage.getItem("account") || "{}");
+          localStorage.setItem(
+            "account",
+            JSON.stringify({ ...saved, ...response.data })
+          );
         }
         return response.data;
       }
-      return rejectWithValue(response.message || 'Update profile failed');
+      return rejectWithValue(response.message || "Update profile failed");
     } catch (error: any) {
-      return rejectWithValue(error.message || 'Update profile failed');
+      return rejectWithValue(error.message || "Update profile failed");
     }
   }
 );
-  export const forgotPasswordAsync = createAsyncThunk(
+export const forgotPasswordAsync = createAsyncThunk(
   "auth/forgotPassword",
   async (credentials: { email: string }, { rejectWithValue }) => {
     try {
-      const response = await apiService.forgotPassword(credentials)
+      const response = await apiService.forgotPassword(credentials);
       if (response.success && response.data) {
-        return response.data
+        return response.data;
       }
-      return rejectWithValue(response.message || "Yêu cầu thất bại")
+      return rejectWithValue(response.message || "Yêu cầu thất bại");
     } catch (error: any) {
-      return rejectWithValue(error.message || "Có lỗi xảy ra")
+      return rejectWithValue(error.message || "Có lỗi xảy ra");
     }
-  },
-)
+  }
+);
 
 export const verifyOTPAsync = createAsyncThunk(
   "auth/verifyOTP",
   async (credentials: { email: string; otp: string }, { rejectWithValue }) => {
     try {
-      const response = await apiService.verifyOTP(credentials)
+      const response = await apiService.verifyOTP(credentials);
       if (response.success && response.data) {
-        return response.data
+        return response.data;
       }
-      return rejectWithValue(response.message || "Xác thực thất bại")
+      return rejectWithValue(response.message || "Xác thực thất bại");
     } catch (error: any) {
-      return rejectWithValue(error.message || "Có lỗi xảy ra")
+      return rejectWithValue(error.message || "Có lỗi xảy ra");
     }
-  },
-)
+  }
+);
 
 export const resetPasswordAsync = createAsyncThunk(
   "auth/resetPassword",
   async (
-    credentials: { email: string; otp: string; newPassword: string; confirmPassword: string },
-    { rejectWithValue },
+    credentials: {
+      email: string;
+      otp: string;
+      newPassword: string;
+      confirmPassword: string;
+    },
+    { rejectWithValue }
   ) => {
     try {
-      const response = await apiService.resetPassword(credentials)
+      const response = await apiService.resetPassword(credentials);
       if (response.success) {
-        return response.data
+        return response.data;
       }
-      return rejectWithValue(response.message || "Đặt lại mật khẩu thất bại")
+      return rejectWithValue(response.message || "Đặt lại mật khẩu thất bại");
     } catch (error: any) {
-      return rejectWithValue(error.message || "Có lỗi xảy ra")
+      return rejectWithValue(error.message || "Có lỗi xảy ra");
     }
-  },
+  }
 );
 
 const authSlice = createSlice({
-  name: 'auth',
+  name: "auth",
   initialState,
   reducers: {
     clearError: (state) => {
       state.error = null;
     },
-    setCredentials: (state, action: PayloadAction<{ user: AuthState['user']; token: string }>) => {
+    setCredentials: (
+      state,
+      action: PayloadAction<{ user: AuthState["user"]; token: string }>
+    ) => {
       state.user = action.payload.user;
       state.token = action.payload.token;
       state.isAuthenticated = true;
@@ -234,7 +305,10 @@ const authSlice = createSlice({
       })
       .addCase(loginAsync.rejected, (state, action) => {
         state.isLoading = false;
-        state.error = action.payload as string;
+        const payload = action.payload as
+          | { message: string; banned?: boolean; code?: string; wrongPassword?: boolean }
+          | string;
+        state.error = typeof payload === "string" ? payload : payload.message;
         state.isAuthenticated = false;
       });
 
@@ -253,7 +327,10 @@ const authSlice = createSlice({
       })
       .addCase(googleLoginAsync.rejected, (state, action) => {
         state.isLoading = false;
-        state.error = action.payload as string;
+        const payload = action.payload as
+          | { message: string; banned?: boolean }
+          | string;
+        state.error = typeof payload === "string" ? payload : payload.message;
         state.isAuthenticated = false;
       });
 
@@ -285,7 +362,7 @@ const authSlice = createSlice({
         if (state.user) {
           state.user = { ...state.user, ...action.payload };
         } else {
-          state.user = action.payload as AuthState['user'];
+          state.user = action.payload as AuthState["user"];
         }
         state.error = null;
       })
@@ -305,7 +382,7 @@ const authSlice = createSlice({
         if (state.user) {
           state.user = { ...state.user, ...action.payload };
         } else {
-          state.user = action.payload as AuthState['user'];
+          state.user = action.payload as AuthState["user"];
         }
         state.error = null;
       })
@@ -314,53 +391,52 @@ const authSlice = createSlice({
         state.error = action.payload as string;
       });
 
-       builder
+    builder
       .addCase(forgotPasswordAsync.pending, (state) => {
-        state.isLoading = true
-        state.error = null
+        state.isLoading = true;
+        state.error = null;
       })
       .addCase(forgotPasswordAsync.fulfilled, (state, action) => {
-        state.isLoading = false
-        state.resetPasswordEmail = action.payload.email
-        state.error = null
+        state.isLoading = false;
+        state.resetPasswordEmail = action.payload.email;
+        state.error = null;
       })
       .addCase(forgotPasswordAsync.rejected, (state, action) => {
-        state.isLoading = false
-        state.error = action.payload as string
-      })
+        state.isLoading = false;
+        state.error = action.payload as string;
+      });
 
     builder
       .addCase(verifyOTPAsync.pending, (state) => {
-        state.isLoading = true
-        state.error = null
+        state.isLoading = true;
+        state.error = null;
       })
       .addCase(verifyOTPAsync.fulfilled, (state) => {
-        state.isLoading = false
-        state.otpVerified = true
-        state.error = null
+        state.isLoading = false;
+        state.otpVerified = true;
+        state.error = null;
       })
       .addCase(verifyOTPAsync.rejected, (state, action) => {
-        state.isLoading = false
-        state.error = action.payload as string
-      })
+        state.isLoading = false;
+        state.error = action.payload as string;
+      });
 
     builder
       .addCase(resetPasswordAsync.pending, (state) => {
-        state.isLoading = true
-        state.error = null
+        state.isLoading = true;
+        state.error = null;
       })
       .addCase(resetPasswordAsync.fulfilled, (state) => {
-        state.isLoading = false
-        state.resetPasswordEmail = null
-        state.otpVerified = false
-        state.error = null
+        state.isLoading = false;
+        state.resetPasswordEmail = null;
+        state.otpVerified = false;
+        state.error = null;
       })
       .addCase(resetPasswordAsync.rejected, (state, action) => {
-        state.isLoading = false
-        state.error = action.payload as string
-      })
+        state.isLoading = false;
+        state.error = action.payload as string;
+      });
   },
 });
 export const { clearError, setCredentials } = authSlice.actions;
 export default authSlice.reducer;
-

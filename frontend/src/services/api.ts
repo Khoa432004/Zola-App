@@ -88,6 +88,19 @@ export interface PostReport {
   status: "pending" | "approved" | "rejected";
   createdAt: string;
 }
+
+export interface User {
+  id: string;
+  name: string;
+  email: string;
+  avatar?: string;
+  role: "user" | "admin";
+  status: "active" | "banned";
+  isDisabled: boolean;
+  createdAt: string;
+  lastSeen?: string;
+  reportCount: number;
+}
 class ApiService {
   private axiosInstance: AxiosInstance;
 
@@ -99,27 +112,55 @@ class ApiService {
       },
     });
 
-    // ✅ Interceptor thêm token vào header
+    // ✅ Interceptor thêm token vào header và kiểm tra token cho các endpoint yêu cầu auth
     this.axiosInstance.interceptors.request.use(
       (config) => {
         if (typeof window !== "undefined") {
           const token = localStorage.getItem("token");
           const account = localStorage.getItem("account");
 
+          // List of endpoints that don't require authentication
+          const publicEndpoints = [
+            "/auth/login",
+            "/auth/google",
+            "/auth/register",
+            "/auth/send-otp",
+            "/auth/verify-otp",
+            "/auth/register-final",
+            "/auth/forgot-password",
+            "/auth/verify-otp-reset",
+            "/auth/reset-password",
+          ];
+
+          // Check if this endpoint requires authentication
+          const requiresAuth = !publicEndpoints.some((endpoint) =>
+            config.url?.includes(endpoint)
+          );
+
           console.log(
             "[API Request Interceptor]",
             config.url,
             "- Token from localStorage:",
-            token ? token.substring(0, 20) + "..." : "NO TOKEN FOUND"
+            token ? token.substring(0, 20) + "..." : "NO TOKEN FOUND",
+            "- Requires Auth:",
+            requiresAuth
           );
+
+          if (requiresAuth && !token) {
+            // Prevent request if token is missing for authenticated endpoints
+            console.error(
+              "[API Request Interceptor] Missing token for authenticated endpoint:",
+              config.url
+            );
+            const error: any = new Error("Không có token xác thực");
+            error.authRequired = true;
+            error.statusCode = 401;
+            return Promise.reject(error);
+          }
 
           if (token) {
             config.headers.Authorization = `Bearer ${token}`;
             console.log("[API Request Interceptor] Added Authorization header");
-          } else {
-            console.warn(
-              "[API Request Interceptor] No token found in localStorage"
-            );
           }
 
           // Log user info if available
@@ -145,16 +186,38 @@ class ApiService {
       (error) => Promise.reject(error)
     );
 
-    // ✅ Interceptor xử lý lỗi 401
+    // ✅ Interceptor xử lý lỗi 401 và missing token
     this.axiosInstance.interceptors.response.use(
       (response) => response,
-      (error: AxiosError) => {
+      (error: AxiosError | any) => {
+        // Handle missing token error from request interceptor
+        if (error.authRequired) {
+          if (typeof window !== "undefined") {
+            localStorage.removeItem("token");
+            localStorage.removeItem("account");
+          }
+          const authError: any = new Error(
+            error.message || "Không có token xác thực"
+          );
+          authError.authRequired = true;
+          authError.statusCode = 401;
+          return Promise.reject(authError);
+        }
+
+        // Handle 401 Unauthorized from server
         if (error.response?.status === 401) {
           if (typeof window !== "undefined") {
             localStorage.removeItem("token");
             localStorage.removeItem("account");
           }
+          const authError: any = new Error(
+            error.response?.data?.message || "Phiên đăng nhập đã hết hạn"
+          );
+          authError.authRequired = true;
+          authError.statusCode = 401;
+          return Promise.reject(authError);
         }
+
         return Promise.reject(error);
       }
     );
@@ -169,7 +232,37 @@ class ApiService {
       );
       return response.data;
     } catch (error: any) {
-      throw new Error(error.response?.data?.message || "Có lỗi xảy ra");
+      // Check if account is banned
+      if (error.response?.data?.banned) {
+        const bannedError: any = new Error(
+          error.response?.data?.message ||
+            "Tài khoản của bạn đã bị khóa. Vui lòng liên hệ admin."
+        );
+        bannedError.banned = true;
+        throw bannedError;
+      }
+
+      // Check for wrong password error
+      const errorMessage =
+        error.response?.data?.message || error.message || "Có lỗi xảy ra";
+      const isWrongPassword =
+        errorMessage.includes("mật khẩu không đúng") ||
+        errorMessage.includes("password") ||
+        errorMessage.includes("Email hoặc mật khẩu") ||
+        error.response?.status === 401;
+
+      if (isWrongPassword) {
+        const wrongPasswordError: any = new Error(
+          errorMessage.includes("mật khẩu")
+            ? errorMessage
+            : "Email hoặc mật khẩu không đúng"
+        );
+        wrongPasswordError.code = "auth/wrong-password";
+        wrongPasswordError.wrongPassword = true;
+        throw wrongPasswordError;
+      }
+
+      throw new Error(errorMessage);
     }
   }
 
@@ -182,6 +275,15 @@ class ApiService {
       );
       return response.data;
     } catch (error: any) {
+      // Check if account is banned
+      if (error.response?.data?.banned) {
+        const bannedError: any = new Error(
+          error.response?.data?.message ||
+            "Tài khoản của bạn đã bị khóa. Vui lòng liên hệ admin."
+        );
+        bannedError.banned = true;
+        throw bannedError;
+      }
       throw new Error(error.response?.data?.message || "Có lỗi xảy ra");
     }
   }
@@ -843,7 +945,16 @@ class ApiService {
    * @param limit Số lượng messages
    * @param beforeTimestamp Load messages trước timestamp này (cho lazy loading)
    */
-  async getMessages(conId: string, limit?: number, beforeTimestamp?: number) {
+  async getMessages(
+    conId: string,
+    limit?: number,
+    beforeTimestamp?: number
+  ): Promise<{
+    success: boolean;
+    data?: any;
+    message?: string;
+    authRequired?: boolean;
+  }> {
     try {
       const params: any = {};
       if (limit) params.limit = limit.toString();
@@ -853,7 +964,21 @@ class ApiService {
       });
       return response.data;
     } catch (error: any) {
-      throw new Error(error.response?.data?.message || "Lấy tin nhắn thất bại");
+      // Check if this is an authentication error
+      if (error.authRequired || error.response?.status === 401) {
+        return {
+          success: false,
+          message:
+            error.message ||
+            "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.",
+          authRequired: true,
+        };
+      }
+      // Return structured error for other cases
+      return {
+        success: false,
+        message: error.response?.data?.message || "Lấy tin nhắn thất bại",
+      };
     }
   }
 
@@ -1380,6 +1505,205 @@ class ApiService {
         throw new Error(
           error.response?.data?.message ||
             "Cập nhật thất bại. Vui lòng thử lại."
+        );
+      }
+    }
+  }
+
+  // ✅ Lấy danh sách tất cả users (admin only)
+  async getAllUsers(): Promise<{
+    success: boolean;
+    data: User[];
+    total?: number;
+    message?: string;
+  }> {
+    try {
+      console.log("[API] Fetching all users...");
+
+      const response = await this.axiosInstance.get("/admin/users");
+
+      // Normalize response: backend returns { success, message, data: { users, total } }
+      // We return { success, data: users[], total, message }
+      const backendData = response.data?.data;
+      const users = backendData?.users || [];
+      const total = backendData?.total || users.length;
+
+      console.log("[API] Users fetched successfully:", users.length, "users");
+
+      return {
+        success: response.data?.success || true,
+        message: response.data?.message,
+        data: users,
+        total,
+      };
+    } catch (error: any) {
+      console.error("[API] Error fetching users:", {
+        error: error.response?.data || error.message,
+        statusCode: error.response?.status,
+      });
+
+      // Provide more detailed error messages
+      if (error.response?.status === 401) {
+        throw new Error("Bạn cần đăng nhập để xem danh sách users");
+      } else if (error.response?.status === 403) {
+        throw new Error(
+          "Bạn không có quyền xem danh sách users. Chỉ admin mới được phép."
+        );
+      } else if (error.response?.status === 500) {
+        throw new Error(
+          error.response?.data?.message ||
+            "Lỗi server khi tải danh sách users. Vui lòng thử lại sau."
+        );
+      } else {
+        throw new Error(
+          error.response?.data?.message || "Không thể tải danh sách người dùng"
+        );
+      }
+    }
+  }
+
+  // ✅ Ban user (admin only)
+  async banUser(
+    userId: string
+  ): Promise<{ success: boolean; message: string }> {
+    try {
+      console.log("[API] Banning user:", userId);
+
+      if (!userId || userId.trim() === "") {
+        throw new Error("User ID không hợp lệ");
+      }
+
+      const response = await this.axiosInstance.patch(
+        `/admin/users/${userId}/ban`
+      );
+
+      console.log("[API] User banned successfully:", response.data);
+      return response.data;
+    } catch (error: any) {
+      // Enhanced error logging with full details
+      const errorDetails = {
+        userId,
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        data: error.response?.data,
+        message: error.message,
+        code: error.code,
+        config: {
+          url: error.config?.url,
+          method: error.config?.method,
+        },
+      };
+
+      console.error("[API] Error banning user:", errorDetails);
+
+      // Handle network errors (no response)
+      if (!error.response) {
+        if (error.code === "ECONNABORTED") {
+          throw new Error("Yêu cầu quá thời gian. Vui lòng thử lại.");
+        } else if (error.message?.includes("Network Error")) {
+          throw new Error(
+            "Không thể kết nối đến server. Vui lòng kiểm tra kết nối mạng."
+          );
+        } else {
+          throw new Error(error.message || "Lỗi kết nối. Vui lòng thử lại.");
+        }
+      }
+
+      // Handle HTTP status codes
+      const status = error.response.status;
+      const errorMessage = error.response?.data?.message;
+
+      if (status === 404) {
+        throw new Error(errorMessage || "User không tồn tại");
+      } else if (status === 401) {
+        throw new Error(
+          errorMessage || "Bạn cần đăng nhập để thực hiện thao tác này"
+        );
+      } else if (status === 403) {
+        throw new Error(
+          errorMessage ||
+            "Bạn không có quyền thực hiện thao tác này hoặc không thể ban tài khoản admin"
+        );
+      } else if (status === 400) {
+        throw new Error(errorMessage || "Dữ liệu không hợp lệ");
+      } else if (status === 500) {
+        throw new Error(errorMessage || "Lỗi server. Vui lòng thử lại sau.");
+      } else {
+        throw new Error(
+          errorMessage || `Không thể khóa tài khoản (Lỗi ${status})`
+        );
+      }
+    }
+  }
+
+  // ✅ Unban user (admin only)
+  async unbanUser(
+    userId: string
+  ): Promise<{ success: boolean; message: string }> {
+    try {
+      console.log("[API] Unbanning user:", userId);
+
+      if (!userId || userId.trim() === "") {
+        throw new Error("User ID không hợp lệ");
+      }
+
+      const response = await this.axiosInstance.patch(
+        `/admin/users/${userId}/unban`
+      );
+
+      console.log("[API] User unbanned successfully:", response.data);
+      return response.data;
+    } catch (error: any) {
+      // Enhanced error logging with full details
+      const errorDetails = {
+        userId,
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        data: error.response?.data,
+        message: error.message,
+        code: error.code,
+        config: {
+          url: error.config?.url,
+          method: error.config?.method,
+        },
+      };
+
+      console.error("[API] Error unbanning user:", errorDetails);
+
+      // Handle network errors (no response)
+      if (!error.response) {
+        if (error.code === "ECONNABORTED") {
+          throw new Error("Yêu cầu quá thời gian. Vui lòng thử lại.");
+        } else if (error.message?.includes("Network Error")) {
+          throw new Error(
+            "Không thể kết nối đến server. Vui lòng kiểm tra kết nối mạng."
+          );
+        } else {
+          throw new Error(error.message || "Lỗi kết nối. Vui lòng thử lại.");
+        }
+      }
+
+      // Handle HTTP status codes
+      const status = error.response.status;
+      const errorMessage = error.response?.data?.message;
+
+      if (status === 404) {
+        throw new Error(errorMessage || "User không tồn tại");
+      } else if (status === 401) {
+        throw new Error(
+          errorMessage || "Bạn cần đăng nhập để thực hiện thao tác này"
+        );
+      } else if (status === 403) {
+        throw new Error(
+          errorMessage || "Bạn không có quyền thực hiện thao tác này"
+        );
+      } else if (status === 400) {
+        throw new Error(errorMessage || "Dữ liệu không hợp lệ");
+      } else if (status === 500) {
+        throw new Error(errorMessage || "Lỗi server. Vui lòng thử lại sau.");
+      } else {
+        throw new Error(
+          errorMessage || `Không thể mở khóa tài khoản (Lỗi ${status})`
         );
       }
     }

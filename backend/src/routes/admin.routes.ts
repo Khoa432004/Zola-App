@@ -2,7 +2,8 @@ import { Router } from "express";
 import { authenticate, requireAdmin } from "../middlewares/auth.middleware";
 import { MessageReport } from "../models/MessageReport";
 import { PostReport } from "../models/PostReport";
-import { firestore } from "../config/firebase-admin";
+import { Account, IAccount } from "../models/Account";
+import { firestore, adminAuth } from "../config/firebase-admin";
 import admin from "firebase-admin";
 
 const router = Router();
@@ -28,24 +29,237 @@ router.get("/dashboard", authenticate, requireAdmin, (req: any, res) => {
  * @desc    Lấy danh sách tất cả user (chỉ admin)
  * @access  Private (Admin only)
  */
-router.get("/users", authenticate, requireAdmin, async (req, res) => {
+router.get("/users", authenticate, requireAdmin, async (req: any, res) => {
   try {
-    // TODO: Implement get all users logic
+    console.log("[Admin] Fetching all users...");
+
+    if (!firestore) {
+      return res.status(500).json({
+        success: false,
+        message: "Firestore chưa được khởi tạo",
+      });
+    }
+
+    // Get all accounts from Firestore
+    const accounts = await Account.findAll();
+
+    // Get report counts for each user
+    const usersWithReports = await Promise.all(
+      accounts.map(async (account: IAccount) => {
+        // Count message reports
+        const messageReportsSnapshot = await firestore!
+          .collection("message_reports")
+          .where("reportedUserId", "==", account.id)
+          .get();
+
+        // Count post reports
+        const postReportsSnapshot = await firestore!
+          .collection("post_reports")
+          .where("reportedUserId", "==", account.id)
+          .get();
+
+        const reportCount =
+          messageReportsSnapshot.size + postReportsSnapshot.size;
+
+        // Get Firebase Auth user to check if disabled there too
+        let firebaseAuthDisabled = false;
+        try {
+          if (adminAuth) {
+            // Try to get Firebase Auth user by email
+            const firebaseUser = await adminAuth.getUserByEmail(account.email);
+            firebaseAuthDisabled = firebaseUser.disabled || false;
+          }
+        } catch (error: any) {
+          // User might not exist in Firebase Auth (email-only accounts)
+          console.log(
+            `[Admin] Firebase Auth user not found for ${account.email}:`,
+            error.message
+          );
+        }
+
+        return {
+          id: account.id,
+          name: account.name,
+          email: account.email,
+          avatar: account.avatar,
+          role: account.role,
+          status:
+            account.isDisabled || firebaseAuthDisabled ? "banned" : "active",
+          isDisabled: account.isDisabled || false,
+          createdAt: account.createdAt.toISOString(),
+          lastSeen: account.lastSeen?.toISOString(),
+          reportCount,
+        };
+      })
+    );
+
+    console.log(`[Admin] Found ${usersWithReports.length} users`);
+
     res.json({
       success: true,
       message: "Danh sách user",
       data: {
-        users: [],
-        total: 0,
+        users: usersWithReports,
+        total: usersWithReports.length,
       },
     });
   } catch (error: any) {
+    console.error("[Admin] Error fetching users:", error);
     res.status(500).json({
       success: false,
       message: error.message || "Lỗi server",
     });
   }
 });
+
+/**
+ * @route   PATCH /api/admin/users/:userId/ban
+ * @desc    Ban user (chỉ admin)
+ * @access  Private (Admin only)
+ */
+router.patch(
+  "/users/:userId/ban",
+  authenticate,
+  requireAdmin,
+  async (req: any, res) => {
+    try {
+      const { userId } = req.params;
+
+      console.log("[Admin] Banning user:", userId);
+
+      // Validation
+      if (!userId || userId.trim() === "") {
+        return res.status(400).json({
+          success: false,
+          message: "User ID không hợp lệ",
+        });
+      }
+
+      // Find account
+      const account = await Account.findById(userId);
+      if (!account) {
+        console.log("[Admin] User not found:", userId);
+        return res.status(404).json({
+          success: false,
+          message: "User không tồn tại",
+        });
+      }
+
+      // Prevent banning admin accounts
+      if (account.role === "admin") {
+        console.log("[Admin] Attempted to ban admin account:", userId);
+        return res.status(403).json({
+          success: false,
+          message: "Không thể ban tài khoản admin",
+        });
+      }
+
+      // Update Firestore
+      await Account.update(userId, { isDisabled: true });
+      console.log("[Admin] Updated Firestore account:", userId);
+
+      // Update Firebase Auth if available
+      if (adminAuth) {
+        try {
+          const firebaseUser = await adminAuth.getUserByEmail(account.email);
+          await adminAuth.updateUser(firebaseUser.uid, { disabled: true });
+          console.log("[Admin] Updated Firebase Auth user:", firebaseUser.uid);
+        } catch (firebaseError: any) {
+          // Log warning but don't fail - Firestore update succeeded
+          console.warn(
+            `[Admin] Could not disable Firebase Auth user for ${account.email}:`,
+            firebaseError.message
+          );
+        }
+      }
+
+      res.json({
+        success: true,
+        message: `Đã ban tài khoản ${account.name}`,
+      });
+    } catch (error: any) {
+      console.error("[Admin] Error banning user:", {
+        userId: req.params?.userId,
+        error: error.message,
+        stack: error.stack,
+      });
+      res.status(500).json({
+        success: false,
+        message: error.message || "Lỗi server khi ban user",
+      });
+    }
+  }
+);
+
+/**
+ * @route   PATCH /api/admin/users/:userId/unban
+ * @desc    Unban user (chỉ admin)
+ * @access  Private (Admin only)
+ */
+router.patch(
+  "/users/:userId/unban",
+  authenticate,
+  requireAdmin,
+  async (req: any, res) => {
+    try {
+      const { userId } = req.params;
+
+      console.log("[Admin] Unbanning user:", userId);
+
+      // Validation
+      if (!userId || userId.trim() === "") {
+        return res.status(400).json({
+          success: false,
+          message: "User ID không hợp lệ",
+        });
+      }
+
+      // Find account
+      const account = await Account.findById(userId);
+      if (!account) {
+        console.log("[Admin] User not found:", userId);
+        return res.status(404).json({
+          success: false,
+          message: "User không tồn tại",
+        });
+      }
+
+      // Update Firestore
+      await Account.update(userId, { isDisabled: false });
+      console.log("[Admin] Updated Firestore account:", userId);
+
+      // Update Firebase Auth if available
+      if (adminAuth) {
+        try {
+          const firebaseUser = await adminAuth.getUserByEmail(account.email);
+          await adminAuth.updateUser(firebaseUser.uid, { disabled: false });
+          console.log("[Admin] Updated Firebase Auth user:", firebaseUser.uid);
+        } catch (firebaseError: any) {
+          // Log warning but don't fail - Firestore update succeeded
+          console.warn(
+            `[Admin] Could not enable Firebase Auth user for ${account.email}:`,
+            firebaseError.message
+          );
+        }
+      }
+
+      res.json({
+        success: true,
+        message: `Đã unban tài khoản ${account.name}`,
+      });
+    } catch (error: any) {
+      console.error("[Admin] Error unbanning user:", {
+        userId: req.params?.userId,
+        error: error.message,
+        stack: error.stack,
+      });
+      res.status(500).json({
+        success: false,
+        message: error.message || "Lỗi server khi unban user",
+      });
+    }
+  }
+);
 
 /**
  * @route   DELETE /api/admin/users/:userId

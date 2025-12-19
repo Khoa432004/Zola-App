@@ -314,6 +314,17 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
           conversation.con_id,
           limit
         );
+        
+        // Check if authentication is required
+        if (response.authRequired) {
+          console.warn('[ChatPanel] Authentication required, redirecting to login');
+          alert('⚠️ Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại để tiếp tục.');
+          if (typeof window !== 'undefined') {
+            window.location.href = '/login';
+          }
+          return;
+        }
+
         console.log('[ChatPanel] Messages loaded successfully:', response.data?.length || 0, 'messages');
         if (response.success && response.data) {
           const formattedMessages = formatMessages(response.data);
@@ -354,10 +365,22 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
               console.warn("Failed to mark conversation as seen:", error);
             }
           }, 1000);
+        } else if (!response.success) {
+          // Handle other errors
+          console.error('[ChatPanel] Failed to load messages:', response.message);
+          alert(response.message || "Không thể tải tin nhắn");
         }
       } catch (error: any) {
         console.error("Error loading messages:", error);
-        alert(error.message || "Không thể tải tin nhắn");
+        // Check if it's an auth error
+        if (error.authRequired || error.response?.status === 401) {
+          alert('⚠️ Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại để tiếp tục.');
+          if (typeof window !== 'undefined') {
+            window.location.href = '/login';
+          }
+        } else {
+          alert(error.message || "Không thể tải tin nhắn");
+        }
       } finally {
         setIsLoading(false);
         loadingRef.current = false;
@@ -393,6 +416,17 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
         20,
         oldestTimestamp
       );
+      
+      // Check if authentication is required
+      if (response.authRequired) {
+        console.warn('[ChatPanel] Authentication required in loadOlderMessages, redirecting to login');
+        alert('⚠️ Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại để tiếp tục.');
+        if (typeof window !== 'undefined') {
+          window.location.href = '/login';
+        }
+        return;
+      }
+      
       if (response.success && response.data && response.data.length > 0) {
         const formattedMessages = formatMessages(response.data);
         const responseData = response.data as MessageData[];
@@ -436,6 +470,13 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
       }
     } catch (error: any) {
       console.error("Error loading older messages:", error);
+      // Check if it's an auth error
+      if (error.authRequired || error.response?.status === 401) {
+        alert('⚠️ Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại để tiếp tục.');
+        if (typeof window !== 'undefined') {
+          window.location.href = '/login';
+        }
+      }
     } finally {
       setIsLoadingMore(false);
       loadingMoreRef.current = false;

@@ -36,6 +36,16 @@ export class AuthController {
         data: result,
       } as AuthResponseDto);
     } catch (error: any) {
+      // Check if this is a banned account error
+      if (error.banned) {
+        return res.status(error.statusCode || 403).json({
+          success: false,
+          message:
+            error.message ||
+            "Tài khoản của bạn đã bị khóa. Vui lòng liên hệ admin.",
+          banned: true,
+        } as AuthResponseDto);
+      }
       return res.status(401).json({
         success: false,
         message: error.message || "Đăng nhập thất bại",
@@ -70,6 +80,16 @@ export class AuthController {
         data: result,
       } as AuthResponseDto);
     } catch (error: any) {
+      // Check if this is a banned account error
+      if (error.banned) {
+        return res.status(error.statusCode || 403).json({
+          success: false,
+          message:
+            error.message ||
+            "Tài khoản của bạn đã bị khóa. Vui lòng liên hệ admin.",
+          banned: true,
+        } as AuthResponseDto);
+      }
       return res.status(401).json({
         success: false,
         message: error.message || "Đăng nhập Google thất bại",
@@ -210,7 +230,11 @@ export class AuthController {
     try {
       const resetPasswordDto: ResetPasswordDto = req.body;
 
-      if (!resetPasswordDto.email || !resetPasswordDto.otp || !resetPasswordDto.newPassword) {
+      if (
+        !resetPasswordDto.email ||
+        !resetPasswordDto.otp ||
+        !resetPasswordDto.newPassword
+      ) {
         return res.status(400).json({
           success: false,
           message: "Vui lòng cung cấp đầy đủ thông tin",

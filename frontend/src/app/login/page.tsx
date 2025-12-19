@@ -1,27 +1,40 @@
-'use client';
+"use client";
 
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import Link from 'next/link';
-import { useAuth } from '@/hooks/useAuth';
-import styles from './styles.module.css';
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { useAuth } from "@/hooks/useAuth";
+import styles from "./styles.module.css";
 
 export default function LoginPage() {
   const router = useRouter();
-  const { login, loginWithGoogle, isLoading, error: authError, isAuthenticated, clearError } = useAuth();
+  const {
+    login,
+    loginWithGoogle,
+    isLoading,
+    error: authError,
+    isAuthenticated,
+    clearError,
+  } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
-  const [language, setLanguage] = useState<'vi' | 'en'>('vi');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [language, setLanguage] = useState<"vi" | "en">("vi");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
-  const [localError, setLocalError] = useState('');
-  const [showForgotPassword, setShowForgotPassword] = useState(false)
+  const [localError, setLocalError] = useState("");
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
 
   // Hiển thị lỗi từ Redux
   useEffect(() => {
     if (authError) {
-      setLocalError(authError);
+      // Check if error message contains banned account indicator
+      // The error message should already include the banned message from Redux
+      setLocalError(
+        authError.includes("khóa") || authError.includes("banned")
+          ? "❌ " + authError
+          : authError
+      );
     }
   }, [authError]);
 
@@ -32,75 +45,159 @@ export default function LoginPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLocalError('');
+    setLocalError("");
     clearError();
 
     if (!email || !password) {
-      setLocalError(language === 'vi' ? 'Vui lòng nhập email và mật khẩu' : 'Please enter email and password');
+      setLocalError(
+        language === "vi"
+          ? "Vui lòng nhập email và mật khẩu"
+          : "Please enter email and password"
+      );
       return;
     }
 
     try {
       const result = await login({ email, password });
-      
+
+      // Check if login was rejected
+      if (result && "type" in result && result.type === "auth/login/rejected") {
+        const payload = result.payload as
+          | {
+              message: string;
+              banned?: boolean;
+              code?: string;
+              wrongPassword?: boolean;
+            }
+          | string;
+
+        if (typeof payload === "object") {
+          // Handle banned account
+          if (payload.banned) {
+            setLocalError(
+              "❌ " +
+                (payload.message ||
+                  "Tài khoản của bạn đã bị khóa. Vui lòng liên hệ admin.")
+            );
+            return;
+          }
+
+          // Handle wrong password
+          if (payload.wrongPassword || payload.code === "auth/wrong-password") {
+            setLocalError(
+              "❌ " +
+                (payload.message ||
+                  "Email hoặc mật khẩu không đúng. Vui lòng thử lại.")
+            );
+            return;
+          }
+
+          // Handle other errors
+          setLocalError("❌ " + (payload.message || "Đăng nhập thất bại"));
+          return;
+        } else if (typeof payload === "string") {
+          // Handle string payload
+          setLocalError("❌ " + payload);
+          return;
+        }
+      }
+
+      // Login successful - proceed with redirect
       // Save remember me preference
       if (rememberMe) {
-        localStorage.setItem('rememberMe', 'true');
+        localStorage.setItem("rememberMe", "true");
       } else {
-        localStorage.removeItem('rememberMe');
+        localStorage.removeItem("rememberMe");
       }
 
       // Lấy role từ localStorage (đã được lưu bởi Redux)
-      const accountData = localStorage.getItem('account');
+      const accountData = localStorage.getItem("account");
       if (accountData) {
         const account = JSON.parse(accountData);
-        
+
         // Redirect dựa trên role
-        if (account.role === 'admin') {
-          console.log('Admin detected, redirecting to /admin');
-          router.push('/admin');
+        if (account.role === "admin") {
+          console.log("Admin detected, redirecting to /admin");
+          router.push("/admin");
         } else {
-          console.log('Regular user, redirecting to /chat');
-          router.push('/chat');
+          console.log("Regular user, redirecting to /chat");
+          router.push("/chat");
         }
       } else {
         // Fallback nếu không có account data
-        router.push('/chat');
+        router.push("/chat");
       }
     } catch (error: any) {
-      // Lỗi sẽ được xử lý bởi Redux và hiển thị qua authError
-      console.error('Login error:', error);
+      // Fallback error handling (should rarely happen now)
+      console.error("Login error:", error);
+      setLocalError("❌ " + (error.message || "Đăng nhập thất bại"));
     }
   };
 
   const handleGoogleLogin = async () => {
     try {
       setIsGoogleLoading(true);
-      setLocalError('');
+      setLocalError("");
       clearError();
 
-      await loginWithGoogle();
+      const result = await loginWithGoogle();
+
+      // If user closed the popup, loginWithGoogle returns null
+      // Handle this gracefully without showing an error
+      if (result === null) {
+        // User cancelled - don't show error, just reset loading state
+        setIsGoogleLoading(false);
+        return;
+      }
+
+      // Check if login was rejected (banned account)
+      if (
+        result &&
+        "type" in result &&
+        result.type === "auth/googleLogin/rejected"
+      ) {
+        const payload = result.payload as
+          | { message: string; banned?: boolean }
+          | string;
+        if (typeof payload === "object" && payload.banned) {
+          // Show friendly banned message
+          setLocalError(
+            "❌ " +
+              (payload.message ||
+                "Tài khoản của bạn đã bị khóa. Vui lòng liên hệ admin.")
+          );
+          setIsGoogleLoading(false);
+          return;
+        }
+      }
 
       // Lấy role từ localStorage (đã được lưu bởi Redux)
-      const accountData = localStorage.getItem('account');
+      const accountData = localStorage.getItem("account");
       if (accountData) {
         const account = JSON.parse(accountData);
-        
+
         // Redirect dựa trên role
-        if (account.role === 'admin') {
-          console.log('Admin detected, redirecting to /admin');
-          router.push('/admin');
+        if (account.role === "admin") {
+          console.log("Admin detected, redirecting to /admin");
+          router.push("/admin");
         } else {
-          console.log('Regular user, redirecting to /chat');
-          router.push('/chat');
+          console.log("Regular user, redirecting to /chat");
+          router.push("/chat");
         }
       } else {
         // Fallback nếu không có account data
-        router.push('/chat');
+        router.push("/chat");
       }
     } catch (error: any) {
-      console.error('Google login error:', error);
-      setLocalError(error.message || (language === 'vi' ? 'Đăng nhập Google thất bại' : 'Google login failed'));
+      // Only log and show error for real errors, not popup-closed-by-user
+      // (popup-closed-by-user is already handled above)
+      console.error("Google login error:", error);
+      setLocalError(
+        error.message ||
+          (language === "vi"
+            ? "Đăng nhập Google thất bại"
+            : "Google login failed")
+      );
     } finally {
       setIsGoogleLoading(false);
     }
@@ -110,34 +207,34 @@ export default function LoginPage() {
 
   const translations = {
     vi: {
-      title: 'Đăng nhập',
-      subtitle: 'Welcome back to ZolaChat',
-      email: 'Email',
-      password: 'Mật khẩu',
-      rememberMe: 'Ghi nhớ đăng nhập',
-      forgotPassword: 'Quên mật khẩu?',
-      login: 'Đăng nhập',
-      loginWithGoogle: 'Đăng nhập với Google',
-      loggingIn: 'Đang đăng nhập...',
-      or: 'Hoặc',
-      error: 'Lỗi',
-      noAccount: 'Chưa có tài khoản?',
-      register: 'Đăng ký ngay',
+      title: "Đăng nhập",
+      subtitle: "Welcome back to ZolaChat",
+      email: "Email",
+      password: "Mật khẩu",
+      rememberMe: "Ghi nhớ đăng nhập",
+      forgotPassword: "Quên mật khẩu?",
+      login: "Đăng nhập",
+      loginWithGoogle: "Đăng nhập với Google",
+      loggingIn: "Đang đăng nhập...",
+      or: "Hoặc",
+      error: "Lỗi",
+      noAccount: "Chưa có tài khoản?",
+      register: "Đăng ký ngay",
     },
     en: {
-      title: 'Login',
-      subtitle: 'Welcome back to ZolaChat',
-      email: 'Email',
-      password: 'Password',
-      rememberMe: 'Remember me',
-      forgotPassword: 'Forgot password?',
-      login: 'Login',
-      loginWithGoogle: 'Sign in with Google',
-      loggingIn: 'Signing in...',
-      or: 'Or',
-      error: 'Error',
+      title: "Login",
+      subtitle: "Welcome back to ZolaChat",
+      email: "Email",
+      password: "Password",
+      rememberMe: "Remember me",
+      forgotPassword: "Forgot password?",
+      login: "Login",
+      loginWithGoogle: "Sign in with Google",
+      loggingIn: "Signing in...",
+      or: "Or",
+      error: "Error",
       noAccount: "Don't have an account?",
-      register: 'Register now',
+      register: "Register now",
     },
   };
 
@@ -150,15 +247,17 @@ export default function LoginPage() {
         <p className={styles.subtitle}>{t.subtitle}</p>
 
         {error && (
-          <div style={{
-            padding: '0.75rem',
-            marginBottom: '1rem',
-            backgroundColor: '#FEE2E2',
-            color: '#DC2626',
-            borderRadius: '8px',
-            fontSize: '0.875rem',
-            textAlign: 'center',
-          }}>
+          <div
+            style={{
+              padding: "0.75rem",
+              marginBottom: "1rem",
+              backgroundColor: "#FEE2E2",
+              color: "#DC2626",
+              borderRadius: "8px",
+              fontSize: "0.875rem",
+              textAlign: "center",
+            }}
+          >
             {error}
           </div>
         )}
@@ -183,7 +282,7 @@ export default function LoginPage() {
             <label className={styles.inputLabel}>{t.password}</label>
             <div className={styles.inputWrapper}>
               <input
-                type={showPassword ? 'text' : 'password'}
+                type={showPassword ? "text" : "password"}
                 placeholder={t.password}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
@@ -194,7 +293,7 @@ export default function LoginPage() {
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
                 className={styles.eyeIcon}
-                aria-label={showPassword ? 'Hide password' : 'Show password'}
+                aria-label={showPassword ? "Hide password" : "Show password"}
               >
                 <svg
                   width="20"
@@ -237,7 +336,11 @@ export default function LoginPage() {
             </Link>
           </div>
 
-          <button type="submit" className={styles.loginButton} disabled={isLoading || isGoogleLoading}>
+          <button
+            type="submit"
+            className={styles.loginButton}
+            disabled={isLoading || isGoogleLoading}
+          >
             <svg
               className={styles.loginIcon}
               width="18"
@@ -296,7 +399,7 @@ export default function LoginPage() {
           </button>
 
           <p className={styles.registerPrompt}>
-            {t.noAccount}{' '}
+            {t.noAccount}{" "}
             <Link href="/register" className={styles.registerLink}>
               {t.register}
             </Link>
@@ -306,14 +409,18 @@ export default function LoginPage() {
 
       <div className={styles.languageSelector}>
         <button
-          onClick={() => setLanguage('vi')}
-          className={`${styles.langButton} ${language === 'vi' ? styles.langButtonActive : ''}`}
+          onClick={() => setLanguage("vi")}
+          className={`${styles.langButton} ${
+            language === "vi" ? styles.langButtonActive : ""
+          }`}
         >
           Tiếng Việt
         </button>
         <button
-          onClick={() => setLanguage('en')}
-          className={`${styles.langButton} ${language === 'en' ? styles.langButtonActive : ''}`}
+          onClick={() => setLanguage("en")}
+          className={`${styles.langButton} ${
+            language === "en" ? styles.langButtonActive : ""
+          }`}
         >
           English
         </button>
@@ -321,4 +428,3 @@ export default function LoginPage() {
     </div>
   );
 }
-

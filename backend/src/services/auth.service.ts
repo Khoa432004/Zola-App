@@ -44,6 +44,43 @@ export class AuthService {
       throw new Error("Email hoặc mật khẩu không đúng");
     }
 
+    // Check if account is disabled/banned
+    if (account.isDisabled) {
+      console.log("[Auth Service] Account is disabled:", email);
+      const bannedError: any = new Error(
+        "Tài khoản của bạn đã bị khóa. Vui lòng liên hệ admin."
+      );
+      bannedError.banned = true;
+      bannedError.statusCode = 403;
+      throw bannedError;
+    }
+
+    // Check Firebase Auth status if available
+    if (adminAuth) {
+      try {
+        const firebaseUser = await adminAuth.getUserByEmail(email);
+        if (firebaseUser.disabled) {
+          console.log(
+            "[Auth Service] Firebase Auth account is disabled:",
+            email
+          );
+          const bannedError: any = new Error(
+            "Tài khoản của bạn đã bị khóa. Vui lòng liên hệ admin."
+          );
+          bannedError.banned = true;
+          bannedError.statusCode = 403;
+          throw bannedError;
+        }
+      } catch (error: any) {
+        // Re-throw if it's a banned error
+        if (error.banned) {
+          throw error;
+        }
+        // User might not exist in Firebase Auth (email-only accounts)
+        // Continue with Firestore check only
+      }
+    }
+
     // Check if account uses email provider
     if (account.provider !== "email") {
       console.log(
@@ -163,6 +200,17 @@ export class AuthService {
         account = await Account.findByEmailOrGoogleId(email, googleId);
       } catch (findError: any) {
         throw new Error(`Lỗi khi tìm kiếm account: ${findError.message}`);
+      }
+
+      // Check if account is disabled/banned (if account exists)
+      if (account && account.isDisabled) {
+        console.log("[Auth Service] Account is disabled:", email);
+        const bannedError: any = new Error(
+          "Tài khoản của bạn đã bị khóa. Vui lòng liên hệ admin."
+        );
+        bannedError.banned = true;
+        bannedError.statusCode = 403;
+        throw bannedError;
       }
 
       if (account) {
