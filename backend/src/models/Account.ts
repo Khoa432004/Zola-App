@@ -1,6 +1,6 @@
-import { firestore } from '../config/firebase-admin';
-import bcrypt from 'bcrypt';
-import admin from 'firebase-admin';
+import { firestore } from "../config/firebase-admin";
+import bcrypt from "bcrypt";
+import admin from "firebase-admin";
 
 /**
  * Account interface
@@ -14,14 +14,15 @@ export interface IAccount {
   phone?: string;
   address?: string;
   bio?: string;
-  provider: 'email' | 'google';
+  provider: "email" | "google";
   googleId?: string;
-  role: 'user' | 'admin';
-  otp?: string
-  otpExpiry?: Date
-  otpAttempts?: number
-  otpSendAttempts?: number
-  otpLastSendTime?: Date
+  role: "user" | "admin";
+  isDisabled?: boolean; // Account ban status - true means banned
+  otp?: string;
+  otpExpiry?: Date;
+  otpAttempts?: number;
+  otpSendAttempts?: number;
+  otpLastSendTime?: Date;
   showOnlineStatus?: boolean; // Mặc định true, user có thể tắt
   lastSeen?: Date; // Thời gian online cuối cùng
   createdAt: Date;
@@ -29,18 +30,21 @@ export interface IAccount {
 }
 
 export class Account {
-  private static collection = 'accounts';
+  private static collection = "accounts";
 
   /**
    * Tìm account theo email
    */
   static async findByEmail(email: string): Promise<IAccount | null> {
     if (!firestore) {
-      throw new Error('Firestore not initialized');
+      throw new Error("Firestore not initialized");
     }
 
     const accountsRef = firestore.collection(this.collection);
-    const snapshot = await accountsRef.where('email', '==', email.toLowerCase()).limit(1).get();
+    const snapshot = await accountsRef
+      .where("email", "==", email.toLowerCase())
+      .limit(1)
+      .get();
 
     if (snapshot.empty) {
       return null;
@@ -64,11 +68,14 @@ export class Account {
    */
   static async findByGoogleId(googleId: string): Promise<IAccount | null> {
     if (!firestore) {
-      throw new Error('Firestore not initialized');
+      throw new Error("Firestore not initialized");
     }
 
     const accountsRef = firestore.collection(this.collection);
-    const snapshot = await accountsRef.where('googleId', '==', googleId).limit(1).get();
+    const snapshot = await accountsRef
+      .where("googleId", "==", googleId)
+      .limit(1)
+      .get();
 
     if (snapshot.empty) {
       return null;
@@ -91,7 +98,7 @@ export class Account {
    */
   static async findById(id: string): Promise<IAccount | null> {
     if (!firestore) {
-      throw new Error('Firestore not initialized');
+      throw new Error("Firestore not initialized");
     }
 
     const doc = await firestore.collection(this.collection).doc(id).get();
@@ -112,17 +119,23 @@ export class Account {
   /**
    * Tìm account theo email hoặc Google ID
    */
-  static async findByEmailOrGoogleId(email: string, googleId: string): Promise<IAccount | null> {
+  static async findByEmailOrGoogleId(
+    email: string,
+    googleId: string
+  ): Promise<IAccount | null> {
     if (!firestore) {
-      throw new Error('Firestore not initialized');
+      throw new Error("Firestore not initialized");
     }
 
     try {
       const accountsRef = firestore.collection(this.collection);
-      
+
       // Tìm theo email trước
       try {
-        const emailSnapshot = await accountsRef.where('email', '==', email.toLowerCase()).limit(1).get();
+        const emailSnapshot = await accountsRef
+          .where("email", "==", email.toLowerCase())
+          .limit(1)
+          .get();
         if (!emailSnapshot.empty) {
           const doc = emailSnapshot.docs[0];
           const data = doc.data();
@@ -137,8 +150,10 @@ export class Account {
         }
       } catch (emailError: any) {
         // Xử lý lỗi thiếu index (Firestore sẽ tự tạo)
-        if (emailError.code === 9 || emailError.message?.includes('index')) {
-          console.warn('Email query requires index. Firestore will create it automatically.');
+        if (emailError.code === 9 || emailError.message?.includes("index")) {
+          console.warn(
+            "Email query requires index. Firestore will create it automatically."
+          );
         } else {
           throw emailError;
         }
@@ -146,7 +161,10 @@ export class Account {
 
       // Tìm theo Google ID
       try {
-        const googleSnapshot = await accountsRef.where('googleId', '==', googleId).limit(1).get();
+        const googleSnapshot = await accountsRef
+          .where("googleId", "==", googleId)
+          .limit(1)
+          .get();
         if (!googleSnapshot.empty) {
           const doc = googleSnapshot.docs[0];
           const data = doc.data();
@@ -161,8 +179,10 @@ export class Account {
         }
       } catch (googleError: any) {
         // Xử lý lỗi thiếu index
-        if (googleError.code === 9 || googleError.message?.includes('index')) {
-          console.warn('GoogleId query requires index. Firestore will create it automatically.');
+        if (googleError.code === 9 || googleError.message?.includes("index")) {
+          console.warn(
+            "GoogleId query requires index. Firestore will create it automatically."
+          );
         } else {
           throw googleError;
         }
@@ -170,16 +190,22 @@ export class Account {
 
       return null;
     } catch (error: any) {
-      throw new Error(`Firestore query error: ${error.message || error.code || 'Unknown error'}`);
+      throw new Error(
+        `Firestore query error: ${
+          error.message || error.code || "Unknown error"
+        }`
+      );
     }
   }
 
   /**
    * Tạo account mới (tự động hash password nếu có)
    */
-  static async create(accountData: Omit<IAccount, 'id' | 'createdAt' | 'updatedAt'>): Promise<IAccount> {
+  static async create(
+    accountData: Omit<IAccount, "id" | "createdAt" | "updatedAt">
+  ): Promise<IAccount> {
     if (!firestore) {
-      throw new Error('Firestore not initialized');
+      throw new Error("Firestore not initialized");
     }
 
     const now = admin.firestore.FieldValue.serverTimestamp();
@@ -196,7 +222,9 @@ export class Account {
       accountToCreate.password = await bcrypt.hash(accountData.password, salt);
     }
 
-    const docRef = await firestore.collection(this.collection).add(accountToCreate);
+    const docRef = await firestore
+      .collection(this.collection)
+      .add(accountToCreate);
     const doc = await docRef.get();
     const data = doc.data();
 
@@ -213,9 +241,12 @@ export class Account {
   /**
    * Cập nhật account (tự động hash password nếu có)
    */
-  static async update(id: string, updates: Partial<Omit<IAccount, 'id' | 'createdAt'>>): Promise<IAccount> {
+  static async update(
+    id: string,
+    updates: Partial<Omit<IAccount, "id" | "createdAt">>
+  ): Promise<IAccount> {
     if (!firestore) {
-      throw new Error('Firestore not initialized');
+      throw new Error("Firestore not initialized");
     }
 
     const updateData: any = {
@@ -243,19 +274,25 @@ export class Account {
 
     // Xử lý Date cho lastSeen
     if (updates.lastSeen instanceof Date) {
-      updateData.lastSeen = admin.firestore.Timestamp.fromDate(updates.lastSeen);
+      updateData.lastSeen = admin.firestore.Timestamp.fromDate(
+        updates.lastSeen
+      );
     }
 
     await firestore.collection(this.collection).doc(id).update(updateData);
-    
-    const updatedDoc = await firestore.collection(this.collection).doc(id).get();
+
+    const updatedDoc = await firestore
+      .collection(this.collection)
+      .doc(id)
+      .get();
     const data = updatedDoc.data();
     return {
       id: updatedDoc.id,
       ...updatedDoc.data(),
       createdAt: updatedDoc.data()?.createdAt?.toDate() || new Date(),
       updatedAt: updatedDoc.data()?.updatedAt?.toDate() || new Date(),
-      otpLastSendTime: updatedDoc.data()?.otpLastSendTime?.toDate() || undefined,
+      otpLastSendTime:
+        updatedDoc.data()?.otpLastSendTime?.toDate() || undefined,
       lastSeen: data?.lastSeen?.toDate() || undefined,
     } as IAccount;
   }
@@ -263,26 +300,36 @@ export class Account {
   /**
    * So sánh password với hash
    */
-  static async comparePassword(hashedPassword: string, candidatePassword: string): Promise<boolean> {
+  static async comparePassword(
+    hashedPassword: string,
+    candidatePassword: string
+  ): Promise<boolean> {
     return bcrypt.compare(candidatePassword, hashedPassword);
   }
 
   /**
    * Cập nhật OTP cho account
    */
-  static async updateOTP(email: string, otp: string, otpExpiry: Date): Promise<void> {
+  static async updateOTP(
+    email: string,
+    otp: string,
+    otpExpiry: Date
+  ): Promise<void> {
     if (!firestore) {
-      throw new Error("Firestore not initialized")
+      throw new Error("Firestore not initialized");
     }
 
-    const accountsRef = firestore.collection(this.collection)
-    const snapshot = await accountsRef.where("email", "==", email.toLowerCase()).limit(1).get()
+    const accountsRef = firestore.collection(this.collection);
+    const snapshot = await accountsRef
+      .where("email", "==", email.toLowerCase())
+      .limit(1)
+      .get();
 
     if (snapshot.empty) {
-      throw new Error("Account không tồn tại")
+      throw new Error("Account không tồn tại");
     }
 
-    const doc = snapshot.docs[0]
+    const doc = snapshot.docs[0];
     await doc.ref.update({
       otp,
       otpExpiry: admin.firestore.Timestamp.fromDate(otpExpiry),
@@ -290,7 +337,7 @@ export class Account {
       otpSendAttempts: (doc.data().otpSendAttempts || 0) + 1,
       otpLastSendTime: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    })
+    });
   }
 
   /**
@@ -298,25 +345,28 @@ export class Account {
    */
   static async incrementOTPAttempts(email: string): Promise<number> {
     if (!firestore) {
-      throw new Error("Firestore not initialized")
+      throw new Error("Firestore not initialized");
     }
 
-    const accountsRef = firestore.collection(this.collection)
-    const snapshot = await accountsRef.where("email", "==", email.toLowerCase()).limit(1).get()
+    const accountsRef = firestore.collection(this.collection);
+    const snapshot = await accountsRef
+      .where("email", "==", email.toLowerCase())
+      .limit(1)
+      .get();
 
     if (snapshot.empty) {
-      throw new Error("Account không tồn tại")
+      throw new Error("Account không tồn tại");
     }
 
-    const doc = snapshot.docs[0]
-    const newAttempts = (doc.data().otpAttempts || 0) + 1
+    const doc = snapshot.docs[0];
+    const newAttempts = (doc.data().otpAttempts || 0) + 1;
 
     await doc.ref.update({
       otpAttempts: newAttempts,
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    })
+    });
 
-    return newAttempts
+    return newAttempts;
   }
 
   /**
@@ -324,22 +374,25 @@ export class Account {
    */
   static async resetOTPSendAttempts(email: string): Promise<void> {
     if (!firestore) {
-      throw new Error("Firestore not initialized")
+      throw new Error("Firestore not initialized");
     }
 
-    const accountsRef = firestore.collection(this.collection)
-    const snapshot = await accountsRef.where("email", "==", email.toLowerCase()).limit(1).get()
+    const accountsRef = firestore.collection(this.collection);
+    const snapshot = await accountsRef
+      .where("email", "==", email.toLowerCase())
+      .limit(1)
+      .get();
 
     if (snapshot.empty) {
-      throw new Error("Account không tồn tại")
+      throw new Error("Account không tồn tại");
     }
 
-    const doc = snapshot.docs[0]
+    const doc = snapshot.docs[0];
     await doc.ref.update({
       otpSendAttempts: 0,
       otpLastSendTime: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    })
+    });
   }
 
   /**
@@ -347,17 +400,20 @@ export class Account {
    */
   static async clearOTP(email: string): Promise<void> {
     if (!firestore) {
-      throw new Error("Firestore not initialized")
+      throw new Error("Firestore not initialized");
     }
 
-    const accountsRef = firestore.collection(this.collection)
-    const snapshot = await accountsRef.where("email", "==", email.toLowerCase()).limit(1).get()
+    const accountsRef = firestore.collection(this.collection);
+    const snapshot = await accountsRef
+      .where("email", "==", email.toLowerCase())
+      .limit(1)
+      .get();
 
     if (snapshot.empty) {
-      throw new Error("Account không tồn tại")
+      throw new Error("Account không tồn tại");
     }
 
-    const doc = snapshot.docs[0]
+    const doc = snapshot.docs[0];
     await doc.ref.update({
       otp: admin.firestore.FieldValue.delete(),
       otpExpiry: admin.firestore.FieldValue.delete(),
@@ -365,6 +421,31 @@ export class Account {
       otpSendAttempts: admin.firestore.FieldValue.delete(),
       otpLastSendTime: admin.firestore.FieldValue.delete(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    })
+    });
+  }
+
+  /**
+   * Lấy tất cả accounts (cho admin)
+   */
+  static async findAll(): Promise<IAccount[]> {
+    if (!firestore) {
+      throw new Error("Firestore not initialized");
+    }
+
+    const snapshot = await firestore.collection(this.collection).get();
+
+    return snapshot.docs.map((doc) => {
+      const data = doc.data();
+      return {
+        id: doc.id,
+        ...data,
+        createdAt: data.createdAt?.toDate() || new Date(),
+        updatedAt: data.updatedAt?.toDate() || new Date(),
+        otpExpiry: data.otpExpiry?.toDate() || undefined,
+        otpLastSendTime: data.otpLastSendTime?.toDate() || undefined,
+        lastSeen: data.lastSeen?.toDate() || undefined,
+        isDisabled: data.isDisabled || false,
+      } as IAccount;
+    });
   }
 }

@@ -1,9 +1,10 @@
-'use client';
+"use client";
 
-import { useState, useEffect } from 'react';
-import { useAuth } from '@/hooks/useAuth';
-import { apiService } from '@/services/api';
-import { X } from 'lucide-react';
+import { useState, useEffect } from "react";
+import { useAuth } from "@/hooks/useAuth";
+import { apiService } from "@/services/api";
+import { X } from "lucide-react";
+import PostReportModal from "./PostReportModal";
 
 interface FirebasePost {
   postId: string;
@@ -12,7 +13,7 @@ interface FirebasePost {
   authorAvatar: string;
   caption: string;
   media: Array<{
-    type: 'image' | 'video';
+    type: "image" | "video";
     sourceUrl: string;
     width: number;
     height: number;
@@ -24,7 +25,7 @@ interface FirebasePost {
   commentCount: number;
   promotionLevel: number;
   tags: string[];
-  visibility: 'public' | 'friends' | 'private';
+  visibility: "public" | "friends" | "private";
   isDeleted: boolean;
 }
 
@@ -36,7 +37,7 @@ interface Post {
   title: string;
   description: string;
   media?: Array<{
-    type: 'image' | 'video';
+    type: "image" | "video";
     sourceUrl: string;
     width: number;
     height: number;
@@ -55,9 +56,18 @@ export default function MyPostsModal({ isOpen, onClose }: MyPostsModalProps) {
   const [myPosts, setMyPosts] = useState<Post[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [selectedPostForReport, setSelectedPostForReport] = useState<{
+    id: string;
+    content: string;
+    media?: Array<{
+      type: "image" | "video";
+      sourceUrl: string;
+    }>;
+  } | null>(null);
 
   const formatTimestamp = (date: Date | string): string => {
-    const d = typeof date === 'string' ? new Date(date) : date;
+    const d = typeof date === "string" ? new Date(date) : date;
     const now = new Date();
     const diff = now.getTime() - d.getTime();
     const seconds = Math.floor(diff / 1000);
@@ -72,27 +82,31 @@ export default function MyPostsModal({ isOpen, onClose }: MyPostsModalProps) {
     } else if (minutes > 0) {
       return `cách đây ${minutes} phút`;
     } else {
-      return 'vừa xong';
+      return "vừa xong";
     }
   };
 
   const convertToDisplayPost = (post: FirebasePost): Post => {
-    const createdAt = typeof post.createdAt === 'string' 
-      ? new Date(post.createdAt) 
-      : post.createdAt instanceof Date 
-        ? post.createdAt 
+    const createdAt =
+      typeof post.createdAt === "string"
+        ? new Date(post.createdAt)
+        : post.createdAt instanceof Date
+        ? post.createdAt
         : new Date();
 
     return {
       id: post.postId,
-      author: post.authorName || user?.name || 'Người dùng',
-      email: user?.email || '',
+      author: post.authorName || user?.name || "Người dùng",
+      email: user?.email || "",
       timestamp: formatTimestamp(createdAt),
-      title: post.caption.split('\n')[0] || post.caption.substring(0, 50) || 'Không có tiêu đề',
+      title:
+        post.caption.split("\n")[0] ||
+        post.caption.substring(0, 50) ||
+        "Không có tiêu đề",
       description: post.caption,
       media: post.media && post.media.length > 0 ? post.media : [],
       likes: post.likeCount || 0,
-      isLiked: false
+      isLiked: false,
     };
   };
 
@@ -114,7 +128,7 @@ export default function MyPostsModal({ isOpen, onClose }: MyPostsModalProps) {
           setMyPosts([]);
         }
       } catch (err: any) {
-        setError(err.message || 'Không thể tải bài đăng');
+        setError(err.message || "Không thể tải bài đăng");
         setMyPosts([]);
       } finally {
         setIsLoading(false);
@@ -125,16 +139,18 @@ export default function MyPostsModal({ isOpen, onClose }: MyPostsModalProps) {
   }, [isOpen, user]);
 
   const handleLike = (postId: string) => {
-    setMyPosts(myPosts.map(post => {
-      if (post.id === postId) {
-        return {
-          ...post,
-          isLiked: !post.isLiked,
-          likes: post.isLiked ? post.likes - 1 : post.likes + 1
-        };
-      }
-      return post;
-    }));
+    setMyPosts(
+      myPosts.map((post) => {
+        if (post.id === postId) {
+          return {
+            ...post,
+            isLiked: !post.isLiked,
+            likes: post.isLiked ? post.likes - 1 : post.likes + 1,
+          };
+        }
+        return post;
+      })
+    );
   };
 
   if (!isOpen) return null;
@@ -142,96 +158,111 @@ export default function MyPostsModal({ isOpen, onClose }: MyPostsModalProps) {
   return (
     <div
       style={{
-        position: 'fixed',
+        position: "fixed",
         top: 0,
         left: 0,
         right: 0,
         bottom: 0,
-        background: 'rgba(0, 0, 0, 0.5)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 1000
+        background: "rgba(0, 0, 0, 0.5)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 1000,
       }}
       onClick={onClose}
     >
       <div
         style={{
-          background: '#ffffff',
+          background: "#ffffff",
           borderRadius: 12,
-          width: '90%',
+          width: "90%",
           maxWidth: 800,
-          maxHeight: '90vh',
-          display: 'flex',
-          flexDirection: 'column',
-          boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)'
+          maxHeight: "90vh",
+          display: "flex",
+          flexDirection: "column",
+          boxShadow:
+            "0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)",
         }}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div style={{
-          padding: '20px 24px',
-          borderBottom: '1px solid #e5e7eb',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between'
-        }}>
-          <h2 style={{
-            margin: 0,
-            fontSize: 20,
-            fontWeight: 700,
-            color: '#111827'
-          }}>
+        <div
+          style={{
+            padding: "20px 24px",
+            borderBottom: "1px solid #e5e7eb",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+          }}
+        >
+          <h2
+            style={{
+              margin: 0,
+              fontSize: 20,
+              fontWeight: 700,
+              color: "#111827",
+            }}
+          >
             Bài đăng của tôi
           </h2>
           <button
             onClick={onClose}
             style={{
-              background: 'transparent',
-              border: 'none',
-              cursor: 'pointer',
+              background: "transparent",
+              border: "none",
+              cursor: "pointer",
               padding: 4,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
               borderRadius: 4,
-              transition: 'background 0.2s'
+              transition: "background 0.2s",
             }}
-            onMouseEnter={(e) => (e.currentTarget.style.background = '#f3f4f6')}
-            onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+            onMouseEnter={(e) => (e.currentTarget.style.background = "#f3f4f6")}
+            onMouseLeave={(e) =>
+              (e.currentTarget.style.background = "transparent")
+            }
           >
             <X size={24} color="#6b7280" />
           </button>
         </div>
 
         {/* Content */}
-        <div style={{
-          flex: 1,
-          overflowY: 'auto',
-          padding: '24px'
-        }}>
+        <div
+          style={{
+            flex: 1,
+            overflowY: "auto",
+            padding: "24px",
+          }}
+        >
           {isLoading ? (
-            <div style={{
-              textAlign: 'center',
-              padding: '60px 20px',
-              color: '#6b7280'
-            }}>
+            <div
+              style={{
+                textAlign: "center",
+                padding: "60px 20px",
+                color: "#6b7280",
+              }}
+            >
               <div style={{ fontSize: 16 }}>Đang tải bài đăng...</div>
             </div>
           ) : error ? (
-            <div style={{
-              textAlign: 'center',
-              padding: '60px 20px',
-              color: '#ef4444'
-            }}>
+            <div
+              style={{
+                textAlign: "center",
+                padding: "60px 20px",
+                color: "#ef4444",
+              }}
+            >
               <div style={{ fontSize: 16 }}>{error}</div>
             </div>
           ) : myPosts.length === 0 ? (
-            <div style={{
-              textAlign: 'center',
-              padding: '60px 20px',
-              color: '#6b7280'
-            }}>
+            <div
+              style={{
+                textAlign: "center",
+                padding: "60px 20px",
+                color: "#6b7280",
+              }}
+            >
               <svg
                 width="64"
                 height="64"
@@ -239,7 +270,7 @@ export default function MyPostsModal({ isOpen, onClose }: MyPostsModalProps) {
                 fill="none"
                 stroke="#9ca3af"
                 strokeWidth="1.5"
-                style={{ margin: '0 auto 16px' }}
+                style={{ margin: "0 auto 16px" }}
               >
                 <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
                 <polyline points="14 2 14 8 20 8" />
@@ -252,123 +283,168 @@ export default function MyPostsModal({ isOpen, onClose }: MyPostsModalProps) {
               </p>
             </div>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
               {myPosts.map((post) => (
                 <div
                   key={post.id}
                   style={{
-                    background: '#ffffff',
+                    background: "#ffffff",
                     borderRadius: 12,
-                    padding: '20px',
-                    border: '1px solid #e5e7eb',
-                    boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)'
+                    padding: "20px",
+                    border: "1px solid #e5e7eb",
+                    boxShadow: "0 1px 3px rgba(0, 0, 0, 0.1)",
                   }}
                 >
                   {/* Post Header */}
-                  <div style={{ display: 'flex', alignItems: 'center', marginBottom: 16 }}>
-                    <div style={{
-                      width: 40,
-                      height: 40,
-                      borderRadius: 20,
-                      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      marginRight: 12
-                    }}>
-                      <span style={{ fontSize: 14, color: '#fff', fontWeight: 600 }}>
-                        {post.author.split(' ').map(n => n[0]).join('')}
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      marginBottom: 16,
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: 40,
+                        height: 40,
+                        borderRadius: 20,
+                        background:
+                          "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        marginRight: 12,
+                      }}
+                    >
+                      <span
+                        style={{ fontSize: 14, color: "#fff", fontWeight: 600 }}
+                      >
+                        {post.author
+                          .split(" ")
+                          .map((n) => n[0])
+                          .join("")}
                       </span>
                     </div>
                     <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: 15, fontWeight: 600, color: '#111827', marginBottom: 2 }}>
+                      <div
+                        style={{
+                          fontSize: 15,
+                          fontWeight: 600,
+                          color: "#111827",
+                          marginBottom: 2,
+                        }}
+                      >
                         {post.author}
                       </div>
-                      <div style={{ fontSize: 13, color: '#6b7280' }}>
+                      <div style={{ fontSize: 13, color: "#6b7280" }}>
                         {post.email}
                       </div>
                     </div>
-                    <div style={{ fontSize: 12, color: '#9ca3af' }}>
+                    <div style={{ fontSize: 12, color: "#9ca3af" }}>
                       {post.timestamp}
                     </div>
                   </div>
 
                   {/* Post Title */}
-                  <h3 style={{
-                    margin: '0 0 8px 0',
-                    fontSize: 18,
-                    fontWeight: 700,
-                    color: '#111827'
-                  }}>
+                  <h3
+                    style={{
+                      margin: "0 0 8px 0",
+                      fontSize: 18,
+                      fontWeight: 700,
+                      color: "#111827",
+                    }}
+                  >
                     {post.title}
                   </h3>
 
                   {/* Post Description */}
-                  <p style={{
-                    margin: '0 0 16px 0',
-                    fontSize: 14,
-                    color: '#374151',
-                    lineHeight: 1.6
-                  }}>
+                  <p
+                    style={{
+                      margin: "0 0 16px 0",
+                      fontSize: 14,
+                      color: "#374151",
+                      lineHeight: 1.6,
+                    }}
+                  >
                     {post.description}
                   </p>
 
                   {/* Post Media */}
                   {post.media && post.media.length > 0 && (
-                    <div style={{
-                      width: '100%',
-                      marginBottom: 16,
-                      borderRadius: 8,
-                      overflow: 'hidden',
-                      border: '1px solid #e5e7eb'
-                    }}>
+                    <div
+                      style={{
+                        width: "100%",
+                        marginBottom: 16,
+                        borderRadius: 8,
+                        overflow: "hidden",
+                        border: "1px solid #e5e7eb",
+                      }}
+                    >
                       {post.media.length === 1 ? (
                         <div>
-                          {post.media[0].type === 'image' ? (
+                          {post.media[0].type === "image" ? (
                             <img
-                              src={post.media[0].sourceUrl || '/placeholder.svg'}
+                              src={
+                                post.media[0].sourceUrl || "/placeholder.svg"
+                              }
                               alt={post.title}
-                              style={{ width: '100%', height: 'auto', display: 'block' }}
+                              style={{
+                                width: "100%",
+                                height: "auto",
+                                display: "block",
+                              }}
                               onError={(e) => {
-                                (e.target as HTMLImageElement).style.display = 'none';
+                                (e.target as HTMLImageElement).style.display =
+                                  "none";
                               }}
                             />
                           ) : (
                             <video
                               src={post.media[0].sourceUrl}
                               controls
-                              style={{ width: '100%', height: 'auto', display: 'block' }}
+                              style={{
+                                width: "100%",
+                                height: "auto",
+                                display: "block",
+                              }}
                             />
                           )}
                         </div>
                       ) : (
-                        <div style={{
-                          display: 'grid',
-                          gridTemplateColumns: post.media.length === 2 ? '1fr 1fr' : 'repeat(2, 1fr)',
-                          gap: 2
-                        }}>
+                        <div
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns:
+                              post.media.length === 2
+                                ? "1fr 1fr"
+                                : "repeat(2, 1fr)",
+                            gap: 2,
+                          }}
+                        >
                           {post.media.slice(0, 4).map((item, index) => (
                             <div
                               key={index}
                               style={{
-                                position: 'relative',
-                                aspectRatio: '1',
-                                overflow: 'hidden',
-                                background: '#f3f4f6'
+                                position: "relative",
+                                aspectRatio: "1",
+                                overflow: "hidden",
+                                background: "#f3f4f6",
                               }}
                             >
-                              {item.type === 'image' ? (
+                              {item.type === "image" ? (
                                 <img
-                                  src={item.sourceUrl || '/placeholder.svg'}
+                                  src={item.sourceUrl || "/placeholder.svg"}
                                   alt={`${post.title} - ${index + 1}`}
                                   style={{
-                                    width: '100%',
-                                    height: '100%',
-                                    objectFit: 'cover',
-                                    display: 'block'
+                                    width: "100%",
+                                    height: "100%",
+                                    objectFit: "cover",
+                                    display: "block",
                                   }}
                                   onError={(e) => {
-                                    (e.target as HTMLImageElement).style.display = 'none';
+                                    (
+                                      e.target as HTMLImageElement
+                                    ).style.display = "none";
                                   }}
                                 />
                               ) : (
@@ -376,31 +452,35 @@ export default function MyPostsModal({ isOpen, onClose }: MyPostsModalProps) {
                                   src={item.sourceUrl}
                                   controls
                                   style={{
-                                    width: '100%',
-                                    height: '100%',
-                                    objectFit: 'cover',
-                                    display: 'block'
+                                    width: "100%",
+                                    height: "100%",
+                                    objectFit: "cover",
+                                    display: "block",
                                   }}
                                 />
                               )}
-                              {post.media && post.media.length > 4 && index === 3 && (
-                                <div style={{
-                                  position: 'absolute',
-                                  top: 0,
-                                  left: 0,
-                                  right: 0,
-                                  bottom: 0,
-                                  background: 'rgba(0, 0, 0, 0.5)',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                  color: '#ffffff',
-                                  fontSize: 24,
-                                  fontWeight: 700
-                                }}>
-                                  +{post.media.length - 4}
-                                </div>
-                              )}
+                              {post.media &&
+                                post.media.length > 4 &&
+                                index === 3 && (
+                                  <div
+                                    style={{
+                                      position: "absolute",
+                                      top: 0,
+                                      left: 0,
+                                      right: 0,
+                                      bottom: 0,
+                                      background: "rgba(0, 0, 0, 0.5)",
+                                      display: "flex",
+                                      alignItems: "center",
+                                      justifyContent: "center",
+                                      color: "#ffffff",
+                                      fontSize: 24,
+                                      fontWeight: 700,
+                                    }}
+                                  >
+                                    +{post.media.length - 4}
+                                  </div>
+                                )}
                             </div>
                           ))}
                         </div>
@@ -409,50 +489,107 @@ export default function MyPostsModal({ isOpen, onClose }: MyPostsModalProps) {
                   )}
 
                   {/* Post Actions */}
-                  <div style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 8,
-                    paddingTop: 12,
-                    borderTop: '1px solid #f3f4f6'
-                  }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      paddingTop: 12,
+                      borderTop: "1px solid #f3f4f6",
+                    }}
+                  >
+                    <div
+                      style={{ display: "flex", alignItems: "center", gap: 8 }}
+                    >
+                      <button
+                        onClick={() => handleLike(post.id)}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 6,
+                          background: "transparent",
+                          border: "none",
+                          cursor: "pointer",
+                          padding: "6px 12px",
+                          borderRadius: 6,
+                          transition: "background 0.2s",
+                        }}
+                        onMouseEnter={(e) =>
+                          (e.currentTarget.style.background = "#f9fafb")
+                        }
+                        onMouseLeave={(e) =>
+                          (e.currentTarget.style.background = "transparent")
+                        }
+                      >
+                        <svg
+                          width="20"
+                          height="20"
+                          viewBox="0 0 24 24"
+                          fill={post.isLiked ? "#ef4444" : "none"}
+                          stroke={post.isLiked ? "#ef4444" : "#6b7280"}
+                          strokeWidth="2"
+                        >
+                          <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+                        </svg>
+                        <span
+                          style={{
+                            fontSize: 14,
+                            color: post.isLiked ? "#ef4444" : "#6b7280",
+                            fontWeight: 500,
+                          }}
+                        >
+                          Thích
+                        </span>
+                      </button>
+                      <span style={{ fontSize: 13, color: "#9ca3af" }}>
+                        {post.likes} lượt thích
+                      </span>
+                    </div>
+
+                    {/* Report Button */}
                     <button
-                      onClick={() => handleLike(post.id)}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 6,
-                        background: 'transparent',
-                        border: 'none',
-                        cursor: 'pointer',
-                        padding: '6px 12px',
-                        borderRadius: 6,
-                        transition: 'background 0.2s'
+                      onClick={() => {
+                        setSelectedPostForReport({
+                          id: post.id,
+                          content: post.description,
+                          media: post.media,
+                        });
+                        setShowReportModal(true);
                       }}
-                      onMouseEnter={(e) => (e.currentTarget.style.background = '#f9fafb')}
-                      onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                        background: "transparent",
+                        border: "none",
+                        cursor: "pointer",
+                        padding: "6px 12px",
+                        borderRadius: 6,
+                        transition: "background 0.2s",
+                        color: "#dc2626",
+                        fontSize: 14,
+                        fontWeight: 500,
+                      }}
+                      onMouseEnter={(e) =>
+                        (e.currentTarget.style.background = "#fef2f2")
+                      }
+                      onMouseLeave={(e) =>
+                        (e.currentTarget.style.background = "transparent")
+                      }
+                      title="Báo cáo bài viết"
                     >
                       <svg
-                        width="20"
-                        height="20"
+                        width="18"
+                        height="18"
                         viewBox="0 0 24 24"
-                        fill={post.isLiked ? '#ef4444' : 'none'}
-                        stroke={post.isLiked ? '#ef4444' : '#6b7280'}
+                        fill="none"
+                        stroke="currentColor"
                         strokeWidth="2"
                       >
-                        <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+                        <path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
                       </svg>
-                      <span style={{
-                        fontSize: 14,
-                        color: post.isLiked ? '#ef4444' : '#6b7280',
-                        fontWeight: 500
-                      }}>
-                        Thích
-                      </span>
+                      <span>Báo cáo</span>
                     </button>
-                    <span style={{ fontSize: 13, color: '#9ca3af' }}>
-                      {post.likes} lượt thích
-                    </span>
                   </div>
                 </div>
               ))}
@@ -460,7 +597,18 @@ export default function MyPostsModal({ isOpen, onClose }: MyPostsModalProps) {
           )}
         </div>
       </div>
+
+      {/* Post Report Modal */}
+      <PostReportModal
+        isOpen={showReportModal}
+        onClose={() => {
+          setShowReportModal(false);
+          setSelectedPostForReport(null);
+        }}
+        postId={selectedPostForReport?.id || ""}
+        postContent={selectedPostForReport?.content || ""}
+        postMedia={selectedPostForReport?.media}
+      />
     </div>
   );
 }
-

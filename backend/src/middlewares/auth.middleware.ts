@@ -1,5 +1,5 @@
-import { Request, Response, NextFunction } from 'express';
-import { verifyToken, JwtPayload } from '../utils/jwt';
+import { Request, Response, NextFunction } from "express";
+import { verifyToken, JwtPayload } from "../utils/jwt";
 
 export interface AuthRequest extends Request {
   user?: JwtPayload;
@@ -16,39 +16,79 @@ export const authenticate = (
   try {
     const authHeader = req.headers.authorization;
 
-    console.log('Auth Middleware - Authorization header:', authHeader ? authHeader.substring(0, 20) + '...' : 'NO HEADER');
+    console.log(
+      "[Auth Middleware]",
+      req.method,
+      req.path,
+      "- Authorization header:",
+      authHeader ? authHeader.substring(0, 20) + "..." : "NO HEADER"
+    );
 
     // Kiểm tra Authorization header
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-
-      console.log('Auth Middleware - Missing or invalid Bearer format');
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      console.log(
+        "[Auth Middleware]",
+        req.method,
+        req.path,
+        "- Missing or invalid Bearer format"
+      );
 
       return res.status(401).json({
         success: false,
-        message: 'Không có token xác thực',
+        message: "Không có token xác thực",
       });
     }
 
     // Extract token và verify
     const token = authHeader.substring(7);
-    console.log('Auth Middleware - Token extracted:', token.substring(0, 20) + '...');
+    console.log(
+      "[Auth Middleware]",
+      req.method,
+      req.path,
+      "- Token extracted:",
+      token.substring(0, 20) + "..."
+    );
 
     const decoded = verifyToken(token);
-    console.log('Auth Middleware - Token verified successfully:', decoded);
+    console.log(
+      "[Auth Middleware]",
+      req.method,
+      req.path,
+      "- Token verified successfully:",
+      {
+        userId: decoded.userId,
+        email: decoded.email,
+        role: decoded.role,
+      }
+    );
 
     // Normalize token payload to include `uid` for compatibility with controllers
     const normalizedUser: any = {
       ...(decoded as any),
-      uid: (decoded as any).uid || (decoded as any).userId || (decoded as any).id,
+      uid:
+        (decoded as any).uid || (decoded as any).userId || (decoded as any).id,
     };
 
     req.user = normalizedUser;
+    console.log(
+      "[Auth Middleware]",
+      req.method,
+      req.path,
+      "- Authentication successful for user:",
+      normalizedUser.userId || normalizedUser.uid
+    );
     next();
   } catch (error: any) {
-    console.log('Auth Middleware - Error:', error.message);
+    console.log(
+      "[Auth Middleware]",
+      req.method,
+      req.path,
+      "- Error:",
+      error.message
+    );
     return res.status(401).json({
       success: false,
-      message: 'Token không hợp lệ hoặc đã hết hạn',
+      message: "Token không hợp lệ hoặc đã hết hạn",
     });
   }
 };
@@ -65,8 +105,8 @@ export const optionalAuthenticate = (
     const authHeader = req.headers.authorization;
 
     // If no header, just continue without user
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      console.log('Optional Auth - No token provided, continuing as guest');
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      console.log("Optional Auth - No token provided, continuing as guest");
       req.user = undefined;
       return next();
     }
@@ -77,20 +117,30 @@ export const optionalAuthenticate = (
       const decoded = verifyToken(token);
       const normalizedUser: any = {
         ...(decoded as any),
-        uid: (decoded as any).uid || (decoded as any).userId || (decoded as any).id,
+        uid:
+          (decoded as any).uid ||
+          (decoded as any).userId ||
+          (decoded as any).id,
       };
       req.user = normalizedUser;
-      console.log('Optional Auth - Token verified, userId:', normalizedUser.userId || normalizedUser.uid);
+      console.log(
+        "Optional Auth - Token verified, userId:",
+        normalizedUser.userId || normalizedUser.uid
+      );
     } catch (error) {
       // Token invalid, continue as guest
-      console.log('Optional Auth - Invalid token, continuing as guest');
+      console.log("Optional Auth - Invalid token, continuing as guest");
       req.user = undefined;
     }
-    
+
     next();
   } catch (error: any) {
     // Any error, continue as guest
-    console.log('Optional Auth - Error:', error.message, ', continuing as guest');
+    console.log(
+      "Optional Auth - Error:",
+      error.message,
+      ", continuing as guest"
+    );
     req.user = undefined;
     next();
   }
@@ -109,24 +159,24 @@ export const requireAdmin = (
     if (!req.user) {
       return res.status(401).json({
         success: false,
-        message: 'Bạn cần đăng nhập để thực hiện thao tác này',
+        message: "Bạn cần đăng nhập để thực hiện thao tác này",
       });
     }
 
     // Kiểm tra role
-    if (req.user.role !== 'admin') {
+    if (req.user.role !== "admin") {
       return res.status(403).json({
         success: false,
-        message: 'Bạn không có quyền truy cập. Chỉ admin mới được phép.',
+        message: "Bạn không có quyền truy cập. Chỉ admin mới được phép.",
       });
     }
 
     next();
   } catch (error: any) {
-    console.log('Admin Check - Error:', error.message);
+    console.log("Admin Check - Error:", error.message);
     return res.status(403).json({
       success: false,
-      message: 'Không có quyền truy cập',
+      message: "Không có quyền truy cập",
     });
   }
 };
@@ -144,25 +194,24 @@ export const requireUser = (
     if (!req.user) {
       return res.status(401).json({
         success: false,
-        message: 'Bạn cần đăng nhập để thực hiện thao tác này',
+        message: "Bạn cần đăng nhập để thực hiện thao tác này",
       });
     }
 
     // Kiểm tra role (cả user và admin đều được phép)
-    if (req.user.role !== 'user' && req.user.role !== 'admin') {
+    if (req.user.role !== "user" && req.user.role !== "admin") {
       return res.status(403).json({
         success: false,
-        message: 'Bạn không có quyền truy cập',
+        message: "Bạn không có quyền truy cập",
       });
     }
 
     next();
   } catch (error: any) {
-    console.log('User Check - Error:', error.message);
+    console.log("User Check - Error:", error.message);
     return res.status(403).json({
       success: false,
-      message: 'Không có quyền truy cập',
+      message: "Không có quyền truy cập",
     });
   }
 };
-

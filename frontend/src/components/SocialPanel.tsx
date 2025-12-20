@@ -7,6 +7,7 @@ import { socketService } from '@/services/socket';
 import CreatePostModal from './CreatePostModal';
 import PostDetailModal from './PostDetailModal';
 import SharePostModal from './SharePostModal';
+import PostReportModal from './PostReportModal';
 import StoryBar from './StoryBar';
 import CreateStoryModal from './CreateStoryModal'; 
 
@@ -108,6 +109,8 @@ export default function SocialPanel() {
   const [storyRefreshTrigger, setStoryRefreshTrigger] = useState(0);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [editingPost, setEditingPost] = useState<DisplayPost | null>(null);
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [selectedPostForReport, setSelectedPostForReport] = useState<DisplayPost | null>(null);
   const [activeFilter, setActiveFilter] = useState<FilterType>("newest");
   const [showFilterMenu, setShowFilterMenu] = useState(false);
   const [replyingTo, setReplyingTo] = useState<{ postId: string; commentId?: string } | null>(null);
@@ -334,24 +337,67 @@ export default function SocialPanel() {
     // Listen for new post
     const handlePostCreated = (data: { post: any }) => {
       const postId = data.post.postId || data.post.id;
-      const authorId = data.post.authorId;
-      const caption = data.post.caption || '';
-      const createdAt = data.post.createdAt;
       
-      // Format post to display format
-      const newPost: DisplayPost = {
-        id: postId,
-        authorId: authorId,
-        author: data.post.authorName,
-        email: data.post.authorEmail || '',
-        timestamp: new Date(createdAt).toLocaleString('vi-VN'),
-        title: caption?.split('\n')[0] || '',
-        description: caption?.replace(/^[^\n]+\n?/, '') || '',
+      // Ensure we have a valid postId
+      if (!postId) {
+        console.error('⚠️ Post created event missing postId:', data.post);
+        return;
+      }
+      
+      // Convert socket post data to Post interface format
+      // Handle both camelCase and snake_case field names
+      const socketPost: Post = {
+        postId: postId,
+        authorId: data.post.authorId || data.post.author_id || '',
+        authorName: data.post.authorName || data.post.author_name || 'Người dùng',
+        authorAvatar: data.post.authorAvatar || data.post.author_avatar || '',
+        caption: data.post.caption || '',
         media: data.post.media || [],
-        likes: data.post.likeCount || 0,
-        commentCount: data.post.commentCount || 0,
+        createdAt: data.post.createdAt || data.post.created_at || new Date(),
+        updatedAt: data.post.updatedAt || data.post.updated_at || data.post.createdAt || new Date(),
+        likeCount: data.post.likeCount || data.post.like_count || 0,
+        viewCount: data.post.viewCount || data.post.view_count || 0,
+        commentCount: data.post.commentCount || data.post.comment_count || 0,
+        promotionLevel: data.post.promotionLevel || data.post.promotion_level || 1,
+        tags: data.post.tags || [],
+        visibility: data.post.visibility || 'public',
+        isDeleted: data.post.isDeleted || data.post.is_deleted || false,
         isLiked: false,
+        isShared: data.post.isShared || data.post.is_shared || false,
+        sharedPostId: data.post.sharedPostId || data.post.shared_post_id,
+        sharedPost: data.post.sharedPost || data.post.shared_post,
+        shareCount: data.post.shareCount || data.post.share_count || 0,
       };
+      
+      // Use convertToDisplayPost for consistency with loaded posts
+      const newPost = convertToDisplayPost(socketPost);
+      
+      // Ensure authorId is set (critical for Report button visibility)
+      if (!newPost.authorId && socketPost.authorId) {
+        newPost.authorId = socketPost.authorId;
+      }
+      
+      // Validate authorId is present and not empty
+      if (!newPost.authorId || newPost.authorId.trim() === '') {
+        console.error('⚠️ Post created event missing or empty authorId:', {
+          postId,
+          newPostAuthorId: newPost.authorId,
+          socketPostAuthorId: socketPost.authorId,
+          dataPostAuthorId: data.post.authorId,
+          dataPostAuthor_id: data.post.author_id,
+          fullDataPost: data.post,
+        });
+        // Don't add post if authorId is missing - it's required for Report button
+        return;
+      }
+      
+      // Log successful post creation with authorId for debugging
+      console.log('✅ Post created with authorId:', {
+        postId,
+        authorId: newPost.authorId,
+        author: newPost.author,
+        willShowReportButton: newPost.authorId !== user?.id,
+      });
       
       // Add to beginning of posts list with duplicate check
       setPosts(prev => {
@@ -365,15 +411,15 @@ export default function SocialPanel() {
         // 2. Check if duplicate by author + title + recent (within last 10 posts)
         // This prevents duplicate from same author with same title sent at nearly same time
         const duplicateIndex = prev.findIndex(p => {
-          const isSameAuthor = p.authorId === authorId;
+          const isSameAuthor = p.authorId === newPost.authorId;
           const isSameTitle = p.title.trim() === newPost.title.trim();
           const isRecent = prev.indexOf(p) < 10; // Within last 10 posts
           
           if (isSameAuthor && isSameTitle && isRecent) {
             // Check if timestamps are very close (within 5 seconds) - likely duplicate
             try {
-              const postTime = new Date(p.timestamp).getTime();
-              const newPostTime = new Date(createdAt).getTime();
+              const postTime = parseDate(p.timestamp).getTime();
+              const newPostTime = parseDate(socketPost.createdAt).getTime();
               return Math.abs(postTime - newPostTime) < 5000; // 5 seconds
             } catch {
               // If can't parse timestamps, assume duplicate if recent and same author+title
@@ -399,7 +445,12 @@ export default function SocialPanel() {
         }
         
         // 3. New post - add to beginning of list
-        console.log('✅ Adding new post to UI:', postId);
+        console.log('✅ Adding new post to UI:', {
+          postId,
+          authorId: newPost.authorId,
+          author: newPost.author,
+          willShowReportButton: newPost.authorId !== user?.id,
+        });
         setLoadedPostsCount(prev => prev + 1);
         return [newPost, ...prev];
       });
@@ -1299,7 +1350,7 @@ export default function SocialPanel() {
                   <div style={{ fontSize: 12, color: "#9ca3af" }}>
                     {post.timestamp}
                   </div>
-                  {user && user.id === post.authorId && (
+                  {user && post.authorId && user.id === post.authorId && (
                     <div style={{ position: "relative" }}>
                       <button
                         onClick={(e) => {
@@ -1781,6 +1832,45 @@ export default function SocialPanel() {
                     {post.shareCount} lượt chia sẻ
                   </span>
                 )}
+                {/* Report Button - Show for posts not owned by current user */}
+                {post.authorId && post.authorId.trim() !== '' && post.authorId !== user?.id && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSelectedPostForReport(post);
+                      setShowReportModal(true);
+                    }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      background: 'transparent',
+                      border: 'none',
+                      color: '#dc2626',
+                      cursor: 'pointer',
+                      fontSize: 14,
+                      fontWeight: 500,
+                      padding: '6px 12px',
+                      borderRadius: 6,
+                      transition: 'background 0.2s'
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = '#fef2f2')}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                    title="Báo cáo bài viết"
+                  >
+                    <svg
+                      width="20"
+                      height="20"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                    >
+                      <path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                    </svg>
+                    <span>Báo cáo</span>
+                  </button>
+                )}
               </div>
 
               {/* Comments Section */}
@@ -1992,6 +2082,20 @@ export default function SocialPanel() {
           setStoryRefreshTrigger(prev => prev + 1);
         }}
       />
+
+      {/* Post Report Modal */}
+      {selectedPostForReport && (
+        <PostReportModal
+          isOpen={showReportModal}
+          onClose={() => {
+            setShowReportModal(false);
+            setSelectedPostForReport(null);
+          }}
+          postId={selectedPostForReport.id}
+          postContent={selectedPostForReport.description}
+          postMedia={selectedPostForReport.media}
+        />
+      )}
     </div>
   );
 }

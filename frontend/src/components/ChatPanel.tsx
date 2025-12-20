@@ -6,6 +6,7 @@ import { apiService } from "@/services/api";
 import { socketService } from "@/services/socket";
 import EmojiPicker from "./EmojiPicker";
 import { AppointmentModal } from "./AppointmentModal";
+import MessageReportModal from "./MessageReportModal";
 
 // Voice Message Player Component
 function VoiceMessagePlayer({ src, isUser }: { src: string; isUser: boolean }) {
@@ -55,11 +56,15 @@ function VoiceMessagePlayer({ src, isUser }: { src: string; isUser: boolean }) {
     return `${mins}:${secs.toString().padStart(2, "0")}`;
   };
 
-  // Generate waveform bars (simple visualization)
-  const waveformBars = Array.from({ length: 20 }, (_, i) => {
-    const height = 20 + Math.random() * 40; // Random height between 20-60
-    return height;
-  });
+  // Generate waveform bars (simple visualization) - use useMemo to avoid re-rendering issues
+  // Use fixed heights instead of random to avoid React strict mode warnings
+  const waveformBars = useMemo(() => {
+    const heights = [
+      45, 30, 55, 35, 50, 40, 60, 25, 48, 32, 52, 38, 58, 28, 46, 42, 54, 36,
+      49, 33,
+    ];
+    return heights;
+  }, []);
 
   return (
     <>
@@ -126,9 +131,7 @@ function VoiceMessagePlayer({ src, isUser }: { src: string; isUser: boolean }) {
                 borderRadius: 1,
                 transition: "height 0.1s ease",
                 animation: isPlaying
-                  ? `waveform ${
-                      0.5 + Math.random() * 0.5
-                    }s ease-in-out infinite`
+                  ? `waveform 0.75s ease-in-out infinite`
                   : "none",
                 animationDelay: `${index * 0.05}s`,
               }}
@@ -169,7 +172,12 @@ interface Conversation {
   timestamp: string;
   isOnline?: boolean;
   is_group: boolean;
-  members?: Array<{ user_id: string; user_name: string; user_avatar?: string; last_seen?: Date | string }>;
+  members?: Array<{
+    user_id: string;
+    user_name: string;
+    user_avatar?: string;
+    last_seen?: Date | string;
+  }>;
   otherUserId?: string;
 }
 
@@ -233,6 +241,11 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
   const [currentSearchIndex, setCurrentSearchIndex] = useState(-1);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [showAppointmentModal, setShowAppointmentModal] = useState(false);
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [selectedMessageForReport, setSelectedMessageForReport] = useState<{
+    id: string;
+    content: string;
+  } | null>(null);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [previewUrls, setPreviewUrls] = useState<string[]>([]);
   const [isRecording, setIsRecording] = useState(false);
@@ -292,6 +305,8 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
     async (limit: number = 50) => {
       if (loadingRef.current || !conversation?.con_id) return;
 
+      console.log('[ChatPanel] Loading messages for conversation:', conversation.con_id);
+
       try {
         loadingRef.current = true;
         setIsLoading(true);
@@ -299,6 +314,18 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
           conversation.con_id,
           limit
         );
+        
+        // Check if authentication is required
+        if (response.authRequired) {
+          console.warn('[ChatPanel] Authentication required, redirecting to login');
+          alert('⚠️ Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại để tiếp tục.');
+          if (typeof window !== 'undefined') {
+            window.location.href = '/login';
+          }
+          return;
+        }
+
+        console.log('[ChatPanel] Messages loaded successfully:', response.data?.length || 0, 'messages');
         if (response.success && response.data) {
           const formattedMessages = formatMessages(response.data);
           setMessages(formattedMessages);
@@ -338,10 +365,22 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
               console.warn("Failed to mark conversation as seen:", error);
             }
           }, 1000);
+        } else if (!response.success) {
+          // Handle other errors
+          console.error('[ChatPanel] Failed to load messages:', response.message);
+          alert(response.message || "Không thể tải tin nhắn");
         }
       } catch (error: any) {
         console.error("Error loading messages:", error);
-        alert(error.message || "Không thể tải tin nhắn");
+        // Check if it's an auth error
+        if (error.authRequired || error.response?.status === 401) {
+          alert('⚠️ Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại để tiếp tục.');
+          if (typeof window !== 'undefined') {
+            window.location.href = '/login';
+          }
+        } else {
+          alert(error.message || "Không thể tải tin nhắn");
+        }
       } finally {
         setIsLoading(false);
         loadingRef.current = false;
@@ -377,6 +416,17 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
         20,
         oldestTimestamp
       );
+      
+      // Check if authentication is required
+      if (response.authRequired) {
+        console.warn('[ChatPanel] Authentication required in loadOlderMessages, redirecting to login');
+        alert('⚠️ Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại để tiếp tục.');
+        if (typeof window !== 'undefined') {
+          window.location.href = '/login';
+        }
+        return;
+      }
+      
       if (response.success && response.data && response.data.length > 0) {
         const formattedMessages = formatMessages(response.data);
         const responseData = response.data as MessageData[];
@@ -420,6 +470,13 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
       }
     } catch (error: any) {
       console.error("Error loading older messages:", error);
+      // Check if it's an auth error
+      if (error.authRequired || error.response?.status === 401) {
+        alert('⚠️ Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại để tiếp tục.');
+        if (typeof window !== 'undefined') {
+          window.location.href = '/login';
+        }
+      }
     } finally {
       setIsLoadingMore(false);
       loadingMoreRef.current = false;
@@ -445,13 +502,15 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
         // Current user's message
         senderName = user.name || user.email?.split("@")[0] || "Bạn";
         // Use user.avatar if it's a URL, otherwise use initials
-        if (user.avatar && typeof user.avatar === 'string') {
+        if (user.avatar && typeof user.avatar === "string") {
           const trimmedAvatar = user.avatar.trim();
-          if (trimmedAvatar.length > 0 && 
-              (trimmedAvatar.startsWith("http://") || 
-               trimmedAvatar.startsWith("https://") || 
-               trimmedAvatar.startsWith("http") ||
-               trimmedAvatar.startsWith("data:"))) {
+          if (
+            trimmedAvatar.length > 0 &&
+            (trimmedAvatar.startsWith("http://") ||
+              trimmedAvatar.startsWith("https://") ||
+              trimmedAvatar.startsWith("http") ||
+              trimmedAvatar.startsWith("data:"))
+          ) {
             senderAvatar = trimmedAvatar;
           } else {
             // Not a URL, use initials
@@ -472,33 +531,51 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
           if (sender) {
             senderName = sender.user_name || senderName;
             // Use user_avatar if it's a URL, otherwise use initials
-            if (sender.user_avatar && typeof sender.user_avatar === 'string') {
+            if (sender.user_avatar && typeof sender.user_avatar === "string") {
               const trimmedAvatar = sender.user_avatar.trim();
-              if (trimmedAvatar.length > 0 && 
-                  (trimmedAvatar.startsWith("http://") || 
-                   trimmedAvatar.startsWith("https://") || 
-                   trimmedAvatar.startsWith("http") ||
-                   trimmedAvatar.startsWith("data:"))) {
+              if (
+                trimmedAvatar.length > 0 &&
+                (trimmedAvatar.startsWith("http://") ||
+                  trimmedAvatar.startsWith("https://") ||
+                  trimmedAvatar.startsWith("http") ||
+                  trimmedAvatar.startsWith("data:"))
+              ) {
                 senderAvatar = trimmedAvatar;
-                console.log('[ChatPanel] Using avatar URL for sender:', senderName, senderAvatar);
+                console.log(
+                  "[ChatPanel] Using avatar URL for sender:",
+                  senderName,
+                  senderAvatar
+                );
               } else {
                 // Not a URL, use initials
-                senderAvatar = sender.user_name?.charAt(0)?.toUpperCase() || "?";
-                console.log('[ChatPanel] Using initials for sender:', senderName, 'avatar value:', sender.user_avatar);
+                senderAvatar =
+                  sender.user_name?.charAt(0)?.toUpperCase() || "?";
+                console.log(
+                  "[ChatPanel] Using initials for sender:",
+                  senderName,
+                  "avatar value:",
+                  sender.user_avatar
+                );
               }
             } else {
               senderAvatar = sender.user_name?.charAt(0)?.toUpperCase() || "?";
-              console.log('[ChatPanel] Using initials for sender (no avatar):', senderName);
+              console.log(
+                "[ChatPanel] Using initials for sender (no avatar):",
+                senderName
+              );
             }
           } else {
             // Fallback if sender not found in members
             senderAvatar = senderName?.charAt(0)?.toUpperCase() || "?";
-            console.log('[ChatPanel] Sender not found in members:', msg.sender_id);
+            console.log(
+              "[ChatPanel] Sender not found in members:",
+              msg.sender_id
+            );
           }
         } else {
           // Fallback if no members
           senderAvatar = senderName?.charAt(0)?.toUpperCase() || "?";
-          console.log('[ChatPanel] No members in conversation');
+          console.log("[ChatPanel] No members in conversation");
         }
       }
 
@@ -1372,6 +1449,26 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
   // Popular emojis for reactions
   const popularEmojis = ["❤️", "😂", "😮", "😢", "😡", "👍", "👎", "🔥"];
 
+  // Handle report message - Open modal with message details
+  const handleReportMessage = useCallback(
+    (messageId: string, content: string) => {
+      if (!conversation?.con_id) {
+        alert("Không thể báo cáo: Thiếu thông tin cuộc trò chuyện");
+        return;
+      }
+
+      if (!messageId || !content) {
+        alert("Không thể báo cáo: Thiếu thông tin tin nhắn");
+        return;
+      }
+
+      // Set selected message and open modal
+      setSelectedMessageForReport({ id: messageId, content });
+      setShowReportModal(true);
+    },
+    [conversation?.con_id]
+  );
+
   // Retry failed message
   const retryMessage = async (failedMsg: Message) => {
     // Remove the failed message
@@ -1418,24 +1515,27 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
         >
           {(() => {
             // Get other user info for private chat
-            const otherUserId = !conversation.is_group && conversation.otherUserId
-              ? conversation.otherUserId
-              : null;
+            const otherUserId =
+              !conversation.is_group && conversation.otherUserId
+                ? conversation.otherUserId
+                : null;
             const isOnline = otherUserId ? !!onlineUsers[otherUserId] : false;
-            
+
             // Get avatar from conversation members
             let avatarUrl: string | undefined;
             let avatarInitials: string = conversation.avatar;
-            
+
             if (!conversation.is_group && conversation.members && user) {
               const otherMember = conversation.members.find(
                 (m) => m.user_id !== user.id
               );
               if (otherMember?.user_avatar) {
                 const trimmedAvatar = otherMember.user_avatar.trim();
-                if (trimmedAvatar.startsWith("http://") || 
-                    trimmedAvatar.startsWith("https://") || 
-                    trimmedAvatar.startsWith("data:")) {
+                if (
+                  trimmedAvatar.startsWith("http://") ||
+                  trimmedAvatar.startsWith("https://") ||
+                  trimmedAvatar.startsWith("data:")
+                ) {
                   avatarUrl = trimmedAvatar;
                 } else {
                   avatarInitials = trimmedAvatar;
@@ -1444,9 +1544,9 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
                 avatarInitials = otherMember.user_name.charAt(0).toUpperCase();
               }
             }
-            
+
             const hasImageAvatar = !!avatarUrl;
-            
+
             return (
               <div
                 style={{
@@ -1478,7 +1578,9 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
                     }}
                   />
                 ) : (
-                  <span style={{ fontSize: 14, color: "#fff", fontWeight: 600 }}>
+                  <span
+                    style={{ fontSize: 14, color: "#fff", fontWeight: 600 }}
+                  >
                     {avatarInitials}
                   </span>
                 )}
@@ -1511,29 +1613,37 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
               </div>
               {(() => {
                 // Get other user info for private chat
-                const otherUserId = !conversation.is_group && conversation.otherUserId
-                  ? conversation.otherUserId
-                  : null;
-                const isOnline = otherUserId ? !!onlineUsers[otherUserId] : false;
-                
+                const otherUserId =
+                  !conversation.is_group && conversation.otherUserId
+                    ? conversation.otherUserId
+                    : null;
+                const isOnline = otherUserId
+                  ? !!onlineUsers[otherUserId]
+                  : false;
+
                 if (conversation.is_group) {
                   return null; // Don't show status for group chats
                 }
-                
+
                 // Helper function to format last seen time
-                const formatLastSeen = (lastSeen: Date | string | any | undefined): string => {
+                const formatLastSeen = (
+                  lastSeen: Date | string | any | undefined
+                ): string => {
                   if (!lastSeen) return "";
-                  
+
                   let lastSeenDate: Date;
-                  
+
                   // Handle different types of lastSeen
-                  if (typeof lastSeen === 'string') {
+                  if (typeof lastSeen === "string") {
                     lastSeenDate = new Date(lastSeen);
                   } else if (lastSeen instanceof Date) {
                     lastSeenDate = lastSeen;
-                  } else if (lastSeen && typeof lastSeen === 'object') {
+                  } else if (lastSeen && typeof lastSeen === "object") {
                     // Handle Firestore Timestamp or similar objects
-                    if (lastSeen.toDate && typeof lastSeen.toDate === 'function') {
+                    if (
+                      lastSeen.toDate &&
+                      typeof lastSeen.toDate === "function"
+                    ) {
                       lastSeenDate = lastSeen.toDate();
                     } else if (lastSeen.seconds) {
                       // Firestore Timestamp with seconds
@@ -1541,7 +1651,10 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
                     } else if (lastSeen._seconds) {
                       // Firestore Timestamp with _seconds
                       lastSeenDate = new Date(lastSeen._seconds * 1000);
-                    } else if (lastSeen.getTime && typeof lastSeen.getTime === 'function') {
+                    } else if (
+                      lastSeen.getTime &&
+                      typeof lastSeen.getTime === "function"
+                    ) {
                       lastSeenDate = new Date(lastSeen.getTime());
                     } else {
                       // Try to parse as string
@@ -1551,24 +1664,24 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
                     // Fallback: try to parse as string
                     lastSeenDate = new Date(String(lastSeen));
                   }
-                  
+
                   // Validate date
                   if (isNaN(lastSeenDate.getTime())) {
                     return "";
                   }
-                  
+
                   const now = new Date();
                   const diffMs = now.getTime() - lastSeenDate.getTime();
-                  
+
                   // Handle negative diff (future dates)
                   if (diffMs < 0) {
                     return "Vừa hoạt động";
                   }
-                  
+
                   const diffMins = Math.floor(diffMs / 60000);
                   const diffHours = Math.floor(diffMs / 3600000);
                   const diffDays = Math.floor(diffMs / 86400000);
-                  
+
                   if (diffMins < 1) {
                     return "Vừa hoạt động";
                   } else if (diffMins < 60) {
@@ -1584,11 +1697,15 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
                     });
                   }
                 };
-                
+
                 if (isOnline) {
                   return (
                     <span
-                      style={{ fontSize: 12, color: "#10b981", fontWeight: 500 }}
+                      style={{
+                        fontSize: 12,
+                        color: "#10b981",
+                        fontWeight: 500,
+                      }}
                     >
                       Đang hoạt động
                     </span>
@@ -1602,13 +1719,17 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
                     );
                     lastSeen = otherMember?.last_seen;
                   }
-                  
+
                   const lastSeenText = formatLastSeen(lastSeen);
-                  
+
                   if (lastSeenText) {
                     return (
                       <span
-                        style={{ fontSize: 12, color: "#9ca3af", fontWeight: 500 }}
+                        style={{
+                          fontSize: 12,
+                          color: "#9ca3af",
+                          fontWeight: 500,
+                        }}
                       >
                         {lastSeenText}
                       </span>
@@ -1616,7 +1737,11 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
                   } else {
                     return (
                       <span
-                        style={{ fontSize: 12, color: "#9ca3af", fontWeight: 500 }}
+                        style={{
+                          fontSize: 12,
+                          color: "#9ca3af",
+                          fontWeight: 500,
+                        }}
                       >
                         Offline
                       </span>
@@ -2307,8 +2432,8 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
                           </div>
                         )}
 
-            {/* Reaction & Reply Picker */}
-            {hoveredMessage === msg.id && (
+                        {/* Reaction & Reply Picker */}
+                        {hoveredMessage === msg.id && (
                           <div
                             style={{
                               position: "absolute",
@@ -2323,58 +2448,62 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
                               zIndex: 100,
                               border: "1px solid #e5e7eb",
                             }}
-                >
-                  {/* Reply Button - only for other people's messages */}
-                  {!isUser && (
-                    <>
-                      <button
-                        onClick={() => setReplyingTo(msg)}
-                        style={{
-                          width: 32,
-                          height: 32,
-                          borderRadius: 16,
-                          border: "none",
-                          background: "transparent",
-                          cursor: "pointer",
-                          fontSize: 16,
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          transition: "background 0.2s, transform 0.1s",
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.background = "#f3f4f6";
-                          e.currentTarget.style.transform = "scale(1.2)";
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.background =
-                            "transparent";
-                          e.currentTarget.style.transform = "scale(1)";
-                        }}
-                        title="Trả lời"
-                      >
-                        <svg
-                          width="18"
-                          height="18"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="#6b7280"
-                          strokeWidth="2"
-                        >
-                          <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
-                        </svg>
-                      </button>
+                          >
+                            {/* Reply Button - only for other people's messages */}
+                            {!isUser && (
+                              <>
+                                <button
+                                  onClick={() => setReplyingTo(msg)}
+                                  style={{
+                                    width: 32,
+                                    height: 32,
+                                    borderRadius: 16,
+                                    border: "none",
+                                    background: "transparent",
+                                    cursor: "pointer",
+                                    fontSize: 16,
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    transition:
+                                      "background 0.2s, transform 0.1s",
+                                  }}
+                                  onMouseEnter={(e) => {
+                                    e.currentTarget.style.background =
+                                      "#f3f4f6";
+                                    e.currentTarget.style.transform =
+                                      "scale(1.2)";
+                                  }}
+                                  onMouseLeave={(e) => {
+                                    e.currentTarget.style.background =
+                                      "transparent";
+                                    e.currentTarget.style.transform =
+                                      "scale(1)";
+                                  }}
+                                  title="Trả lời"
+                                >
+                                  <svg
+                                    width="18"
+                                    height="18"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="#6b7280"
+                                    strokeWidth="2"
+                                  >
+                                    <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
+                                  </svg>
+                                </button>
 
-                      {/* Divider */}
-                      <div
-                        style={{
-                          width: 1,
-                          background: "#e5e7eb",
-                          margin: "4px 0",
-                        }}
-                      />
-                    </>
-                  )}
+                                {/* Divider */}
+                                <div
+                                  style={{
+                                    width: 1,
+                                    background: "#e5e7eb",
+                                    margin: "4px 0",
+                                  }}
+                                />
+                              </>
+                            )}
 
                             {/* Reaction Emojis */}
                             {popularEmojis.map((emoji) => (
@@ -2532,12 +2661,13 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
                         height: 32,
                         borderRadius: 16,
                         background: (() => {
-                          const isImageUrl = msg.senderAvatar && 
-                            typeof msg.senderAvatar === 'string' &&
-                            (msg.senderAvatar.startsWith("http://") || 
-                             msg.senderAvatar.startsWith("https://") || 
-                             msg.senderAvatar.startsWith("data:"));
-                          return isImageUrl 
+                          const isImageUrl =
+                            msg.senderAvatar &&
+                            typeof msg.senderAvatar === "string" &&
+                            (msg.senderAvatar.startsWith("http://") ||
+                              msg.senderAvatar.startsWith("https://") ||
+                              msg.senderAvatar.startsWith("data:"));
+                          return isImageUrl
                             ? "transparent"
                             : "linear-gradient(135deg, #667eea 0%, #764ba2 100%)";
                         })(),
@@ -2549,7 +2679,10 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
                       }}
                     >
                       {(() => {
-                        if (!msg.senderAvatar || typeof msg.senderAvatar !== 'string') {
+                        if (
+                          !msg.senderAvatar ||
+                          typeof msg.senderAvatar !== "string"
+                        ) {
                           // Fallback to sender name initial if no avatar
                           return (
                             <span
@@ -2563,26 +2696,26 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
                             </span>
                           );
                         }
-                        
+
                         // Trim and check if senderAvatar is a valid image URL
                         const trimmedAvatar = msg.senderAvatar.trim();
-                        const isImageUrl = trimmedAvatar.length > 0 && (
-                          trimmedAvatar.startsWith("http://") || 
-                          trimmedAvatar.startsWith("https://") || 
-                          trimmedAvatar.startsWith("http") || // Fallback for URLs without //
-                          trimmedAvatar.startsWith("data:image") ||
-                          trimmedAvatar.startsWith("data:")
-                        );
-                        
+                        const isImageUrl =
+                          trimmedAvatar.length > 0 &&
+                          (trimmedAvatar.startsWith("http://") ||
+                            trimmedAvatar.startsWith("https://") ||
+                            trimmedAvatar.startsWith("http") || // Fallback for URLs without //
+                            trimmedAvatar.startsWith("data:image") ||
+                            trimmedAvatar.startsWith("data:"));
+
                         // Debug log
-                        console.log('[ChatPanel Avatar Render]', {
+                        console.log("[ChatPanel Avatar Render]", {
                           senderName: msg.senderName,
                           originalAvatar: msg.senderAvatar,
                           trimmedAvatar,
                           isImageUrl,
-                          avatarLength: trimmedAvatar.length
+                          avatarLength: trimmedAvatar.length,
                         });
-                        
+
                         if (isImageUrl) {
                           // Always render img tag for URLs, never show URL as text
                           return (
@@ -2595,26 +2728,34 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
                                 objectFit: "cover",
                               }}
                               onError={(e) => {
-                                console.error('[ChatPanel Avatar Error] Failed to load image:', trimmedAvatar);
+                                console.error(
+                                  "[ChatPanel Avatar Error] Failed to load image:",
+                                  trimmedAvatar
+                                );
                                 const target = e.target as HTMLImageElement;
                                 target.style.display = "none";
                                 if (target.parentElement) {
                                   target.parentElement.innerHTML = `<span style="font-size: 14px; color: #fff; font-weight: 600;">${
-                                    msg.senderName?.charAt(0)?.toUpperCase() || "?"
+                                    msg.senderName?.charAt(0)?.toUpperCase() ||
+                                    "?"
                                   }</span>`;
                                 }
                               }}
                               onLoad={() => {
-                                console.log('[ChatPanel Avatar] Image loaded successfully:', trimmedAvatar);
+                                console.log(
+                                  "[ChatPanel Avatar] Image loaded successfully:",
+                                  trimmedAvatar
+                                );
                               }}
                             />
                           );
                         } else {
                           // Show initials if senderAvatar exists but is not a URL (should be 1-2 characters)
-                          const initials = trimmedAvatar.length <= 2 
-                            ? trimmedAvatar 
-                            : msg.senderName?.charAt(0)?.toUpperCase() || "?";
-                          
+                          const initials =
+                            trimmedAvatar.length <= 2
+                              ? trimmedAvatar
+                              : msg.senderName?.charAt(0)?.toUpperCase() || "?";
+
                           return (
                             <span
                               style={{
@@ -2822,8 +2963,8 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
                         </div>
                       </div>
 
-                    {/* Reaction & Reply Picker */}
-                    {hoveredMessage === msg.id && (
+                      {/* Reaction & Reply Picker */}
+                      {hoveredMessage === msg.id && (
                         <div
                           style={{
                             position: "absolute",
@@ -2859,10 +3000,12 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
                                 }}
                                 onMouseEnter={(e) => {
                                   e.currentTarget.style.background = "#f3f4f6";
-                                  e.currentTarget.style.transform = "scale(1.2)";
+                                  e.currentTarget.style.transform =
+                                    "scale(1.2)";
                                 }}
                                 onMouseLeave={(e) => {
-                                  e.currentTarget.style.background = "transparent";
+                                  e.currentTarget.style.background =
+                                    "transparent";
                                   e.currentTarget.style.transform = "scale(1)";
                                 }}
                                 title="Trả lời"
@@ -2876,6 +3019,48 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
                                   strokeWidth="2"
                                 >
                                   <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
+                                </svg>
+                              </button>
+
+                              {/* Report Button */}
+                              <button
+                                onClick={() =>
+                                  handleReportMessage(msg.id, msg.text)
+                                }
+                                style={{
+                                  width: 32,
+                                  height: 32,
+                                  borderRadius: 16,
+                                  border: "none",
+                                  background: "transparent",
+                                  cursor: "pointer",
+                                  fontSize: 16,
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  transition: "background 0.2s, transform 0.1s",
+                                }}
+                                onMouseEnter={(e) => {
+                                  e.currentTarget.style.background = "#fef2f2";
+                                  e.currentTarget.style.transform =
+                                    "scale(1.2)";
+                                }}
+                                onMouseLeave={(e) => {
+                                  e.currentTarget.style.background =
+                                    "transparent";
+                                  e.currentTarget.style.transform = "scale(1)";
+                                }}
+                                title="Báo cáo tin nhắn"
+                              >
+                                <svg
+                                  width="18"
+                                  height="18"
+                                  viewBox="0 0 24 24"
+                                  fill="none"
+                                  stroke="#dc2626"
+                                  strokeWidth="2"
+                                >
+                                  <path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
                                 </svg>
                               </button>
 
@@ -3476,16 +3661,28 @@ export default function ChatPanel({ conversation }: ChatPanelProps) {
         isOpen={showAppointmentModal}
         onClose={() => setShowAppointmentModal(false)}
         conversationId={conversation.con_id}
-        conversationMembers={conversation.members.map(m => ({
+        conversationMembers={(conversation.members || []).map((m) => ({
           user_id: m.user_id,
           user_name: m.user_name,
-          user_email: '', // Email will be fetched from user profile in the modal
+          user_email: "", // Email will be fetched from user profile in the modal
           user_avatar: m.user_avatar,
         }))}
         onAppointmentCreated={() => {
           // Có thể thêm logic reload appointments hoặc hiển thị notification
-          console.log('Appointment created successfully');
+          console.log("Appointment created successfully");
         }}
+      />
+
+      {/* Message Report Modal */}
+      <MessageReportModal
+        isOpen={showReportModal}
+        onClose={() => {
+          setShowReportModal(false);
+          setSelectedMessageForReport(null);
+        }}
+        messageId={selectedMessageForReport?.id || ""}
+        conversationId={conversation.con_id}
+        messageContent={selectedMessageForReport?.content || ""}
       />
     </main>
   );

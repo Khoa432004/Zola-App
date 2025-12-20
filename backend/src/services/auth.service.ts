@@ -1,12 +1,19 @@
 import { Account, IAccount } from "../models/Account";
-import { LoginDto, GoogleLoginDto, RegisterDto, ForgotPasswordDto, VerifyOTPDto, ResetPasswordDto } from "../dto/auth.dto";
+import {
+  LoginDto,
+  GoogleLoginDto,
+  RegisterDto,
+  ForgotPasswordDto,
+  VerifyOTPDto,
+  ResetPasswordDto,
+} from "../dto/auth.dto";
 import { generateToken } from "../utils/jwt";
 import { adminAuth, firestore } from "../config/firebase-admin";
 import nodemailer from "nodemailer";
 import { generateOTP, getOTPExpiry, isOTPValid } from "../utils/otp";
 import { EmailService } from "./email.service";
 
-const emailService = new EmailService()
+const emailService = new EmailService();
 
 export class AuthService {
   /**
@@ -15,19 +22,77 @@ export class AuthService {
   async loginWithEmail(loginDto: LoginDto) {
     const { email, password } = loginDto;
 
+    console.log("[Auth Service] Login attempt for email:", email);
+
     // Find account by email
     const account = await Account.findByEmail(email);
+    console.log(
+      "[Auth Service] Account found:",
+      account
+        ? {
+            id: account.id,
+            email: account.email,
+            provider: account.provider,
+            hasPassword: !!account.password,
+            role: account.role,
+          }
+        : "NOT FOUND"
+    );
+
     if (!account) {
+      console.log("[Auth Service] Account not found for email:", email);
       throw new Error("Email hoặc mật khẩu không đúng");
+    }
+
+    // Check if account is disabled/banned
+    if (account.isDisabled) {
+      console.log("[Auth Service] Account is disabled:", email);
+      const bannedError: any = new Error(
+        "Tài khoản của bạn đã bị khóa. Vui lòng liên hệ admin."
+      );
+      bannedError.banned = true;
+      bannedError.statusCode = 403;
+      throw bannedError;
+    }
+
+    // Check Firebase Auth status if available
+    if (adminAuth) {
+      try {
+        const firebaseUser = await adminAuth.getUserByEmail(email);
+        if (firebaseUser.disabled) {
+          console.log(
+            "[Auth Service] Firebase Auth account is disabled:",
+            email
+          );
+          const bannedError: any = new Error(
+            "Tài khoản của bạn đã bị khóa. Vui lòng liên hệ admin."
+          );
+          bannedError.banned = true;
+          bannedError.statusCode = 403;
+          throw bannedError;
+        }
+      } catch (error: any) {
+        // Re-throw if it's a banned error
+        if (error.banned) {
+          throw error;
+        }
+        // User might not exist in Firebase Auth (email-only accounts)
+        // Continue with Firestore check only
+      }
     }
 
     // Check if account uses email provider
     if (account.provider !== "email") {
+      console.log(
+        "[Auth Service] Account uses different provider:",
+        account.provider
+      );
       throw new Error("Tài khoản này sử dụng đăng nhập Google");
     }
 
     // Check if password exists
     if (!account.password) {
+      console.log("[Auth Service] Account has no password set");
       throw new Error("Tài khoản chưa được thiết lập mật khẩu");
     }
 
@@ -36,7 +101,10 @@ export class AuthService {
       account.password,
       password
     );
+    console.log("[Auth Service] Password valid:", isPasswordValid);
+
     if (!isPasswordValid) {
+      console.log("[Auth Service] Invalid password for email:", email);
       throw new Error("Email hoặc mật khẩu không đúng");
     }
 
@@ -46,6 +114,8 @@ export class AuthService {
       email: account.email,
       role: account.role,
     });
+
+    console.log("[Auth Service] Login successful for user:", account.id);
 
     return {
       account: {
@@ -132,6 +202,17 @@ export class AuthService {
         throw new Error(`Lỗi khi tìm kiếm account: ${findError.message}`);
       }
 
+      // Check if account is disabled/banned (if account exists)
+      if (account && account.isDisabled) {
+        console.log("[Auth Service] Account is disabled:", email);
+        const bannedError: any = new Error(
+          "Tài khoản của bạn đã bị khóa. Vui lòng liên hệ admin."
+        );
+        bannedError.banned = true;
+        bannedError.statusCode = 403;
+        throw bannedError;
+      }
+
       if (account) {
         // Cập nhật account nếu đã tồn tại
         const updateData: any = {
@@ -139,15 +220,19 @@ export class AuthService {
           name,
           provider: "google",
         };
-        
+
         // CHỈ cập nhật avatar từ Google nếu account CHƯA CÓ avatar
         // Nếu account đã có avatar (đã upload hoặc đã set), GIỮ NGUYÊN avatar đó
-        if ((!account.avatar || account.avatar.trim() === '') && avatar && avatar.trim() !== '') {
+        if (
+          (!account.avatar || account.avatar.trim() === "") &&
+          avatar &&
+          avatar.trim() !== ""
+        ) {
           // Account chưa có avatar, cập nhật từ Google
           updateData.avatar = avatar;
         }
         // Nếu account đã có avatar, KHÔNG cập nhật từ Google (giữ nguyên avatar hiện tại)
-        
+
         try {
           account = await Account.update(account.id, updateData);
         } catch (updateError: any) {
@@ -159,7 +244,7 @@ export class AuthService {
           account = await Account.create({
             email: email.toLowerCase(),
             name,
-            avatar: avatar && avatar.trim() !== '' ? avatar : undefined,
+            avatar: avatar && avatar.trim() !== "" ? avatar : undefined,
             provider: "google",
             googleId,
             role: "user",
@@ -352,12 +437,16 @@ export class AuthService {
 
     // Kiểm tra provider
     if (account.provider !== "email") {
-      throw new Error("Tài khoản này sử dụng đăng nhập Google, không thể đặt lại mật khẩu");
+      throw new Error(
+        "Tài khoản này sử dụng đăng nhập Google, không thể đặt lại mật khẩu"
+      );
     }
 
     const MAX_SEND_ATTEMPTS = 3;
     if ((account.otpSendAttempts || 0) >= MAX_SEND_ATTEMPTS) {
-      throw new Error(`Bạn đã vượt quá số lần gửi OTP. Vui lòng thử lại sau 1 giờ hoặc liên hệ hỗ trợ.`);
+      throw new Error(
+        `Bạn đã vượt quá số lần gửi OTP. Vui lòng thử lại sau 1 giờ hoặc liên hệ hỗ trợ.`
+      );
     }
 
     // Tạo OTP
@@ -390,11 +479,20 @@ export class AuthService {
       throw new Error("Email không tồn tại");
     }
 
-    console.log("Verifying OTP - Email:", email, "Stored OTP:", account.otp, "Input OTP:", otp);
+    console.log(
+      "Verifying OTP - Email:",
+      email,
+      "Stored OTP:",
+      account.otp,
+      "Input OTP:",
+      otp
+    );
 
     const MAX_OTP_ATTEMPTS = 5;
     if ((account.otpAttempts || 0) >= MAX_OTP_ATTEMPTS) {
-      throw new Error("Bạn đã nhập sai mã OTP quá nhiều lần. Vui lòng gửi lại mã OTP.");
+      throw new Error(
+        "Bạn đã nhập sai mã OTP quá nhiều lần. Vui lòng gửi lại mã OTP."
+      );
     }
 
     // Kiểm tra OTP
@@ -402,7 +500,12 @@ export class AuthService {
       throw new Error("Không có OTP nào được gửi cho email này");
     }
 
-    console.log("OTP Expiry from DB:", account.otpExpiry, "Type:", typeof account.otpExpiry);
+    console.log(
+      "OTP Expiry from DB:",
+      account.otpExpiry,
+      "Type:",
+      typeof account.otpExpiry
+    );
 
     // Kiểm tra OTP hết hạn
     if (!account.otpExpiry || !isOTPValid(account.otpExpiry)) {
@@ -417,10 +520,14 @@ export class AuthService {
       const remainingAttempts = MAX_OTP_ATTEMPTS - newAttempts;
 
       if (remainingAttempts <= 0) {
-        throw new Error("Bạn đã nhập sai mã OTP quá nhiều lần. Vui lòng gửi lại mã OTP.");
+        throw new Error(
+          "Bạn đã nhập sai mã OTP quá nhiều lần. Vui lòng gửi lại mã OTP."
+        );
       }
 
-      throw new Error(`Mã xác thực không chính xác. Còn ${remainingAttempts} lần thử.`);
+      throw new Error(
+        `Mã xác thực không chính xác. Còn ${remainingAttempts} lần thử.`
+      );
     }
 
     console.log("OTP Verification Success");
@@ -455,8 +562,13 @@ export class AuthService {
       throw new Error("Account không tồn tại");
     }
 
-    console.log("Resetting password - Account ID:", account.id, "Email:", email);
-    
+    console.log(
+      "Resetting password - Account ID:",
+      account.id,
+      "Email:",
+      email
+    );
+
     // Cập nhật password
     await Account.update(account.id, { password: newPassword });
 
