@@ -381,9 +381,14 @@ export class Post {
     const post = await this.findById(postId);
     if (!post || !userId) return post;
     try {
-      const likeDoc = await firestore!.collection('post_likes').doc(`${postId}_${userId}`).get();
+      const likeDocRef = firestore!.collection('post_likes').doc(`${postId}_${userId}`);
+      const likeDoc = await likeDocRef.get();
+      console.log(`[findByIdWithUser] postId: ${postId}, userId: ${userId}`);
+      console.log(`[findByIdWithUser] likeDoc path: ${likeDocRef.path}`);
+      console.log(`[findByIdWithUser] likeDoc.exists: ${likeDoc.exists}`);
       post.isLiked = likeDoc.exists;
-    } catch {
+    } catch (error) {
+      console.error(`[findByIdWithUser] Error checking like:`, error);
       post.isLiked = false;
     }
     return post;
@@ -543,6 +548,9 @@ export class Post {
       const docRef = firestore.collection(this.collection).doc(postId);
       const likesRef = firestore.collection('post_likes').doc(`${postId}_${userId || 'anon'}`);
 
+      console.log(`[decrementLike] postId: ${postId}, userId: ${userId}`);
+      console.log(`[decrementLike] likesRef path: ${likesRef.path}`);
+
       await firestore.runTransaction(async (tx) => {
         const doc = await tx.get(docRef);
         if (!doc.exists) {
@@ -552,21 +560,28 @@ export class Post {
         // If userId provided, only decrement if a like record exists
         if (userId) {
           const likeDoc = await tx.get(likesRef);
+          console.log(`[decrementLike] likeDoc.exists: ${likeDoc.exists}`);
           if (!likeDoc.exists) {
             // nothing to do
+            console.log(`[decrementLike] No like document found, skipping`);
             return;
           }
           tx.delete(likesRef);
+          console.log(`[decrementLike] Deleted like document`);
         }
 
         const data = doc.data() || {};
         const current = typeof data.likeCount === 'number' ? data.likeCount : 0;
         const next = Math.max(0, current - 1);
         tx.update(docRef, { likeCount: next, updatedAt: admin.firestore.Timestamp.now() });
+        console.log(`[decrementLike] Updated likeCount from ${current} to ${next}`);
       });
 
-      return await this.findByIdWithUser(postId, userId);
+      const result = await this.findByIdWithUser(postId, userId);
+      console.log(`[decrementLike] Result isLiked: ${result?.isLiked}`);
+      return result;
     } catch (error: any) {
+      console.error(`[decrementLike] Error:`, error);
       throw error;
     }
   }
@@ -887,13 +902,16 @@ export class Post {
       throw new Error("Firestore not initialized");
     }
 
-    const likeRef = firestore
-      .collection(this.collection)
-      .doc(postId)
-      .collection("likes")
-      .doc(userId);
-
+    // Kiểm tra trong collection post_likes với document ID format: postId_userId
+    const likeDocId = `${postId}_${userId}`;
+    const likeRef = firestore.collection('post_likes').doc(likeDocId);
+    
+    console.log(`[checkUserLiked] Checking postId: ${postId}, userId: ${userId}`);
+    console.log(`[checkUserLiked] Document path: ${likeRef.path}`);
+    
     const likeDoc = await likeRef.get();
+    console.log(`[checkUserLiked] Document exists: ${likeDoc.exists}`);
+    
     return likeDoc.exists;
   }
   static async findAllPublicPaginated(

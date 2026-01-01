@@ -759,9 +759,23 @@ export class PostController {
 
       const posts = await this.postService.getViewedPosts(userId, limit);
 
+      // Check which posts the user has liked
+      const postsWithLikedStatus = await Promise.all(
+        posts.map(async (post) => {
+          const isLiked = await this.postService.checkUserLiked(
+            post.postId,
+            userId
+          );
+          return {
+            ...post,
+            isLiked,
+          };
+        })
+      );
+
       res.json({
         success: true,
-        data: posts,
+        data: postsWithLikedStatus,
       });
     } catch (error: any) {
       console.error("Error fetching viewed posts:", error);
@@ -789,9 +803,23 @@ export class PostController {
 
       const posts = await this.postService.getLikedPosts(userId, limit);
 
+      // All liked posts should have isLiked = true, but check to be sure
+      const postsWithLikedStatus = await Promise.all(
+        posts.map(async (post) => {
+          const isLiked = await this.postService.checkUserLiked(
+            post.postId,
+            userId
+          );
+          return {
+            ...post,
+            isLiked,
+          };
+        })
+      );
+
       res.json({
         success: true,
-        data: posts,
+        data: postsWithLikedStatus,
       });
     } catch (error: any) {
       console.error("Error fetching liked posts:", error);

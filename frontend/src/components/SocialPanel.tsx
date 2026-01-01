@@ -772,7 +772,9 @@ export default function SocialPanel() {
           }
         } else {
           const res = await apiService.unlikePost(postId);
+          console.log('[handleLike] unlikePost response:', res);
           if (res && res.data) {
+            console.log('[handleLike] Unlike - likeCount:', res.data.likeCount, 'isLiked:', res.data.isLiked);
             setPosts(prev => prev.map(p => 
               p.id === postId 
                 ? { 
