@@ -22,6 +22,7 @@ const upload = multer({
 });
 
 router.get("/me", authenticate, (req, res) => controller.me(req as any, res));
+router.get("/:userId", authenticate, (req, res) => controller.getUserProfile(req as any, res));
 router.patch("/", authenticate, (req, res) => controller.update(req as any, res));
 router.post("/avatar", authenticate, upload.single("avatar"), (req, res) => controller.uploadAvatar(req as any, res));
 router.patch("/privacy", authenticate, (req, res) => controller.updatePrivacySettings(req as any, res));

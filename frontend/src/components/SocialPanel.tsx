@@ -9,7 +9,9 @@ import PostDetailModal from './PostDetailModal';
 import SharePostModal from './SharePostModal';
 import PostReportModal from './PostReportModal';
 import StoryBar from './StoryBar';
-import CreateStoryModal from './CreateStoryModal'; 
+import CreateStoryModal from './CreateStoryModal';
+import MemoriesSection from './MemoriesSection';
+import ViewUserProfileModal from './ViewUserProfileModal'; 
 
 interface Post {
   postId: string;
@@ -119,6 +121,9 @@ export default function SocialPanel() {
   const [postComments, setPostComments] = useState<{
     [key: string]: Comment[];
   }>({});
+  const [showViewUserModal, setShowViewUserModal] = useState(false);
+  const [viewingUserId, setViewingUserId] = useState<string | null>(null);
+  const [viewingUserName, setViewingUserName] = useState<string>('');
   const [isLoadingComments, setIsLoadingComments] = useState<{
     [key: string]: boolean;
   }>({});
@@ -1259,6 +1264,18 @@ export default function SocialPanel() {
           refreshTrigger={storyRefreshTrigger}
         />
 
+        {/* Memories Section */}
+        <div
+          style={{
+            padding: "0 32px",
+            maxWidth: 680,
+            margin: "0 auto",
+            width: "100%",
+          }}
+        >
+          <MemoriesSection showCreateButton={true} />
+        </div>
+
         {/* Posts Feed */}
         <div
           style={{
@@ -1328,7 +1345,32 @@ export default function SocialPanel() {
                   </span>
                 </div>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 15, fontWeight: 600, color: "#111827", marginBottom: 2 }}>
+                  <div 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (post.authorId && post.authorId !== user?.id) {
+                        setViewingUserId(post.authorId);
+                        setViewingUserName(post.author);
+                        setShowViewUserModal(true);
+                      }
+                    }}
+                    style={{ 
+                      fontSize: 15, 
+                      fontWeight: 600, 
+                      color: "#111827", 
+                      marginBottom: 2,
+                      cursor: post.authorId && post.authorId !== user?.id ? 'pointer' : 'default',
+                      transition: 'color 0.2s'
+                    }}
+                    onMouseEnter={(e) => {
+                      if (post.authorId && post.authorId !== user?.id) {
+                        e.currentTarget.style.color = '#6366f1';
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.color = '#111827';
+                    }}
+                  >
                     {post.author}
                   </div>
                   <div style={{ flex: 1 }}>
@@ -2096,6 +2138,17 @@ export default function SocialPanel() {
           postMedia={selectedPostForReport.media}
         />
       )}
+      {/* View User Profile Modal */}
+      <ViewUserProfileModal
+        isOpen={showViewUserModal}
+        onClose={() => {
+          setShowViewUserModal(false);
+          setViewingUserId(null);
+          setViewingUserName('');
+        }}
+        userId={viewingUserId || ''}
+        userName={viewingUserName}
+      />
     </div>
   );
 }

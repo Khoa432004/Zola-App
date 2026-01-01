@@ -54,11 +54,8 @@ export default function PostDetailModal({
   const { user } = useAuth();
   const [comments, setComments] = useState<Comment[]>([]);
   const [isLoadingComments, setIsLoadingComments] = useState(false);
-  const [commentText, setCommentText] = useState("");
-  const [showAllComments, setShowAllComments] = useState(true);
-  const [replyingToCommentId, setReplyingToCommentId] = useState<string | null>(
-    null
-  );
+  const [commentText, setCommentText] = useState('');
+  const [replyingToCommentId, setReplyingToCommentId] = useState<string | null>(null);
   const [replyTexts, setReplyTexts] = useState<{ [key: string]: string }>({});
   const textareaRefs = useState<{ [key: string]: HTMLTextAreaElement | null }>(
     {}
@@ -400,6 +397,13 @@ export default function PostDetailModal({
   useEffect(() => {
     setVisibleCommentCount(COMMENTS_BATCH_SIZE);
   }, [post?.id]);
+
+  // Track post view when modal opens
+  useEffect(() => {
+    if (isOpen && post?.id && user) {
+      apiService.trackPostView(post.id);
+    }
+  }, [isOpen, post?.id, user]);
 
   // Recursive component to render nested replies
   const CommentReply = ({

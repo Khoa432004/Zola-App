@@ -49,6 +49,11 @@ router.get("/top-liked", controller.getTopLikedPosts);
 router.get("/top-viewed", controller.getTopViewedPosts);
 router.get("/promoted", controller.getPromotedPosts);
 
+// User history routes
+router.get('/history/viewed', authenticate, controller.getViewedPosts);
+router.get('/history/liked', authenticate, controller.getLikedPosts);
+router.post('/:id/view', authenticate, controller.trackPostView);
+
 router.get('/:id', controller.getPostById);
 router.post('/:id/restore', authenticate, controller.restorePost);
 

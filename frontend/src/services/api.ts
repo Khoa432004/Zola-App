@@ -393,6 +393,15 @@ class ApiService {
     }
   }
 
+  async getUserProfile(userId: string) {
+    try {
+      const response = await this.axiosInstance.get(`/profile/${userId}`);
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.message || "Không lấy được thông tin người dùng");
+    }
+  }
+
   async updateProfile(payload: {
     name?: string;
     phone?: string;
@@ -732,6 +741,38 @@ class ApiService {
       throw new Error(
         error.response?.data?.message || "Không thể chia sẻ bài viết"
       );
+    }
+  }
+
+  async trackPostView(postId: string) {
+    try {
+      const response = await this.axiosInstance.post(`/posts/${postId}/view`);
+      return response.data;
+    } catch (error: any) {
+      console.error("Error tracking post view:", error);
+      // Không throw error để không làm gián đoạn UX
+    }
+  }
+
+  async getViewedPosts(limit: number = 50) {
+    try {
+      const response = await this.axiosInstance.get("/posts/history/viewed", {
+        params: { limit },
+      });
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.message || "Không thể lấy danh sách bài viết đã xem");
+    }
+  }
+
+  async getLikedPosts(limit: number = 50) {
+    try {
+      const response = await this.axiosInstance.get("/posts/history/liked", {
+        params: { limit },
+      });
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.message || "Không thể lấy danh sách bài viết đã thích");
     }
   }
 
@@ -1706,6 +1747,119 @@ class ApiService {
           errorMessage || `Không thể mở khóa tài khoản (Lỗi ${status})`
         );
       }
+    }
+  }
+
+  // ==================== MEMORY APIs ====================
+
+  /**
+   * Lấy tất cả kỷ niệm của user hiện tại
+   */
+  async getMyMemories() {
+    try {
+      const response = await this.axiosInstance.get("/memories/my");
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.message || "Lấy danh sách kỷ niệm thất bại");
+    }
+  }
+
+  /**
+   * Lấy kỷ niệm sắp tới
+   */
+  async getUpcomingMemories(days: number = 30) {
+    try {
+      const response = await this.axiosInstance.get("/memories/upcoming", {
+        params: { days },
+      });
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.message || "Lấy kỷ niệm sắp tới thất bại");
+    }
+  }
+
+  /**
+   * Lấy kỷ niệm của user khác (nếu được phép)
+   */
+  async getUserMemories(userId: string) {
+    try {
+      const response = await this.axiosInstance.get(`/memories/user/${userId}`);
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.message || "Lấy kỷ niệm thất bại");
+    }
+  }
+
+  /**
+   * Tạo kỷ niệm mới
+   */
+  async createMemory(formData: FormData) {
+    try {
+      const response = await this.axiosInstance.post("/memories", formData, {
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
+      });
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.message || "Tạo kỷ niệm thất bại");
+    }
+  }
+
+  /**
+   * Cập nhật kỷ niệm
+   */
+  async updateMemory(memoryId: string, formData: FormData) {
+    try {
+      const response = await this.axiosInstance.put(`/memories/${memoryId}`, formData, {
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
+      });
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.message || "Cập nhật kỷ niệm thất bại");
+    }
+  }
+
+  /**
+   * Xóa kỷ niệm
+   */
+  async deleteMemory(memoryId: string) {
+    try {
+      const response = await this.axiosInstance.delete(`/memories/${memoryId}`);
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.message || "Xóa kỷ niệm thất bại");
+    }
+  }
+
+  /**
+   * Gửi email thông báo kỷ niệm
+   */
+  async sendMemoryNotifications() {
+    try {
+      const response = await this.axiosInstance.post("/memories/notifications/send");
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.message || "Gửi email thông báo thất bại");
+    }
+  }
+
+  /**
+   * Cập nhật cài đặt privacy cho memories
+   */
+  async updateMemoryPrivacySettings(memoriesVisible: boolean, memoriesEmailNotification: boolean) {
+    try {
+      const response = await this.axiosInstance.patch("/profile/privacy", {
+        memoriesVisible,
+        memoriesEmailNotification,
+      });
+      return response.data;
+    } catch (error: any) {
+      throw new Error(
+        error.response?.data?.message || "Cập nhật cài đặt kỷ niệm thất bại"
+      );
     }
   }
 }

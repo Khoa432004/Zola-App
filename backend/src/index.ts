@@ -16,6 +16,7 @@ import messageRoutes from "./routes/message.routes";
 import storyRoutes from "./routes/story.routes";
 import adminRoutes from "./routes/admin.routes";
 import appointmentRoutes from "./routes/appointment.routes";
+import memoryRoutes from "./routes/memory.routes";
 import { setupSocketHandlers } from "./socket/socket.handlers";
 import { SchedulerService } from "./services/scheduler.service";
 
@@ -77,6 +78,8 @@ app.use("/api/stories", storyRoutes);
 app.use("/api/admin", adminRoutes);
 // Appointment routes
 app.use("/api/appointments", appointmentRoutes);
+// Memory routes
+app.use("/api/memories", memoryRoutes);
 
 // Setup Socket.IO
 const io = new SocketIOServer(httpServer, {

@@ -8,7 +8,6 @@ export class CommentController {
   static async getCommentsByPost(req: Request, res: Response) {
     try {
       const { postId } = req.params;
-      const limit = parseInt(req.query.limit as string) || 50;
 
       if (!postId) {
         return res.status(400).json({ error: 'Post ID is required' });

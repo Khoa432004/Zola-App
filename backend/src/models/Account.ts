@@ -25,6 +25,8 @@ export interface IAccount {
   otpLastSendTime?: Date;
   showOnlineStatus?: boolean; // Mặc định true, user có thể tắt
   lastSeen?: Date; // Thời gian online cuối cùng
+  memoriesVisible?: boolean; // Người khác có xem được kỷ niệm không (mặc định false)
+  memoriesEmailNotification?: boolean; // Nhận email thông báo kỷ niệm (mặc định true)
   createdAt: Date;
   updatedAt: Date;
 }
