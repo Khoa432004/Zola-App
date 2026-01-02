@@ -16,14 +16,18 @@ export default function PrivacySettingsModal({ isOpen, onClose }: PrivacySetting
   const dispatch = useAppDispatch();
   const user = useAppSelector(s => s.auth.user);
   const [showOnlineStatus, setShowOnlineStatus] = useState(true);
+  const [memoriesVisible, setMemoriesVisible] = useState(false);
+  const [memoriesEmailNotification, setMemoriesEmailNotification] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
   useEffect(() => {
     if (isOpen && user) {
-      // Lấy giá trị hiện tại từ user (nếu có) hoặc mặc định true
+      // Lấy giá trị hiện tại từ user (nếu có) hoặc mặc định
       setShowOnlineStatus((user as any).showOnlineStatus !== false);
+      setMemoriesVisible((user as any).memoriesVisible === true);
+      setMemoriesEmailNotification((user as any).memoriesEmailNotification !== false);
       setError('');
       setSuccess('');
     }
@@ -35,7 +39,9 @@ export default function PrivacySettingsModal({ isOpen, onClose }: PrivacySetting
     setSuccess('');
 
     try {
-      const response = await apiService.updatePrivacySettings(showOnlineStatus);
+      // Cập nhật tất cả settings cùng lúc
+      const response = await apiService.updateMemoryPrivacySettings(memoriesVisible, memoriesEmailNotification);
+      await apiService.updatePrivacySettings(showOnlineStatus);
       
       if (response.success) {
         setSuccess('Đã cập nhật cài đặt quyền riêng tư');
@@ -180,6 +186,164 @@ export default function PrivacySettingsModal({ isOpen, onClose }: PrivacySetting
                     transition: '0.3s',
                     borderRadius: '50%',
                     transform: showOnlineStatus ? 'translateX(24px)' : 'translateX(0)',
+                    boxShadow: '0 2px 4px rgba(0, 0, 0, 0.2)'
+                  }} />
+                </span>
+              </label>
+            </div>
+
+            {/* Memories Visibility Toggle */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'flex-start',
+              justifyContent: 'space-between',
+              gap: '16px',
+              padding: '16px',
+              background: '#f9fafb',
+              borderRadius: 12,
+              border: '1px solid #e5e7eb'
+            }}>
+              <div style={{ flex: 1 }}>
+                <h3 style={{
+                  margin: 0,
+                  fontSize: 16,
+                  fontWeight: 600,
+                  color: '#111827',
+                  marginBottom: 4
+                }}>
+                  Cho phép người khác xem kỷ niệm
+                </h3>
+                <p style={{
+                  margin: 0,
+                  fontSize: 14,
+                  color: '#6b7280',
+                  lineHeight: 1.5
+                }}>
+                  Khi bật, bạn bè và người dùng khác có thể xem phần kỷ niệm của bạn. Khi tắt, chỉ bạn mới thấy được kỷ niệm của mình.
+                </p>
+              </div>
+              
+              {/* Toggle Switch */}
+              <label style={{
+                position: 'relative',
+                display: 'inline-block',
+                width: 52,
+                height: 28,
+                flexShrink: 0
+              }}>
+                <input
+                  type="checkbox"
+                  checked={memoriesVisible}
+                  onChange={(e) => setMemoriesVisible(e.target.checked)}
+                  disabled={isSaving}
+                  style={{
+                    opacity: 0,
+                    width: 0,
+                    height: 0
+                  }}
+                />
+                <span style={{
+                  position: 'absolute',
+                  cursor: isSaving ? 'not-allowed' : 'pointer',
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  backgroundColor: memoriesVisible ? '#6366f1' : '#9ca3af',
+                  transition: '0.3s',
+                  borderRadius: 28,
+                  opacity: isSaving ? 0.6 : 1
+                }}>
+                  <span style={{
+                    position: 'absolute',
+                    content: '""',
+                    height: 22,
+                    width: 22,
+                    left: 3,
+                    bottom: 3,
+                    backgroundColor: '#ffffff',
+                    transition: '0.3s',
+                    borderRadius: '50%',
+                    transform: memoriesVisible ? 'translateX(24px)' : 'translateX(0)',
+                    boxShadow: '0 2px 4px rgba(0, 0, 0, 0.2)'
+                  }} />
+                </span>
+              </label>
+            </div>
+
+            {/* Memories Email Notification Toggle */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'flex-start',
+              justifyContent: 'space-between',
+              gap: '16px',
+              padding: '16px',
+              background: '#f9fafb',
+              borderRadius: 12,
+              border: '1px solid #e5e7eb'
+            }}>
+              <div style={{ flex: 1 }}>
+                <h3 style={{
+                  margin: 0,
+                  fontSize: 16,
+                  fontWeight: 600,
+                  color: '#111827',
+                  marginBottom: 4
+                }}>
+                  Nhận email thông báo kỷ niệm
+                </h3>
+                <p style={{
+                  margin: 0,
+                  fontSize: 14,
+                  color: '#6b7280',
+                  lineHeight: 1.5
+                }}>
+                  Khi bật, bạn sẽ nhận email thông báo khi có kỷ niệm sắp tới. Bạn có thể gửi thông báo thủ công từ phần kỷ niệm.
+                </p>
+              </div>
+              
+              {/* Toggle Switch */}
+              <label style={{
+                position: 'relative',
+                display: 'inline-block',
+                width: 52,
+                height: 28,
+                flexShrink: 0
+              }}>
+                <input
+                  type="checkbox"
+                  checked={memoriesEmailNotification}
+                  onChange={(e) => setMemoriesEmailNotification(e.target.checked)}
+                  disabled={isSaving}
+                  style={{
+                    opacity: 0,
+                    width: 0,
+                    height: 0
+                  }}
+                />
+                <span style={{
+                  position: 'absolute',
+                  cursor: isSaving ? 'not-allowed' : 'pointer',
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  backgroundColor: memoriesEmailNotification ? '#6366f1' : '#9ca3af',
+                  transition: '0.3s',
+                  borderRadius: 28,
+                  opacity: isSaving ? 0.6 : 1
+                }}>
+                  <span style={{
+                    position: 'absolute',
+                    content: '""',
+                    height: 22,
+                    width: 22,
+                    left: 3,
+                    bottom: 3,
+                    backgroundColor: '#ffffff',
+                    transition: '0.3s',
+                    borderRadius: '50%',
+                    transform: memoriesEmailNotification ? 'translateX(24px)' : 'translateX(0)',
                     boxShadow: '0 2px 4px rgba(0, 0, 0, 0.2)'
                   }} />
                 </span>

@@ -24,6 +24,41 @@ export class ProfileController {
           address: acc.address,
           bio: acc.bio,
           showOnlineStatus: acc.showOnlineStatus ?? true,
+          memoriesVisible: acc.memoriesVisible ?? false,
+          memoriesEmailNotification: acc.memoriesEmailNotification ?? true,
+          createdAt: acc.createdAt,
+        },
+      });
+    } catch (e: any) {
+      return res.status(500).json({ success: false, message: e.message || "Server error" });
+    }
+  }
+
+  async getUserProfile(req: AuthRequest, res: Response) {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ success: false, message: "Unauthorized" });
+      }
+      
+      const { userId } = req.params;
+      
+      const acc = await Account.findById(userId);
+      if (!acc) {
+        return res.status(404).json({ success: false, message: "Người dùng không tồn tại" });
+      }
+      
+      // Trả về thông tin công khai của user
+      return res.json({
+        success: true,
+        data: {
+          id: acc.id,
+          email: acc.email,
+          name: acc.name,
+          avatar: acc.avatar,
+          phone: acc.phone,
+          address: acc.address,
+          bio: acc.bio,
+          memoriesVisible: acc.memoriesVisible ?? false,
           createdAt: acc.createdAt,
         },
       });
@@ -117,19 +152,49 @@ export class ProfileController {
       if (!req.user) {
         return res.status(401).json({ success: false, message: "Unauthorized" });
       }
-      const { showOnlineStatus } = req.body as { showOnlineStatus?: boolean };
+      const { 
+        showOnlineStatus, 
+        memoriesVisible, 
+        memoriesEmailNotification 
+      } = req.body as { 
+        showOnlineStatus?: boolean;
+        memoriesVisible?: boolean;
+        memoriesEmailNotification?: boolean;
+      };
       
-      const updated = await Account.update(req.user.userId, { showOnlineStatus });
+      console.log(`🔧 [PRIVACY] Updating privacy settings for user ${req.user.userId}:`);
+      console.log(`   - showOnlineStatus: ${showOnlineStatus} (type: ${typeof showOnlineStatus})`);
+      console.log(`   - memoriesVisible: ${memoriesVisible} (type: ${typeof memoriesVisible})`);
+      console.log(`   - memoriesEmailNotification: ${memoriesEmailNotification} (type: ${typeof memoriesEmailNotification})`);
+      
+      const updates: any = {};
+      if (showOnlineStatus !== undefined) updates.showOnlineStatus = showOnlineStatus;
+      if (memoriesVisible !== undefined) updates.memoriesVisible = memoriesVisible;
+      if (memoriesEmailNotification !== undefined) updates.memoriesEmailNotification = memoriesEmailNotification;
+      
+      console.log(`🔧 [PRIVACY] Updates object:`, updates);
+      
+      const updated = await Account.update(req.user.userId, updates);
+      
+      console.log(`✅ [PRIVACY] Updated account:`, {
+        id: updated.id,
+        showOnlineStatus: updated.showOnlineStatus,
+        memoriesVisible: updated.memoriesVisible,
+        memoriesEmailNotification: updated.memoriesEmailNotification,
+      });
       
       return res.json({
         success: true,
         data: {
           id: updated.id,
           showOnlineStatus: updated.showOnlineStatus ?? true,
+          memoriesVisible: updated.memoriesVisible ?? false,
+          memoriesEmailNotification: updated.memoriesEmailNotification ?? true,
         },
         message: "Cập nhật cài đặt quyền riêng tư thành công",
       });
     } catch (e: any) {
+      console.error(`❌ [PRIVACY] Error updating privacy settings:`, e);
       return res.status(400).json({ success: false, message: e.message || "Cập nhật thất bại" });
     }
   }

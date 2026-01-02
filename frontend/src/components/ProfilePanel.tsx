@@ -8,10 +8,14 @@ import { apiService } from '@/services/api';
 import { MapPin, Calendar, MoreHorizontal } from 'lucide-react';
 import UserProfileModal from './UserProfileModal';
 import PrivacySettingsModal from './PrivacySettingsModal';
+import PostDetailModal from './PostDetailModal';
+import SharePostModal from './SharePostModal';
+import { socketService } from '@/services/socket';
 
 // Interfaces
 interface Post {
   id: string;
+  authorId?: string;
   author: string;
   email: string;
   timestamp: string;
@@ -58,16 +62,24 @@ export default function ProfilePanel() {
   const { user } = useAuth();
   const dispatch = useAppDispatch();
   const [mounted, setMounted] = useState(false);
-  const [activeTab, setActiveTab] = useState<'posts' | 'featured' | 'media'>('posts');
+  const [activeTab, setActiveTab] = useState<'posts' | 'featured' | 'media' | 'viewed' | 'liked'>('posts');
   const [posts, setPosts] = useState<Post[]>([]);
+  const [viewedPosts, setViewedPosts] = useState<Post[]>([]);
+  const [likedPosts, setLikedPosts] = useState<Post[]>([]);
   const [mediaItems, setMediaItems] = useState<MediaItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingViewed, setIsLoadingViewed] = useState(false);
+  const [isLoadingLiked, setIsLoadingLiked] = useState(false);
   const [friendsCount, setFriendsCount] = useState(0);
   const [postsCount, setPostsCount] = useState(0);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [showPrivacyModal, setShowPrivacyModal] = useState(false);
   const [selectedMedia, setSelectedMedia] = useState<MediaItem | null>(null);
   const [showMediaModal, setShowMediaModal] = useState(false);
+  const [selectedPost, setSelectedPost] = useState<Post | null>(null);
+  const [showPostDetailModal, setShowPostDetailModal] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [sharingPost, setSharingPost] = useState<Post | null>(null);
   const hasLoadedRef = useRef(false);
 
   // Format createdAt date to MM/YYYY
@@ -83,6 +95,127 @@ export default function ProfilePanel() {
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  // Handle like/unlike
+  const handleLike = async (postId: string, currentlyLiked: boolean) => {
+    // Optimistically update UI
+    const updatePosts = (prevPosts: Post[]) => prevPosts.map(p => {
+      if (p.id === postId) {
+        return {
+          ...p,
+          isLiked: !currentlyLiked,
+          likes: currentlyLiked ? Math.max(0, p.likes - 1) : p.likes + 1
+        };
+      }
+      return p;
+    });
+
+    setPosts(updatePosts);
+    setViewedPosts(updatePosts);
+    setLikedPosts(updatePosts);
+
+    // Call API
+    try {
+      if (!currentlyLiked) {
+        await apiService.likePost(postId);
+      } else {
+        await apiService.unlikePost(postId);
+      }
+    } catch (err: any) {
+      console.error('Error toggling like:', err);
+      // Revert on error
+      setPosts(updatePosts);
+      setViewedPosts(updatePosts);
+      setLikedPosts(updatePosts);
+    }
+  };
+
+  // Load viewed posts
+  const loadViewedPosts = async () => {
+    if (!user) return;
+    setIsLoadingViewed(true);
+    try {
+      const response = await apiService.getViewedPosts(50);
+      if (response.success && response.data) {
+        const displayPosts = response.data.map((post: any) => ({
+          id: post.postId,
+          author: post.authorName || 'User',
+          email: '',
+          timestamp: new Date(post.createdAt).toLocaleDateString('vi-VN'),
+          title: post.caption?.split('\n')[0] || '',
+          description: post.caption || '',
+          media: post.media || [],
+          likes: post.likeCount || 0,
+          commentCount: post.commentCount || 0,
+          isLiked: post.isLiked || false,
+          createdAt: post.createdAt,
+          shareCount: post.shareCount || 0,
+          isShared: post.isShared,
+          sharedPostId: post.sharedPostId,
+          sharedPost: post.sharedPost ? {
+            id: post.sharedPost.postId,
+            author: post.sharedPost.authorName || 'Người dùng',
+            title: post.sharedPost.caption?.split('\n')[0] || '',
+            description: post.sharedPost.caption || '',
+            media: post.sharedPost.media || [],
+          } : undefined,
+        }));
+        setViewedPosts(displayPosts);
+      }
+    } catch (error) {
+      console.error('Error loading viewed posts:', error);
+    } finally {
+      setIsLoadingViewed(false);
+    }
+  };
+
+  // Load liked posts
+  const loadLikedPosts = async () => {
+    if (!user) return;
+    setIsLoadingLiked(true);
+    try {
+      const response = await apiService.getLikedPosts(50);
+      if (response.success && response.data) {
+        const displayPosts = response.data.map((post: any) => ({
+          id: post.postId,
+          author: post.authorName || 'User',
+          email: '',
+          timestamp: new Date(post.createdAt).toLocaleDateString('vi-VN'),
+          title: post.caption?.split('\n')[0] || '',
+          description: post.caption || '',
+          media: post.media || [],
+          likes: post.likeCount || 0,
+          commentCount: post.commentCount || 0,
+          isLiked: true,
+          createdAt: post.createdAt,
+          shareCount: post.shareCount || 0,
+          isShared: post.isShared,
+          sharedPostId: post.sharedPostId,
+          sharedPost: post.sharedPost ? {
+            id: post.sharedPost.postId,
+            author: post.sharedPost.authorName || 'Người dùng',
+            title: post.sharedPost.caption?.split('\n')[0] || '',
+            description: post.sharedPost.caption || '',
+            media: post.sharedPost.media || [],
+          } : undefined,
+        }));
+        setLikedPosts(displayPosts);
+      }
+    } catch (error) {
+      console.error('Error loading liked posts:', error);
+    } finally {
+      setIsLoadingLiked(false);
+    }
+  };
+
+  // Load data when tab changes
+  useEffect(() => {
+    if (activeTab === 'viewed' && viewedPosts.length === 0) {
+      loadViewedPosts();
+    } else if (activeTab === 'liked' && likedPosts.length === 0) {
+      loadLikedPosts();
+    }
+  }, [activeTab]);
 
   useEffect(() => {
     const loadProfileData = async () => {
@@ -454,7 +587,9 @@ export default function ProfilePanel() {
                   {[
                     { key: 'posts', label: 'Bài viết' },
                     { key: 'featured', label: 'Nổi bật' },
-                    { key: 'media', label: 'Phương tiện' }
+                    { key: 'media', label: 'Phương tiện' },
+                    { key: 'viewed', label: 'Đã xem' },
+                    { key: 'liked', label: 'Đã thích' }
                   ].map((tab) => (
                       <div 
                           key={tab.key}
@@ -583,6 +718,422 @@ export default function ProfilePanel() {
                               </div>
                           ))}
                       </div>
+                  )
+              ) : activeTab === 'viewed' ? (
+                  // Viewed Posts Tab
+                  isLoadingViewed ? (
+                      <div style={{ padding: 24, textAlign: 'center', color: '#6b7280' }}>
+                          <div style={{ fontSize: 17 }}>Đang tải...</div>
+                      </div>
+                  ) : viewedPosts.length === 0 ? (
+                      <div style={{ padding: 60, textAlign: 'center', color: '#6b7280' }}>
+                          <div style={{ fontSize: 48, marginBottom: 16 }}>👀</div>
+                          <div style={{ fontSize: 17, fontWeight: 500 }}>Chưa có bài viết nào được xem</div>
+                          <div style={{ fontSize: 15, marginTop: 8, color: '#9ca3af' }}>Các bài viết bạn xem sẽ hiển thị ở đây</div>
+                      </div>
+                  ) : (
+                      viewedPosts.map(post => (
+                          <div
+                              key={post.id}
+                              style={{
+                                  background: '#ffffff',
+                                  borderRadius: 14,
+                                  padding: 24,
+                                  marginBottom: 24,
+                                  boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
+                                  transition: 'all 0.2s'
+                              }}
+                          >
+                              {/* Post content - simplified version */}
+                              <div style={{ display: 'flex', alignItems: 'center', marginBottom: 18 }}>
+                                  <div style={{
+                                      width: 48,
+                                      height: 48,
+                                      borderRadius: 24,
+                                      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      marginRight: 14,
+                                      fontSize: 20,
+                                      color: '#ffffff',
+                                      fontWeight: 600
+                                  }}>
+                                      {post.author.charAt(0).toUpperCase()}
+                                  </div>
+                                  <div>
+                                      <div style={{ fontSize: 16, fontWeight: 600, color: '#111827' }}>{post.author}</div>
+                                      <div style={{ fontSize: 14, color: '#6b7280' }}>{post.timestamp}</div>
+                                  </div>
+                              </div>
+                              <div style={{ fontSize: 16, marginBottom: 12, lineHeight: 1.6, color: '#111827' }}>{post.description}</div>
+                              {post.media && post.media.length > 0 && (
+                                  <div style={{ marginTop: 14, borderRadius: 12, overflow: 'hidden' }}>
+                                      {post.media[0].type === 'image' ? (
+                                          <img 
+                                              src={post.media[0].sourceUrl} 
+                                              alt="Post content"
+                                              style={{ width: '100%', height: 'auto', display: 'block', maxHeight: 400, objectFit: 'cover' }}
+                                          />
+                                      ) : (
+                                          <video 
+                                              src={post.media[0].sourceUrl}
+                                              controls
+                                              style={{ width: '100%', height: 'auto', display: 'block', maxHeight: 400 }}
+                                          />
+                                      )}
+                                  </div>
+                              )}
+                              {/* Post Actions */}
+                              <div style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: 8,
+                                  paddingTop: 12,
+                                  borderTop: '1px solid #f3f4f6'
+                              }}>
+                                  <button
+                                      onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleLike(post.id, post.isLiked);
+                                      }}
+                                      style={{
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          gap: 6,
+                                          background: 'transparent',
+                                          border: 'none',
+                                          cursor: 'pointer',
+                                          padding: '6px 12px',
+                                          borderRadius: 6,
+                                          transition: 'background 0.2s'
+                                      }}
+                                      onMouseEnter={(e) => (e.currentTarget.style.background = '#f9fafb')}
+                                      onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                                  >
+                                      <svg
+                                          width="20"
+                                          height="20"
+                                          viewBox="0 0 24 24"
+                                          fill={post.isLiked ? '#ef4444' : 'none'}
+                                          stroke={post.isLiked ? '#ef4444' : '#6b7280'}
+                                          strokeWidth="2"
+                                      >
+                                          <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+                                      </svg>
+                                      <span style={{
+                                          fontSize: 14,
+                                          color: post.isLiked ? '#ef4444' : '#6b7280',
+                                          fontWeight: 500
+                                      }}>
+                                          Thích
+                                      </span>
+                                  </button>
+                                  <span style={{ fontSize: 13, color: '#9ca3af' }}>
+                                      {post.likes} lượt thích
+                                  </span>
+                                  <button
+                                      onClick={(e) => {
+                                          e.stopPropagation();
+                                          setSelectedPost(post);
+                                          setShowPostDetailModal(true);
+                                          if (socketService.isConnected()) {
+                                              socketService.joinRoom(`post:${post.id}`);
+                                          }
+                                      }}
+                                      style={{
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          gap: 6,
+                                          background: 'transparent',
+                                          border: 'none',
+                                          cursor: 'pointer',
+                                          padding: '6px 12px',
+                                          borderRadius: 6,
+                                          transition: 'background 0.2s'
+                                      }}
+                                      onMouseEnter={(e) => (e.currentTarget.style.background = '#f9fafb')}
+                                      onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                                  >
+                                      <svg
+                                          width="20"
+                                          height="20"
+                                          viewBox="0 0 24 24"
+                                          fill="none"
+                                          stroke="#6b7280"
+                                          strokeWidth="2"
+                                      >
+                                          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                                      </svg>
+                                      <span style={{
+                                          fontSize: 14,
+                                          color: '#6b7280',
+                                          fontWeight: 500
+                                      }}>
+                                          Bình luận
+                                      </span>
+                                  </button>
+                                  <span style={{ fontSize: 13, color: '#9ca3af' }}>
+                                      {post.commentCount} bình luận
+                                  </span>
+                                  <button
+                                      onClick={(e) => {
+                                          e.stopPropagation();
+                                          setSharingPost(post);
+                                          setShowShareModal(true);
+                                      }}
+                                      style={{
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          gap: 6,
+                                          background: 'transparent',
+                                          border: 'none',
+                                          cursor: 'pointer',
+                                          padding: '6px 12px',
+                                          borderRadius: 6,
+                                          transition: 'background 0.2s'
+                                      }}
+                                      onMouseEnter={(e) => (e.currentTarget.style.background = '#f9fafb')}
+                                      onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                                  >
+                                      <svg
+                                          width="20"
+                                          height="20"
+                                          viewBox="0 0 24 24"
+                                          fill="none"
+                                          stroke="#6b7280"
+                                          strokeWidth="2"
+                                      >
+                                          <circle cx="18" cy="5" r="3" />
+                                          <circle cx="6" cy="12" r="3" />
+                                          <circle cx="18" cy="19" r="3" />
+                                          <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
+                                          <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
+                                      </svg>
+                                      <span style={{
+                                          fontSize: 14,
+                                          color: '#6b7280',
+                                          fontWeight: 500
+                                      }}>
+                                          Chia sẻ
+                                      </span>
+                                  </button>
+                                  {post.shareCount !== undefined && post.shareCount > 0 && (
+                                      <span style={{ fontSize: 13, color: '#9ca3af' }}>
+                                          {post.shareCount} lượt chia sẻ
+                                      </span>
+                                  )}
+                              </div>
+                          </div>
+                      ))
+                  )
+              ) : activeTab === 'liked' ? (
+                  // Liked Posts Tab
+                  isLoadingLiked ? (
+                      <div style={{ padding: 24, textAlign: 'center', color: '#6b7280' }}>
+                          <div style={{ fontSize: 17 }}>Đang tải...</div>
+                      </div>
+                  ) : likedPosts.length === 0 ? (
+                      <div style={{ padding: 60, textAlign: 'center', color: '#6b7280' }}>
+                          <div style={{ fontSize: 48, marginBottom: 16 }}>💔</div>
+                          <div style={{ fontSize: 17, fontWeight: 500 }}>Chưa có bài viết nào được thích</div>
+                          <div style={{ fontSize: 15, marginTop: 8, color: '#9ca3af' }}>Các bài viết bạn thích sẽ hiển thị ở đây</div>
+                      </div>
+                  ) : (
+                      likedPosts.map(post => (
+                          <div
+                              key={post.id}
+                              style={{
+                                  background: '#ffffff',
+                                  borderRadius: 14,
+                                  padding: 24,
+                                  marginBottom: 24,
+                                  boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
+                                  transition: 'all 0.2s'
+                              }}
+                          >
+                              {/* Post content - simplified version */}
+                              <div style={{ display: 'flex', alignItems: 'center', marginBottom: 18 }}>
+                                  <div style={{
+                                      width: 48,
+                                      height: 48,
+                                      borderRadius: 24,
+                                      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      marginRight: 14,
+                                      fontSize: 20,
+                                      color: '#ffffff',
+                                      fontWeight: 600
+                                  }}>
+                                      {post.author.charAt(0).toUpperCase()}
+                                  </div>
+                                  <div>
+                                      <div style={{ fontSize: 16, fontWeight: 600, color: '#111827' }}>{post.author}</div>
+                                      <div style={{ fontSize: 14, color: '#6b7280' }}>{post.timestamp}</div>
+                                  </div>
+                              </div>
+                              <div style={{ fontSize: 16, marginBottom: 12, lineHeight: 1.6, color: '#111827' }}>{post.description}</div>
+                              {post.media && post.media.length > 0 && (
+                                  <div style={{ marginTop: 14, borderRadius: 12, overflow: 'hidden' }}>
+                                      {post.media[0].type === 'image' ? (
+                                          <img 
+                                              src={post.media[0].sourceUrl} 
+                                              alt="Post content"
+                                              style={{ width: '100%', height: 'auto', display: 'block', maxHeight: 400, objectFit: 'cover' }}
+                                          />
+                                      ) : (
+                                          <video 
+                                              src={post.media[0].sourceUrl}
+                                              controls
+                                              style={{ width: '100%', height: 'auto', display: 'block', maxHeight: 400 }}
+                                          />
+                                      )}
+                                  </div>
+                              )}
+                              {/* Post Actions */}
+                              <div style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: 8,
+                                  paddingTop: 12,
+                                  borderTop: '1px solid #f3f4f6'
+                              }}>
+                                  <button
+                                      onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleLike(post.id, post.isLiked);
+                                      }}
+                                      style={{
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          gap: 6,
+                                          background: 'transparent',
+                                          border: 'none',
+                                          cursor: 'pointer',
+                                          padding: '6px 12px',
+                                          borderRadius: 6,
+                                          transition: 'background 0.2s'
+                                      }}
+                                      onMouseEnter={(e) => (e.currentTarget.style.background = '#f9fafb')}
+                                      onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                                  >
+                                      <svg
+                                          width="20"
+                                          height="20"
+                                          viewBox="0 0 24 24"
+                                          fill={post.isLiked ? '#ef4444' : 'none'}
+                                          stroke={post.isLiked ? '#ef4444' : '#6b7280'}
+                                          strokeWidth="2"
+                                      >
+                                          <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+                                      </svg>
+                                      <span style={{
+                                          fontSize: 14,
+                                          color: post.isLiked ? '#ef4444' : '#6b7280',
+                                          fontWeight: 500
+                                      }}>
+                                          Thích
+                                      </span>
+                                  </button>
+                                  <span style={{ fontSize: 13, color: '#9ca3af' }}>
+                                      {post.likes} lượt thích
+                                  </span>
+                                  <button
+                                      onClick={(e) => {
+                                          e.stopPropagation();
+                                          setSelectedPost(post);
+                                          setShowPostDetailModal(true);
+                                          if (socketService.isConnected()) {
+                                              socketService.joinRoom(`post:${post.id}`);
+                                          }
+                                      }}
+                                      style={{
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          gap: 6,
+                                          background: 'transparent',
+                                          border: 'none',
+                                          cursor: 'pointer',
+                                          padding: '6px 12px',
+                                          borderRadius: 6,
+                                          transition: 'background 0.2s'
+                                      }}
+                                      onMouseEnter={(e) => (e.currentTarget.style.background = '#f9fafb')}
+                                      onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                                  >
+                                      <svg
+                                          width="20"
+                                          height="20"
+                                          viewBox="0 0 24 24"
+                                          fill="none"
+                                          stroke="#6b7280"
+                                          strokeWidth="2"
+                                      >
+                                          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                                      </svg>
+                                      <span style={{
+                                          fontSize: 14,
+                                          color: '#6b7280',
+                                          fontWeight: 500
+                                      }}>
+                                          Bình luận
+                                      </span>
+                                  </button>
+                                  <span style={{ fontSize: 13, color: '#9ca3af' }}>
+                                      {post.commentCount} bình luận
+                                  </span>
+                                  <button
+                                      onClick={(e) => {
+                                          e.stopPropagation();
+                                          setSharingPost(post);
+                                          setShowShareModal(true);
+                                      }}
+                                      style={{
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          gap: 6,
+                                          background: 'transparent',
+                                          border: 'none',
+                                          cursor: 'pointer',
+                                          padding: '6px 12px',
+                                          borderRadius: 6,
+                                          transition: 'background 0.2s'
+                                      }}
+                                      onMouseEnter={(e) => (e.currentTarget.style.background = '#f9fafb')}
+                                      onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                                  >
+                                      <svg
+                                          width="20"
+                                          height="20"
+                                          viewBox="0 0 24 24"
+                                          fill="none"
+                                          stroke="#6b7280"
+                                          strokeWidth="2"
+                                      >
+                                          <circle cx="18" cy="5" r="3" />
+                                          <circle cx="6" cy="12" r="3" />
+                                          <circle cx="18" cy="19" r="3" />
+                                          <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
+                                          <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
+                                      </svg>
+                                      <span style={{
+                                          fontSize: 14,
+                                          color: '#6b7280',
+                                          fontWeight: 500
+                                      }}>
+                                          Chia sẻ
+                                      </span>
+                                  </button>
+                                  {post.shareCount !== undefined && post.shareCount > 0 && (
+                                      <span style={{ fontSize: 13, color: '#9ca3af' }}>
+                                          {post.shareCount} lượt chia sẻ
+                                      </span>
+                                  )}
+                              </div>
+                          </div>
+                      ))
                   )
               ) : posts.length === 0 ? (
                   <div style={{ padding: 24, textAlign: 'center', color: '#6b7280' }}>
@@ -1022,6 +1573,36 @@ export default function ProfilePanel() {
           </div>
         </div>
       )}
+
+      {/* Post Detail Modal */}
+      <PostDetailModal
+        isOpen={showPostDetailModal}
+        post={selectedPost as any}
+        onClose={() => {
+          if (selectedPost && socketService.isConnected()) {
+            socketService.leaveRoom(`post:${selectedPost.id}`);
+          }
+          setShowPostDetailModal(false);
+          setSelectedPost(null);
+        }}
+      />
+
+      {/* Share Post Modal */}
+      <SharePostModal
+        isOpen={showShareModal}
+        postId={sharingPost?.id || ''}
+        postTitle={sharingPost?.title || ''}
+        postAuthor={sharingPost?.author || 'Người dùng'}
+        postContent={sharingPost?.description || ''}
+        onClose={() => {
+          setShowShareModal(false);
+          setSharingPost(null);
+        }}
+        onShared={() => {
+          setShowShareModal(false);
+          setSharingPost(null);
+        }}
+      />
     </>
   );
 }

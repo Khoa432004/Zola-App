@@ -714,4 +714,119 @@ export class PostController {
       });
     }
   };
+
+  trackPostView = async (req: AuthRequest, res: Response) => {
+    try {
+      const { id } = req.params;
+      const userId = req.user?.userId;
+
+      if (!userId) {
+        return res.status(401).json({
+          success: false,
+          message: "Chưa đăng nhập",
+        });
+      }
+
+      await this.postService.trackPostView(id, userId);
+
+      res.json({
+        success: true,
+        message: "Đã ghi nhận lượt xem",
+      });
+    } catch (error: any) {
+      console.error("Error tracking post view:", error);
+      res.status(500).json({
+        success: false,
+        message: error.message || "Không thể ghi nhận lượt xem",
+      });
+    }
+  };
+
+  getViewedPosts = async (req: AuthRequest, res: Response) => {
+    try {
+      const userId = req.user?.userId;
+
+      if (!userId) {
+        return res.status(401).json({
+          success: false,
+          message: "Chưa đăng nhập",
+        });
+      }
+
+      const limit = req.query.limit
+        ? parseInt(req.query.limit as string)
+        : 50;
+
+      const posts = await this.postService.getViewedPosts(userId, limit);
+
+      // Check which posts the user has liked
+      const postsWithLikedStatus = await Promise.all(
+        posts.map(async (post) => {
+          const isLiked = await this.postService.checkUserLiked(
+            post.postId,
+            userId
+          );
+          return {
+            ...post,
+            isLiked,
+          };
+        })
+      );
+
+      res.json({
+        success: true,
+        data: postsWithLikedStatus,
+      });
+    } catch (error: any) {
+      console.error("Error fetching viewed posts:", error);
+      res.status(500).json({
+        success: false,
+        message: error.message || "Không thể lấy danh sách bài viết đã xem",
+      });
+    }
+  };
+
+  getLikedPosts = async (req: AuthRequest, res: Response) => {
+    try {
+      const userId = req.user?.userId;
+
+      if (!userId) {
+        return res.status(401).json({
+          success: false,
+          message: "Chưa đăng nhập",
+        });
+      }
+
+      const limit = req.query.limit
+        ? parseInt(req.query.limit as string)
+        : 50;
+
+      const posts = await this.postService.getLikedPosts(userId, limit);
+
+      // All liked posts should have isLiked = true, but check to be sure
+      const postsWithLikedStatus = await Promise.all(
+        posts.map(async (post) => {
+          const isLiked = await this.postService.checkUserLiked(
+            post.postId,
+            userId
+          );
+          return {
+            ...post,
+            isLiked,
+          };
+        })
+      );
+
+      res.json({
+        success: true,
+        data: postsWithLikedStatus,
+      });
+    } catch (error: any) {
+      console.error("Error fetching liked posts:", error);
+      res.status(500).json({
+        success: false,
+        message: error.message || "Không thể lấy danh sách bài viết đã thích",
+      });
+    }
+  };
 }

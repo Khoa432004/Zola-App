@@ -381,9 +381,14 @@ export class Post {
     const post = await this.findById(postId);
     if (!post || !userId) return post;
     try {
-      const likeDoc = await firestore!.collection('post_likes').doc(`${postId}_${userId}`).get();
+      const likeDocRef = firestore!.collection('post_likes').doc(`${postId}_${userId}`);
+      const likeDoc = await likeDocRef.get();
+      console.log(`[findByIdWithUser] postId: ${postId}, userId: ${userId}`);
+      console.log(`[findByIdWithUser] likeDoc path: ${likeDocRef.path}`);
+      console.log(`[findByIdWithUser] likeDoc.exists: ${likeDoc.exists}`);
       post.isLiked = likeDoc.exists;
-    } catch {
+    } catch (error) {
+      console.error(`[findByIdWithUser] Error checking like:`, error);
       post.isLiked = false;
     }
     return post;
@@ -543,6 +548,9 @@ export class Post {
       const docRef = firestore.collection(this.collection).doc(postId);
       const likesRef = firestore.collection('post_likes').doc(`${postId}_${userId || 'anon'}`);
 
+      console.log(`[decrementLike] postId: ${postId}, userId: ${userId}`);
+      console.log(`[decrementLike] likesRef path: ${likesRef.path}`);
+
       await firestore.runTransaction(async (tx) => {
         const doc = await tx.get(docRef);
         if (!doc.exists) {
@@ -552,21 +560,28 @@ export class Post {
         // If userId provided, only decrement if a like record exists
         if (userId) {
           const likeDoc = await tx.get(likesRef);
+          console.log(`[decrementLike] likeDoc.exists: ${likeDoc.exists}`);
           if (!likeDoc.exists) {
             // nothing to do
+            console.log(`[decrementLike] No like document found, skipping`);
             return;
           }
           tx.delete(likesRef);
+          console.log(`[decrementLike] Deleted like document`);
         }
 
         const data = doc.data() || {};
         const current = typeof data.likeCount === 'number' ? data.likeCount : 0;
         const next = Math.max(0, current - 1);
         tx.update(docRef, { likeCount: next, updatedAt: admin.firestore.Timestamp.now() });
+        console.log(`[decrementLike] Updated likeCount from ${current} to ${next}`);
       });
 
-      return await this.findByIdWithUser(postId, userId);
+      const result = await this.findByIdWithUser(postId, userId);
+      console.log(`[decrementLike] Result isLiked: ${result?.isLiked}`);
+      return result;
     } catch (error: any) {
+      console.error(`[decrementLike] Error:`, error);
       throw error;
     }
   }
@@ -887,13 +902,16 @@ export class Post {
       throw new Error("Firestore not initialized");
     }
 
-    const likeRef = firestore
-      .collection(this.collection)
-      .doc(postId)
-      .collection("likes")
-      .doc(userId);
-
+    // Kiểm tra trong collection post_likes với document ID format: postId_userId
+    const likeDocId = `${postId}_${userId}`;
+    const likeRef = firestore.collection('post_likes').doc(likeDocId);
+    
+    console.log(`[checkUserLiked] Checking postId: ${postId}, userId: ${userId}`);
+    console.log(`[checkUserLiked] Document path: ${likeRef.path}`);
+    
     const likeDoc = await likeRef.get();
+    console.log(`[checkUserLiked] Document exists: ${likeDoc.exists}`);
+    
     return likeDoc.exists;
   }
   static async findAllPublicPaginated(
@@ -1143,5 +1161,195 @@ export class Post {
     }
 
     return post;
+  }
+
+  /**
+   * Track post view by user
+   */
+  static async trackView(
+    postId: string,
+    userId: string
+  ): Promise<void> {
+    if (!firestore) {
+      throw new Error("Firestore not initialized");
+    }
+
+    const viewRef = firestore
+      .collection("post_views")
+      .doc(`${postId}_${userId}`);
+
+    // Check if view already exists
+    const viewDoc = await viewRef.get();
+    if (viewDoc.exists) {
+      // Update timestamp
+      await viewRef.update({
+        lastViewedAt: admin.firestore.FieldValue.serverTimestamp(),
+        viewCount: admin.firestore.FieldValue.increment(1),
+      });
+    } else {
+      // Create new view record
+      await viewRef.set({
+        postId,
+        userId,
+        firstViewedAt: admin.firestore.FieldValue.serverTimestamp(),
+        lastViewedAt: admin.firestore.FieldValue.serverTimestamp(),
+        viewCount: 1,
+      });
+
+      // Increment post view count
+      await firestore
+        .collection(this.collection)
+        .doc(postId)
+        .update({
+          viewCount: admin.firestore.FieldValue.increment(1),
+        });
+    }
+  }
+
+  /**
+   * Get posts viewed by user
+   */
+  static async findViewedByUser(
+    userId: string,
+    limit: number = 50
+  ): Promise<IPost[]> {
+    if (!firestore) {
+      throw new Error("Firestore not initialized");
+    }
+
+    try {
+      // Get view records for user - without orderBy to avoid index requirement
+      const viewsSnapshot = await firestore
+        .collection("post_views")
+        .where("userId", "==", userId)
+        .get();
+
+      if (viewsSnapshot.empty) {
+        return [];
+      }
+
+      // Get all view records and sort by lastViewedAt in memory
+      const viewRecords = viewsSnapshot.docs.map(doc => ({
+        postId: doc.data().postId,
+        lastViewedAt: doc.data().lastViewedAt,
+      }));
+
+      // Sort by lastViewedAt descending (most recent first)
+      viewRecords.sort((a, b) => {
+        const timeA = a.lastViewedAt?.toMillis() || 0;
+        const timeB = b.lastViewedAt?.toMillis() || 0;
+        return timeB - timeA;
+      });
+
+      // Take only the requested limit
+      const limitedRecords = viewRecords.slice(0, limit);
+      const postIds = limitedRecords.map(record => record.postId);
+
+      // Fetch posts
+      const posts = await Promise.all(
+        postIds.map(async (postId) => {
+          try {
+            return await this.findById(postId);
+          } catch (error) {
+            return null;
+          }
+        })
+      );
+
+      // Filter out null posts and deleted posts
+      const validPosts = posts.filter(
+        (post): post is IPost => post !== null && !post.isDeleted
+      );
+
+      // Populate shared post data
+      return await this.populateSharedPosts(validPosts);
+    } catch (error: any) {
+      console.error("Error fetching viewed posts:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get posts liked by user
+   */
+  static async findLikedByUser(
+    userId: string,
+    limit: number = 50
+  ): Promise<IPost[]> {
+    if (!firestore) {
+      throw new Error("Firestore not initialized");
+    }
+
+    try {
+      // Query post_likes collection (format: postId_userId)
+      // Get all like documents to filter by userId
+      const likesSnapshot = await firestore
+        .collection("post_likes")
+        .get();
+
+      if (likesSnapshot.empty) {
+        return [];
+      }
+
+      // Filter likes for this user and extract post IDs
+      const likeRecords = likesSnapshot.docs
+        .filter(doc => {
+          const docId = doc.id;
+          // Doc ID format: postId_userId
+          const parts = docId.split('_');
+          if (parts.length < 2) return false;
+          const docUserId = parts.slice(1).join('_'); // In case userId has underscore
+          return docUserId === userId;
+        })
+        .map(doc => {
+          const docId = doc.id;
+          const parts = docId.split('_');
+          const postId = parts[0];
+          const createdAt = doc.data().createdAt;
+          return { postId, createdAt };
+        });
+
+      if (likeRecords.length === 0) {
+        return [];
+      }
+
+      // Sort by like timestamp (most recent first)
+      likeRecords.sort((a, b) => {
+        const timeA = a.createdAt?.toMillis() || 0;
+        const timeB = b.createdAt?.toMillis() || 0;
+        return timeB - timeA;
+      });
+
+      // Take only the requested limit
+      const limitedRecords = likeRecords.slice(0, limit);
+      const postIds = limitedRecords.map(record => record.postId);
+
+      // Fetch posts
+      const posts = await Promise.all(
+        postIds.map(async (postId) => {
+          try {
+            return await this.findById(postId);
+          } catch (error) {
+            return null;
+          }
+        })
+      );
+
+      // Filter out null posts and deleted posts
+      const validPosts = posts.filter(
+        (post): post is IPost => post !== null && !post.isDeleted
+      );
+
+      // Mark all as liked
+      validPosts.forEach(post => {
+        post.isLiked = true;
+      });
+
+      // Populate shared post data
+      return await this.populateSharedPosts(validPosts);
+    } catch (error: any) {
+      console.error("Error fetching liked posts:", error);
+      throw error;
+    }
   }
 }

@@ -194,4 +194,28 @@ async sharePost(
     throw error;
   }
 }
+
+async trackPostView(postId: string, userId: string): Promise<void> {
+  try {
+    return await Post.trackView(postId, userId);
+  } catch (error) {
+    throw error;
+  }
+}
+
+async getViewedPosts(userId: string, limit?: number): Promise<IPost[]> {
+  try {
+    return await Post.findViewedByUser(userId, limit);
+  } catch (error) {
+    throw error;
+  }
+}
+
+async getLikedPosts(userId: string, limit?: number): Promise<IPost[]> {
+  try {
+    return await Post.findLikedByUser(userId, limit);
+  } catch (error) {
+    throw error;
+  }
+}
 }
