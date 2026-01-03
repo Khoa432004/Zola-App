@@ -67,14 +67,14 @@ export class Appointment {
       updatedAt: now,
     };
 
-    // Chỉ thêm các trường optional nếu có giá trị
-    if (appointmentData.description) {
+    // Chỉ thêm các trường optional nếu có giá trị (loại bỏ undefined và null)
+    if (appointmentData.description !== undefined && appointmentData.description !== null && appointmentData.description !== '') {
       cleanData.description = appointmentData.description;
     }
-    if (appointmentData.location) {
+    if (appointmentData.location !== undefined && appointmentData.location !== null && appointmentData.location !== '') {
       cleanData.location = appointmentData.location;
     }
-    if (appointmentData.repeat_type) {
+    if (appointmentData.repeat_type !== undefined && appointmentData.repeat_type !== null) {
       cleanData.repeat_type = appointmentData.repeat_type;
     }
 
@@ -258,10 +258,10 @@ export class Appointment {
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     };
 
-    // Chỉ thêm các trường có giá trị
-    if (updates.title !== undefined) updateData.title = updates.title;
-    if (updates.description !== undefined) updateData.description = updates.description;
-    if (updates.location !== undefined) updateData.location = updates.location;
+    // Chỉ thêm các trường có giá trị (loại bỏ undefined và null)
+    if (updates.title !== undefined && updates.title !== null) updateData.title = updates.title;
+    if (updates.description !== undefined && updates.description !== null && updates.description !== '') updateData.description = updates.description;
+    if (updates.location !== undefined && updates.location !== null && updates.location !== '') updateData.location = updates.location;
     if (updates.creator_id !== undefined) updateData.creator_id = updates.creator_id;
     if (updates.creator_name !== undefined) updateData.creator_name = updates.creator_name;
     if (updates.participants !== undefined) updateData.participants = updates.participants;
