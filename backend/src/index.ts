@@ -17,8 +17,10 @@ import storyRoutes from "./routes/story.routes";
 import adminRoutes from "./routes/admin.routes";
 import appointmentRoutes from "./routes/appointment.routes";
 import memoryRoutes from "./routes/memory.routes";
+// import cronRoutes from "./routes/cron.routes"; // Temporarily disabled
 import { setupSocketHandlers } from "./socket/socket.handlers";
 import { SchedulerService } from "./services/scheduler.service";
+import { initMemoryPostsCronJob } from "./cron/memory-posts.cron";
 
 const app = express();
 const httpServer = createServer(app);
@@ -80,6 +82,8 @@ app.use("/api/admin", adminRoutes);
 app.use("/api/appointments", appointmentRoutes);
 // Memory routes
 app.use("/api/memories", memoryRoutes);
+// Cron routes (manual triggers) - Temporarily disabled due to handler error
+// app.use("/api/cron", cronRoutes);
 
 // Setup Socket.IO
 const io = new SocketIOServer(httpServer, {
@@ -99,6 +103,9 @@ setupSocketHandlers(io);
 // Start scheduler for appointment reminders
 const scheduler = new SchedulerService();
 scheduler.start();
+
+// Start memory posts cron job
+initMemoryPostsCronJob();
 
 // Graceful shutdown
 process.on('SIGTERM', () => {

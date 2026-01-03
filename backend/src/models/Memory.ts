@@ -90,10 +90,37 @@ export class Memory {
       .filter((memory) => !memory.isDeleted) // Filter isDeleted trong code
       .sort((a, b) => {
         // Sort theo date descending trong code
-        const dateA = a.date instanceof Date ? a.date : new Date(a.date);
-        const dateB = b.date instanceof Date ? b.date : new Date(b.date);
+        const dateA = a.date instanceof Date ? a.date : (a.date as admin.firestore.Timestamp).toDate();
+        const dateB = b.date instanceof Date ? b.date : (b.date as admin.firestore.Timestamp).toDate();
         return dateB.getTime() - dateA.getTime();
       });
+
+    return memories;
+  }
+
+  /**
+   * Lấy tất cả kỷ niệm (cho Cron Job)
+   */
+  static async findAll(): Promise<IMemory[]> {
+    if (!firestore) {
+      throw new Error('Firestore not initialized');
+    }
+
+    const snapshot = await firestore
+      .collection(this.collection)
+      .where('isDeleted', '==', false)
+      .get();
+
+    const memories = snapshot.docs.map((doc) => {
+      const data = doc.data();
+      return {
+        memoryId: doc.id,
+        ...data,
+        date: data.date?.toDate() || new Date(),
+        createdAt: data.createdAt?.toDate() || new Date(),
+        updatedAt: data.updatedAt?.toDate() || new Date(),
+      } as IMemory;
+    });
 
     return memories;
   }
@@ -203,7 +230,7 @@ export class Memory {
 
     // Lọc kỷ niệm sắp tới (ngày kỷ niệm trong năm hiện tại hoặc tương lai)
     const upcoming = allMemories.filter((memory) => {
-      const memoryDate = memory.date instanceof Date ? memory.date : new Date(memory.date);
+      const memoryDate = memory.date instanceof Date ? memory.date : (memory.date as admin.firestore.Timestamp).toDate();
       
       // Tính ngày kỷ niệm trong năm hiện tại
       const thisYear = new Date(now.getFullYear(), memoryDate.getMonth(), memoryDate.getDate());
@@ -226,8 +253,8 @@ export class Memory {
 
     // Sắp xếp theo ngày gần nhất
     return upcoming.sort((a, b) => {
-      const dateA = a.date instanceof Date ? a.date : new Date(a.date);
-      const dateB = b.date instanceof Date ? b.date : new Date(b.date);
+      const dateA = a.date instanceof Date ? a.date : (a.date as admin.firestore.Timestamp).toDate();
+      const dateB = b.date instanceof Date ? b.date : (b.date as admin.firestore.Timestamp).toDate();
       return dateA.getTime() - dateB.getTime();
     });
   }

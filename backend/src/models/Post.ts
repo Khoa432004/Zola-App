@@ -30,6 +30,10 @@ export interface IPost {
   sharedPost?: IPost;
   shareCount?: number;
   sharedWith?: string[]; // Array of user IDs who can see this post (only for specific visibility)
+  // Memory post fields
+  isMemoryPost?: boolean; // True if this is an auto-generated memory anniversary post
+  memoryId?: string; // Reference to the original memory document
+  yearsSince?: number; // Number of years since the memory date
 }
 
 export class Post {

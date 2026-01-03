@@ -10,8 +10,7 @@ import SharePostModal from './SharePostModal';
 import PostReportModal from './PostReportModal';
 import StoryBar from './StoryBar';
 import CreateStoryModal from './CreateStoryModal';
-import MemoriesSection from './MemoriesSection';
-import ViewUserProfileModal from './ViewUserProfileModal'; 
+import MemoriesSection from './MemoriesSection'; 
 
 interface Post {
   postId: string;
@@ -41,6 +40,10 @@ interface Post {
   sharedPostId?: string;
   sharedPost?: Post;
   shareCount?: number;
+  // Memory post fields
+  isMemoryPost?: boolean;
+  memoryId?: string;
+  yearsSince?: number;
 }
 
 interface DisplayPost {
@@ -76,6 +79,10 @@ interface DisplayPost {
     }>;
   };
   shareCount?: number;
+  // Memory post fields
+  isMemoryPost?: boolean;
+  memoryId?: string;
+  yearsSince?: number;
 }
 
 interface Comment {
@@ -121,9 +128,6 @@ export default function SocialPanel() {
   const [postComments, setPostComments] = useState<{
     [key: string]: Comment[];
   }>({});
-  const [showViewUserModal, setShowViewUserModal] = useState(false);
-  const [viewingUserId, setViewingUserId] = useState<string | null>(null);
-  const [viewingUserName, setViewingUserName] = useState<string>('');
   const [isLoadingComments, setIsLoadingComments] = useState<{
     [key: string]: boolean;
   }>({});
@@ -218,6 +222,10 @@ export default function SocialPanel() {
       commentCount: post.commentCount || 0,
       isLiked: liked,
       shareCount: post.shareCount || 0,
+      // Memory post fields
+      isMemoryPost: post.isMemoryPost,
+      memoryId: post.memoryId,
+      yearsSince: post.yearsSince,
     };
 
     // If this is a shared post, populate shared post data
@@ -599,6 +607,7 @@ export default function SocialPanel() {
     socketService.off('comment_added');
     socketService.off('comment_updated');
     socketService.off('comment_deleted');
+    socketService.off('new_memory_post');
     
     // Add new listeners
     socketService.on('post_created', handlePostCreated);
@@ -610,6 +619,11 @@ export default function SocialPanel() {
     socketService.on('comment_added', handleCommentAdded);
     socketService.on('comment_updated', handleCommentUpdated);
     socketService.on('comment_deleted', handleCommentDeleted);
+    socketService.on('new_memory_post', (data: any) => {
+      console.log('🎉 Received new_memory_post event:', data);
+      // Reload posts to show new memory post
+      loadPosts(false);
+    });
 
     // Cleanup
     return () => {
@@ -622,6 +636,7 @@ export default function SocialPanel() {
       socketService.off('comment_added', handleCommentAdded);
       socketService.off('comment_updated', handleCommentUpdated);
       socketService.off('comment_deleted', handleCommentDeleted);
+      socketService.off('new_memory_post');
     };
   }, [user?.id]);
 
@@ -1322,14 +1337,41 @@ export default function SocialPanel() {
               <div
               key={post.id}
               style={{
-                background: "#ffffff",
+                background: post.isMemoryPost 
+                  ? "linear-gradient(135deg, #fef3c7 0%, #fde68a 100%)"
+                  : "#ffffff",
                 borderRadius: 12,
                 padding: "20px",
                 marginBottom: 20,
-                boxShadow: "0 1px 3px rgba(0, 0, 0, 0.1)",
-                transition: "all 0.2s"
+                boxShadow: post.isMemoryPost
+                  ? "0 4px 12px rgba(251, 191, 36, 0.3)"
+                  : "0 1px 3px rgba(0, 0, 0, 0.1)",
+                transition: "all 0.2s",
+                border: post.isMemoryPost ? "2px solid #fbbf24" : "none"
               }}
             >
+              {/* Memory Post Badge */}
+              {post.isMemoryPost && (
+                <div style={{
+                  background: "linear-gradient(135deg, #f59e0b 0%, #d97706 100%)",
+                  color: "#ffffff",
+                  padding: "8px 16px",
+                  borderRadius: 8,
+                  marginBottom: 16,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 8,
+                  fontSize: 14,
+                  fontWeight: 600,
+                  boxShadow: "0 2px 8px rgba(245, 158, 11, 0.3)"
+                }}>
+                  <span style={{ fontSize: 18 }}>🎉</span>
+                  <span>
+                    Kỷ niệm {post.yearsSince && post.yearsSince > 0 ? `${post.yearsSince} năm` : ''}
+                  </span>
+                </div>
+              )}
+              
               {/* Post Header */}
               <div style={{ display: "flex", alignItems: "center", marginBottom: 16, position: "relative" }}>
                 <div style={{
@@ -1348,29 +1390,11 @@ export default function SocialPanel() {
                 </div>
                 <div style={{ flex: 1 }}>
                   <div 
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (post.authorId && post.authorId !== user?.id) {
-                        setViewingUserId(post.authorId);
-                        setViewingUserName(post.author);
-                        setShowViewUserModal(true);
-                      }
-                    }}
                     style={{ 
                       fontSize: 15, 
                       fontWeight: 600, 
                       color: "#111827", 
-                      marginBottom: 2,
-                      cursor: post.authorId && post.authorId !== user?.id ? 'pointer' : 'default',
-                      transition: 'color 0.2s'
-                    }}
-                    onMouseEnter={(e) => {
-                      if (post.authorId && post.authorId !== user?.id) {
-                        e.currentTarget.style.color = '#6366f1';
-                      }
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.color = '#111827';
+                      marginBottom: 2
                     }}
                   >
                     {post.author}
@@ -1876,6 +1900,61 @@ export default function SocialPanel() {
                     {post.shareCount} lượt chia sẻ
                   </span>
                 )}
+                
+                {/* Congratulate Button - Only for memory posts not owned by current user */}
+                {post.isMemoryPost && post.authorId && post.authorId !== user?.id && (
+                  <button
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      try {
+                        // Auto-like the post
+                        await handleLike(post.id);
+                        
+                        // Auto-comment "🎉 Chúc mừng!"
+                        const commentData = {
+                          targetId: post.id,
+                          content: "🎉 Chúc mừng!",
+                        };
+                        await apiService.post("/api/comments", commentData);
+                        
+                        // Show success feedback
+                        console.log(`✅ Congratulated memory post ${post.id}`);
+                        
+                        // Refresh to show new comment
+                        await loadPosts(false);
+                      } catch (error) {
+                        console.error("Failed to congratulate:", error);
+                      }
+                    }}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                      background: "linear-gradient(135deg, #f59e0b 0%, #d97706 100%)",
+                      border: "none",
+                      color: "#ffffff",
+                      cursor: "pointer",
+                      padding: "8px 16px",
+                      borderRadius: 8,
+                      fontSize: 14,
+                      fontWeight: 600,
+                      transition: "all 0.2s",
+                      boxShadow: "0 2px 6px rgba(245, 158, 11, 0.3)"
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.transform = "translateY(-2px)";
+                      e.currentTarget.style.boxShadow = "0 4px 12px rgba(245, 158, 11, 0.4)";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.transform = "translateY(0)";
+                      e.currentTarget.style.boxShadow = "0 2px 6px rgba(245, 158, 11, 0.3)";
+                    }}
+                  >
+                    <span style={{ fontSize: 16 }}>🎉</span>
+                    <span>Chúc mừng</span>
+                  </button>
+                )}
+                
                 {/* Report Button - Show for posts not owned by current user */}
                 {post.authorId && post.authorId.trim() !== '' && post.authorId !== user?.id && (
                   <button
@@ -2140,17 +2219,6 @@ export default function SocialPanel() {
           postMedia={selectedPostForReport.media}
         />
       )}
-      {/* View User Profile Modal */}
-      <ViewUserProfileModal
-        isOpen={showViewUserModal}
-        onClose={() => {
-          setShowViewUserModal(false);
-          setViewingUserId(null);
-          setViewingUserName('');
-        }}
-        userId={viewingUserId || ''}
-        userName={viewingUserName}
-      />
     </div>
   );
 }

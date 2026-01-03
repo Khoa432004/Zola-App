@@ -211,7 +211,7 @@ export default function PrivacySettingsModal({ isOpen, onClose }: PrivacySetting
                   color: '#111827',
                   marginBottom: 4
                 }}>
-                  Cho phép người khác xem kỷ niệm
+                  Cho phép bạn bè xem kỷ niệm
                 </h3>
                 <p style={{
                   margin: 0,
@@ -219,7 +219,7 @@ export default function PrivacySettingsModal({ isOpen, onClose }: PrivacySetting
                   color: '#6b7280',
                   lineHeight: 1.5
                 }}>
-                  Khi bật, bạn bè và người dùng khác có thể xem phần kỷ niệm của bạn. Khi tắt, chỉ bạn mới thấy được kỷ niệm của mình.
+                  Khi bật, bạn bè có thể thấy phần kỷ niệm của bạn. Khi tắt, chỉ bạn mới thấy được kỷ niệm của mình.
                 </p>
               </div>
               
