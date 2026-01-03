@@ -227,6 +227,14 @@ export default function MemoryModal({ isOpen, onClose, onMemoryCreated, editingM
                 boxSizing: 'border-box',
               }}
             />
+            <div style={{
+              marginTop: 6,
+              fontSize: 12,
+              color: '#6b7280',
+              fontStyle: 'italic',
+            }}>
+              💡 Kỷ niệm sẽ tự động lặp lại hàng năm vào ngày này
+            </div>
           </div>
 
           <div style={{ marginBottom: 16 }}>

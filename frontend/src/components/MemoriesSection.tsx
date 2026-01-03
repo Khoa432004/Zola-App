@@ -104,11 +104,23 @@ export default function MemoriesSection({ userId, showCreateButton = true }: Mem
     
     const daysUntil = Math.ceil((targetDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
     
+    // Calculate years since original date (based on current date, not target date)
+    let yearsSince = today.getFullYear() - memoryDate.getFullYear();
+    
+    // If this year's anniversary hasn't occurred yet, subtract 1
+    if (today < thisYear) {
+      yearsSince -= 1;
+    }
+    
+    // Ensure non-negative
+    if (yearsSince < 0) yearsSince = 0;
+    
     return {
       ...memory,
       daysUntil,
       memoryDate,
       targetDate,
+      yearsSince,
       isToday: daysUntil === 0,
       isThisWeek: daysUntil >= 0 && daysUntil <= 7,
       isUpcoming: daysUntil >= 0 && daysUntil <= 30,
@@ -337,6 +349,19 @@ export default function MemoriesSection({ userId, showCreateButton = true }: Mem
                         <div style={{ flex: 1 }}>
                           <h4 style={{ margin: '0 0 4px 0', fontSize: 16, fontWeight: 600, color: '#111827' }}>
                             {memory.title}
+                            {memory.yearsSince > 0 && (
+                              <span style={{
+                                marginLeft: 8,
+                                fontSize: 13,
+                                fontWeight: 500,
+                                color: '#8b5cf6',
+                                background: '#f3e8ff',
+                                padding: '2px 8px',
+                                borderRadius: 4,
+                              }}>
+                                🎉 {memory.yearsSince} năm
+                              </span>
+                            )}
                           </h4>
                           <div style={{ fontSize: 13, color: '#6b7280', marginBottom: 8 }}>
                             📅 {formatDate(memory.memoryDate)}

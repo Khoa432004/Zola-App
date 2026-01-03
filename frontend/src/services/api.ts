@@ -393,15 +393,6 @@ class ApiService {
     }
   }
 
-  async getUserProfile(userId: string) {
-    try {
-      const response = await this.axiosInstance.get(`/profile/${userId}`);
-      return response.data;
-    } catch (error: any) {
-      throw new Error(error.response?.data?.message || "Không lấy được thông tin người dùng");
-    }
-  }
-
   async updateProfile(payload: {
     name?: string;
     phone?: string;

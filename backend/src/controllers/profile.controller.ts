@@ -34,39 +34,6 @@ export class ProfileController {
     }
   }
 
-  async getUserProfile(req: AuthRequest, res: Response) {
-    try {
-      if (!req.user) {
-        return res.status(401).json({ success: false, message: "Unauthorized" });
-      }
-      
-      const { userId } = req.params;
-      
-      const acc = await Account.findById(userId);
-      if (!acc) {
-        return res.status(404).json({ success: false, message: "Người dùng không tồn tại" });
-      }
-      
-      // Trả về thông tin công khai của user
-      return res.json({
-        success: true,
-        data: {
-          id: acc.id,
-          email: acc.email,
-          name: acc.name,
-          avatar: acc.avatar,
-          phone: acc.phone,
-          address: acc.address,
-          bio: acc.bio,
-          memoriesVisible: acc.memoriesVisible ?? false,
-          createdAt: acc.createdAt,
-        },
-      });
-    } catch (e: any) {
-      return res.status(500).json({ success: false, message: e.message || "Server error" });
-    }
-  }
-
   async update(req: AuthRequest, res: Response) {
     try {
       if (!req.user) {

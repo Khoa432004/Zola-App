@@ -51,7 +51,7 @@ export default function StoryViewer({
   const [currentStoryIndex, setCurrentStoryIndex] = useState(initialIndex);
   const [progress, setProgress] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
-  const [videoRefs, setVideoRefs] = useState<{ [key: string]: HTMLVideoElement | null }>({});
+  const videoRefs = useRef<{ [key: string]: HTMLVideoElement | null }>({});
   const progressIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const touchStartRef = useRef<number | null>(null);
   const touchEndRef = useRef<number | null>(null);
@@ -93,7 +93,7 @@ export default function StoryViewer({
 
     // Handle video duration
     if (currentStory.media.type === 'video') {
-      const videoElement = videoRefs[currentStory.storyId];
+      const videoElement = videoRefs.current[currentStory.storyId];
       if (videoElement) {
         videoElement.currentTime = 0;
         videoElement.play().catch((error) => {
@@ -478,10 +478,7 @@ export default function StoryViewer({
           <video
             ref={(el) => {
               if (el) {
-                setVideoRefs((prev) => ({
-                  ...prev,
-                  [currentStory.storyId]: el,
-                }));
+                videoRefs.current[currentStory.storyId] = el;
               }
             }}
             src={currentStory.media.sourceUrl}
